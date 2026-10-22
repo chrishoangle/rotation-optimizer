@@ -106,7 +106,7 @@ def test_more_hosts_than_fams_gives_breaks():
 
 def test_too_many_rounds_is_rejected():
     hosts, fams = _toy(3, 3)
-    with pytest.raises(InfeasibleProblemError, match="rounds needs"):
+    with pytest.raises(InfeasibleProblemError, match="the most rounds without any fam meeting the same host twice is 3"):
         plan_event(hosts, fams, rounds=4)
 
 
@@ -119,14 +119,14 @@ def test_sheet_errors_are_collected():
     bad = io.StringIO("table_label,tags,host_id\nPharmacy,,h1\n,medicine,h1\n")
     with pytest.raises(SheetError) as err:
         load_hosts(bad)
-    text = str(err.value)
-    assert "no tags" in text
-    assert "table_label is empty" in text
-    assert "used more than once" in text
+    assert err.value.problems == [
+        "host 2: the table name is empty.",
+        "host 2 has the same row ID (h1) as an earlier row. Delete the copy, or clear the ID in one of them.",
+    ]
 
 
 def test_missing_column_is_named():
-    with pytest.raises(SheetError, match="interests"):
+    with pytest.raises(SheetError, match=r"missing column\(s\) Interests"):
         load_fams(io.StringIO("fam_label,size\nBio,6\n"))
 
 
@@ -178,7 +178,7 @@ def test_cli_writes_files(tmp_path, capsys):
 
 def test_cli_reports_sheet_problems(tmp_path, capsys):
     bad = tmp_path / "hosts.csv"
-    bad.write_text("table_label,tags\nPharmacy,\n")
+    bad.write_text("table_label,tags\n,medicine\n")
     code = cli_main(["--hosts", str(bad), "--fams", str(FAMS_CSV), "--rounds", "2"])
     assert code == 2
-    assert "no tags" in capsys.readouterr().err
+    assert "host 1: the table name is empty." in capsys.readouterr().err

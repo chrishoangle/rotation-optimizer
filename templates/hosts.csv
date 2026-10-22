@@ -1,11 +1,11 @@
-host_id,table_label,tags
-h01,Physician (MD),endocrinology; healthcare; internal medicine; medicine; pre-med; residency
-h02,Pharmacy,healthcare; pharmacy; pharmacy ownership; pharmd; small-business
-h03,Therapy & Rehab,allied health; healthcare; occupational therapy; physical therapy; physician assistant
-h04,Aerospace & Defense,aerospace; defense; engineering; industry; mechanical engineering
-h05,Nonprofit & Social Impact,advocacy; consulting; education reform; nonprofit; public service
-h06,Physics & Engineering,applied physics; engineering; mentorship; physics; test engineering
-h07,Pre-Med Mentorship,application process; gap years; healthcare; med school; mentorship; pre-med
-h08,Semiconductor & Chip Engineering,chip; computer engineering; electrical engineering; engineering; hardware; semiconductor
-h09,Academic Mentorship,academic advising; higher education; mentorship; student success
-h10,Admissions & Higher Ed,admissions; consulting; higher education; humanities; mentorship; student affairs
+Host table name,Alum's name,Tags
+Physician (MD),Alum A,endocrinology; healthcare; internal medicine; medicine; pre-med; residency
+Pharmacy,Alum B,healthcare; pharmacy; pharmacy ownership; pharmd; small-business
+Therapy & Rehab,Alum C,allied health; healthcare; occupational therapy; physical therapy; physician assistant
+Aerospace & Defense,Alum D,aerospace; defense; engineering; industry; mechanical engineering
+Nonprofit & Social Impact,Alum E,advocacy; consulting; education reform; nonprofit; public service
+Physics & Engineering,Alum F,applied physics; engineering; mentorship; physics; test engineering
+Pre-Med Mentorship,Alum G,application process; gap years; healthcare; med school; mentorship; pre-med
+Semiconductor & Chip Engineering,Alum H,chip; computer engineering; electrical engineering; engineering; hardware; semiconductor
+Academic Mentorship,Alum I,academic advising; higher education; mentorship; student success
+Admissions & Higher Ed,Alum J,admissions; consulting; higher education; humanities; mentorship; student affairs

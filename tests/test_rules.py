@@ -289,12 +289,14 @@ def test_fam_no_show(ex):
     assert row["host_table"] == "Not attending this round"
 
 
-def test_reprint_list_names_changed_hosts_only(ex):
+def test_reprint_skips_the_cancelled_host(ex):
+    """The cancelled host is not coming, so no card. The seating chart changed."""
     first = plan_event(ex.HOSTS, ex.FAMS, 2)
     second = replan(first, done_rounds=1, cancel_hosts={"h03": 2})
-    hosts, tents = reprint_list(first, second)
-    assert hosts == ["h03"]
-    assert tents == []
+    out = reprint_list(first, second)
+    assert out.host_ids == []
+    assert out.fam_ids == []
+    assert out.seating_chart is True
 
 
 # ----------------------------------------------------------------------
@@ -303,12 +305,12 @@ def test_reprint_list_names_changed_hosts_only(ex):
 
 
 def test_duplicate_host_labels_rejected():
-    with pytest.raises(SheetError, match="Labels must be unique"):
+    with pytest.raises(SheetError, match="needs its own name"):
         load_hosts(io.StringIO("table_label,tags\nPharmacy,a\npharmacy,b\n"))
 
 
 def test_duplicate_fam_labels_rejected():
-    with pytest.raises(SheetError, match="Labels must be unique"):
+    with pytest.raises(SheetError, match="needs its own name"):
         load_fams(io.StringIO("fam_label,interests\nBio,a\nBIO,b\n"))
 
 
@@ -374,9 +376,9 @@ def test_parse_rule_rows_reports_every_problem():
             2,
         )
     assert err.value.problems == [
-        "Rule 1: choose a host table from the list.",
-        "Rule 2: round 5 is outside 1 to 2.",
-        "Rule 3: only in rounds needs at least one round.",
+        "rule 1: choose a host table from the list.",
+        "rule 2: round 5 is outside 1 to 2.",
+        "rule 3: only in rounds needs at least one round.",
     ]
 
 

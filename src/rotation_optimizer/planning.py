@@ -41,6 +41,8 @@ from .scoring import build_score_matrix
 from .solver import InfeasibleProblemError, solve
 
 OPEN_PREFIX = "__open_"
+NO_HOST = "Open table (no host)"
+FAM_ABSENT = "Not attending this round"
 BREAK_PREFIX = "__break_"
 
 
@@ -73,7 +75,8 @@ class EventPlan:
     runtime_s: float
     warnings: list[str] = field(default_factory=list)
     rules: list[Rule] = field(default_factory=list)
-    host_away: dict[str, list[int]] = field(default_factory=dict)
+    host_away: dict[str, list[int]] = field(default_factory=dict)  # cancellations made on the night
+    host_limits: dict[str, list[int]] = field(default_factory=dict)  # rounds a host is not hosting, from "only in rounds"
     fam_away: dict[str, list[int]] = field(default_factory=dict)
     locked_rounds: list[int] = field(default_factory=list)
     objective_value: int | None = None
@@ -134,12 +137,14 @@ def _check_rules(
     host_away: dict[str, list[int]],
     fam_away: dict[str, list[int]],
     locked: list[tuple[int, str, str]],
+    host_limits: dict[str, list[int]] | None = None,
 ) -> None:
     """Find conflicts a coordinator can fix, and explain each one in plain words."""
     hname = {h.host_id: h.name for h in hosts}
     fname = {f.group_id: f.name for f in fams}
     all_rounds = set(range(1, rounds + 1))
     problems: list[str] = []
+    host_limits = host_limits or {}
 
     def known(rule_text, h, f):
         ok = True
@@ -192,17 +197,20 @@ def _check_rules(
                         + (f" in {_round_text(n.rounds)}" if n.rounds else "")
                         + ". Remove one of them."
                     )
-        open_rounds = allowed - set(host_away.get(m.host_id, [])) - set(fam_away.get(m.fam_id, []))
+        limited = set(host_limits.get(m.host_id, []))
+        open_rounds = allowed - set(host_away.get(m.host_id, [])) - limited - set(fam_away.get(m.fam_id, []))
         if not open_rounds:
             who = []
+            if allowed & limited:
+                present = sorted(all_rounds - limited)
+                who.append(f"{h} only comes for {_round_text(present)} (pairing rule)")
             if allowed & set(host_away.get(m.host_id, [])):
                 who.append(f"{h} is cancelled from {_round_text(allowed & set(host_away[m.host_id]))}")
             if allowed & set(fam_away.get(m.fam_id, [])):
                 who.append(f"{f} is cancelled from {_round_text(allowed & set(fam_away[m.fam_id]))}")
-            problems.append(
-                f"The rule {label} cannot hold because " + " and ".join(who)
-                + ". Remove that rule, or change its rounds, then re-plan."
-            )
+            fix = (". Change one of the two rules." if allowed & limited and not (allowed & set(host_away.get(m.host_id, [])))
+                   else ". Remove that rule, or change its rounds, then re-plan.")
+            problems.append(f"The rule {label} cannot hold because " + " and ".join(who) + fix)
         locked_met = any((r, m.host_id, m.fam_id) in set(locked) for r in allowed)
         locked_rounds = {r for r, _, _ in locked}
         if not locked_met and allowed <= locked_rounds:
@@ -246,11 +254,23 @@ def plan_event(
     fam_away: Mapping[str, Iterable[int]] | None = None,
     locked: Iterable[tuple[int, str, str]] = (),
     keep: Iterable[tuple[int, str, str]] = (),
+    host_limits: Mapping[str, Iterable[int]] | None = None,
+    weak_limit: int | None = None,
 ) -> EventPlan:
     """Pad, solve, and strip placeholders.
 
     keep lists (round, host, fam) slots to preserve where possible; it is
     what replan() passes when the previous schedule is already printed.
+
+    host_limits lists rounds a host is not hosting because of an "only in
+    rounds" rule. It works like host_away for planning, but is worded as
+    availability, never as a cancellation.
+
+    weak_limit, when set, allows each fam at most that many rounds with a
+    host who scores 0 with it or an open table.
+
+    When scores tie, a real host at a real fam is preferred over an open
+    table or a break, so no available host sits out while a fam has no host.
 
     Uses OR-Tools' default parallel search. When several schedules are
     equally good, which one is returned can change between runs. Pass
@@ -262,9 +282,12 @@ def plan_event(
         raise InfeasibleProblemError(f"rounds must be at least 1, got {rounds}")
     rules = list(rules)
     host_away = {h: sorted(set(rs)) for h, rs in (host_away or {}).items() if rs}
+    host_limits = {h: sorted(set(rs)) for h, rs in (host_limits or {}).items() if rs}
     fam_away = {f: sorted(set(rs)) for f, rs in (fam_away or {}).items() if rs}
     locked = sorted(set(locked))
-    _check_rules(hosts, fams, rounds, rules, host_away, fam_away, locked)
+    _check_rules(hosts, fams, rounds, rules, host_away, fam_away, locked, host_limits)
+    cancelled_only = host_away
+    host_away = {h: sorted(set(host_away.get(h, [])) | set(host_limits.get(h, []))) for h in set(host_away) | set(host_limits)}
 
     host_ids = {h.host_id for h in hosts}
     fam_ids = {f.group_id for f in fams}
@@ -285,8 +308,8 @@ def plan_event(
     n = max(len(hosts) + most_away(fam_away), len(fams) + most_away(host_away))
     if rounds > n:
         raise InfeasibleProblemError(
-            f"{rounds} rounds needs at least {rounds} tables on each side; "
-            f"this event has {n} after padding, so some fam would meet a host twice"
+            f"With {len(hosts)} host tables and {len(fams)} fams, the most rounds without any fam "
+            f"meeting the same host twice is {n}. Lower the number of rounds to {n} or fewer."
         )
     padded_hosts = list(hosts) + [
         Host.make(f"{OPEN_PREFIX}{i + 1}", "Open table", "Open table", []) for i in range(n - len(hosts))
@@ -324,6 +347,9 @@ def plan_event(
             fixed_slots=locked,
             forbidden_slots=sorted(forbidden_slots),
             prefer_slots=[s for s in keep if s[0] not in {r for r, _, _ in locked}],
+            tiebreak_pairs=[(h, f) for h in host_ids for f in fam_ids],
+            weak_limit=weak_limit,
+            weak_groups=sorted(fam_ids) if weak_limit is not None else (),
         )
     except InfeasibleProblemError as err:
         if "no schedule satisfies every rule" not in str(err):
@@ -331,8 +357,12 @@ def plan_event(
         in_use = []
         if rules:
             in_use.append(f"{len(rules)} pairing rule(s)")
-        if host_away or fam_away:
+        if cancelled_only or fam_away:
             in_use.append("cancellations")
+        if host_limits:
+            in_use.append("only-in-rounds rules")
+        if weak_limit is not None:
+            in_use.append(f"the limit of {weak_limit} weak round per fam")
         if locked:
             in_use.append("locked rounds")
         raise RuleConflictError(
@@ -354,11 +384,7 @@ def plan_event(
             real.append(a)
 
     warnings = vocabulary_warnings(hosts, fams)
-    fam_names = {f.group_id: f.name for f in fams}
-    for fam_id, rs in sorted(free.items()):
-        present = [r for r in rs if r not in fam_away.get(fam_id, [])]
-        if len(present) > 1:
-            warnings.append(f"{fam_names[fam_id]} has no host in {len(present)} rounds ({', '.join(map(str, sorted(present)))}).")
+    warnings += fairness_warnings(fams, real, rounds, fam_away, {h.host_id: h.name for h in hosts})
     if not schedule.proven_optimal:
         warnings.append(
             f"The solver stopped at the {time_limit_s:.0f} s limit before proving this is the best schedule."
@@ -376,12 +402,57 @@ def plan_event(
         runtime_s=schedule.solver_runtime_s,
         warnings=warnings,
         rules=rules,
-        host_away=host_away,
+        host_away=cancelled_only,
+        host_limits=host_limits,
         fam_away=fam_away,
         locked_rounds=sorted({r for r, _, _ in locked}),
         objective_value=schedule.objective_value,
         kept_slots=schedule.kept_slots,
     )
+
+
+def fairness_warnings(
+    fams: list[GuestGroup],
+    real: list[Assignment],
+    rounds: int,
+    fam_away: Mapping[str, Iterable[int]],
+    host_names: Mapping[str, str],
+) -> list[str]:
+    """Flag fams that spend more than one round with no host or a host who shares none of their interests.
+
+    Rounds the fam is not attending do not count.
+    """
+    by_slot = {(a.round_number, a.group_id): a for a in real}
+    out = []
+    for f in fams:
+        weak = []
+        for r in range(1, rounds + 1):
+            if r in set(fam_away.get(f.group_id, [])):
+                continue
+            a = by_slot.get((r, f.group_id))
+            if a is None:
+                weak.append(f"round {r}: open table")
+            elif a.score == 0:
+                weak.append(f"round {r}: {host_names[a.host_id]}, no shared interests")
+        if len(weak) > 1:
+            out.append(
+                f"Fairness check: {f.name} gets no host or a 0-score host in {len(weak)} rounds ("
+                + "; ".join(weak) + "). Consider a must meet rule for this fam."
+            )
+    totals = {f.group_id: sum(a.score for a in real if a.group_id == f.group_id) for f in fams}
+    ordered = sorted(totals.values())
+    median = ordered[len(ordered) // 2] if ordered else 0
+    flagged = {line.split(" gets ")[0].removeprefix("Fairness check: ") for line in out}
+    for f in fams:
+        if f.name in flagged or median == 0:
+            continue
+        if totals[f.group_id] < 0.4 * median:
+            out.append(
+                f"Fairness check: {f.name} scores {totals[f.group_id]} in total, far below the typical fam "
+                f"({median}). Consider a must meet rule for this fam, or turn on "
+                "\"No fam gets more than one weak round\"."
+            )
+    return out
 
 
 def replan(
@@ -391,6 +462,9 @@ def replan(
     cancel_hosts: Mapping[str, int] | None = None,
     cancel_fams: Mapping[str, int] | None = None,
     rules: Iterable[Rule] | None = None,
+    baseline: EventPlan | None = None,
+    hosts: list[Host] | None = None,
+    fams: list[GuestGroup] | None = None,
     from_scratch: bool = False,
     time_limit_s: float = 30.0,
     num_workers: int | None = None,
@@ -401,9 +475,14 @@ def replan(
     cancellation covers that round and every later one, and is added to the
     plan's existing cancellations. rules default to the plan's rules.
 
-    By default the remaining rounds keep the previous schedule wherever the
-    changes allow, then maximize score. from_scratch=True maximizes score
-    only, for when nothing has been printed yet.
+    By default the remaining rounds keep the baseline schedule wherever the
+    changes allow, then maximize score. The baseline is the printed plan when
+    given, otherwise `plan`. from_scratch=True maximizes score only, for when
+    nothing has been printed yet.
+
+    hosts and fams replace the plan's lists, for example to add a host who
+    arrives late or fix a tag. Ids must stay the same for anyone already in
+    a finished round.
     """
     if not 0 <= done_rounds < plan.rounds:
         raise InfeasibleProblemError(
@@ -416,15 +495,16 @@ def replan(
     for f, first in (cancel_fams or {}).items():
         fam_away.setdefault(f, set()).update(range(first, plan.rounds + 1))
     locked = [(a.round_number, a.host_id, a.group_id) for a in plan.assignments if a.round_number <= done_rounds]
-    keep = [] if from_scratch else [s for s in plan.slots() if s[0] > done_rounds]
+    keep = [] if from_scratch else [s for s in (baseline or plan).slots() if s[0] > done_rounds]
     return plan_event(
-        plan.hosts,
-        plan.fams,
+        plan.hosts if hosts is None else hosts,
+        plan.fams if fams is None else fams,
         plan.rounds,
         time_limit_s=time_limit_s,
         num_workers=num_workers,
         rules=plan.rules if rules is None else rules,
         host_away={h: sorted(rs) for h, rs in host_away.items()},
+        host_limits=plan.host_limits,
         fam_away={f: sorted(rs) for f, rs in fam_away.items()},
         locked=locked,
         keep=keep,
@@ -456,15 +536,82 @@ def plan_changes(old: EventPlan, new: EventPlan) -> list[SlotChange]:
     return out
 
 
-def reprint_list(old: EventPlan, new: EventPlan) -> tuple[list[str], list[str]]:
-    """Host ids whose cards changed, and fam ids whose table tents changed.
+def slot_text(plan: EventPlan, round_number: int, fam_id: str) -> str:
+    """What sits at a fam's table in a round, in the words every printout uses."""
+    for a in plan.assignments:
+        if a.round_number == round_number and a.group_id == fam_id:
+            return plan.host_name(a.host_id)
+    if round_number in plan.fam_away.get(fam_id, []):
+        return FAM_ABSENT
+    return NO_HOST
 
-    A host card lists where that host goes each round, so it changes when
-    any of the host's slots change. A table tent shows only the table number
-    and fam name, so re-planning never changes one; the second list is
-    empty unless a fam's name or table number changed between the plans.
+
+@dataclass(frozen=True)
+class Reprint:
+    """What to print again after a re-plan, compared with the printed baseline."""
+
+    host_ids: list[str]
+    fam_ids: list[str]
+    seating_chart: bool
+    seating_rounds: list[int] = field(default_factory=list)  # round pages of the seating chart that changed
+    finder_page: bool = False  # the find-your-table page changed
+
+    def describe(self, plan: "EventPlan") -> list[str]:
+        """Each thing to reprint, in the words a coordinator uses."""
+        out = [f"host card for {plan.host_name(h)}" for h in self.host_ids]
+        out += [f"table tent for {plan.fam_name(f)}" for f in self.fam_ids]
+        pages = [f"round {r} page" for r in self.seating_rounds] + (["find-your-table page"] if self.finder_page else [])
+        if pages:
+            out.append("seating chart, " + " and ".join(pages))
+        return out
+
+
+def _card(plan: EventPlan, host_id: str) -> dict[int, tuple]:
+    host = next((h for h in plan.hosts if h.host_id == host_id), None)
+    head = (host.name, host.person) if host else (None, None)
+    out = {}
+    for r in range(1, plan.rounds + 1):
+        a = next((x for x in plan.assignments if x.host_id == host_id and x.round_number == r), None)
+        if a is None:
+            out[r] = head + (None,)
+        else:
+            f = next(x for x in plan.fams if x.group_id == a.group_id)
+            out[r] = head + (f.table_number, f.name, f.interests)
+    return out
+
+
+def reprint_list(printed: EventPlan, new: EventPlan) -> Reprint:
+    """Host cards, table tents, and whether the seating chart need reprinting.
+
+    A host card changes when anything printed on it changes. Cards for hosts
+    who are cancelled in every round where their card changed are skipped,
+    because they are not coming. A table tent shows only the table number
+    and fam name. The seating chart changes when any table's host, number,
+    or name changes.
     """
-    hosts = sorted({c.before for c in plan_changes(old, new) if c.before} | {c.after for c in plan_changes(old, new) if c.after})
-    old_fams = {f.group_id: (f.name, getattr(f, "table_number", None)) for f in old.fams}
-    tents = [f.group_id for f in new.fams if old_fams.get(f.group_id) != (f.name, getattr(f, "table_number", None))]
-    return hosts, tents
+    host_ids = sorted({h.host_id for h in printed.hosts} | {h.host_id for h in new.hosts})
+    reprint_hosts = []
+    for h in host_ids:
+        before, after = _card(printed, h), _card(new, h)
+        changed = [r for r in range(1, new.rounds + 1) if before.get(r) != after.get(r)]
+        present = [r for r in changed if r not in new.host_away.get(h, [])]
+        if present and any(x.host_id == h for x in new.hosts):
+            reprint_hosts.append(h)
+    old_tents = {f.group_id: (f.name, f.table_number) for f in printed.fams}
+    tents = [f.group_id for f in new.fams if old_tents.get(f.group_id) != (f.name, f.table_number)]
+    rounds = {c.round_number for c in plan_changes(printed, new)}
+
+    def notes(plan, r):
+        return (sorted(h for h, rs in plan.host_away.items() if r in rs),
+                sorted(h for h, rs in plan.host_limits.items() if r in rs),
+                sorted(h for h, rs in plan.host_breaks.items() if r in rs))
+
+    for r in range(1, new.rounds + 1):
+        if notes(printed, r) != notes(new, r):
+            rounds.add(r)
+    if tents or {h.host_id: h.name for h in printed.hosts} != {h.host_id: h.name for h in new.hosts}:
+        rounds |= set(range(1, new.rounds + 1))
+    old_members = {f.group_id: (f.name, f.table_number, f.members) for f in printed.fams}
+    finder = any(old_members.get(f.group_id) != (f.name, f.table_number, f.members) for f in new.fams if f.members)
+    seating_rounds = sorted(rounds)
+    return Reprint(reprint_hosts, tents, bool(seating_rounds or finder), seating_rounds, finder)

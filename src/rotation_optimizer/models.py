@@ -28,14 +28,16 @@ class Host:
     name: str
     theme: str
     tags: frozenset[str]
+    person: str = ""  # who hosts the table, for host cards; never used in scoring
 
     @classmethod
-    def make(cls, host_id: str, name: str, theme: str, tags: Iterable[str]) -> "Host":
+    def make(cls, host_id: str, name: str, theme: str, tags: Iterable[str], person: str = "") -> "Host":
         return cls(
             host_id=host_id,
             name=name,
             theme=theme,
             tags=frozenset(t.strip().lower() for t in tags if t.strip()),
+            person=person,
         )
 
 
@@ -52,6 +54,7 @@ class GuestGroup:
     interests: frozenset[str]
     size: int = 0
     table_number: int | None = None  # the physical table in the room, if known
+    members: tuple[str, ...] = ()  # guest names, for the find-your-table page; never used in scoring
 
     @classmethod
     def make(
@@ -61,6 +64,7 @@ class GuestGroup:
         interests: Iterable[str],
         size: int = 0,
         table_number: int | None = None,
+        members: Iterable[str] = (),
     ) -> "GuestGroup":
         return cls(
             group_id=group_id,
@@ -68,6 +72,7 @@ class GuestGroup:
             interests=frozenset(i.strip().lower() for i in interests if i.strip()),
             size=size,
             table_number=table_number,
+            members=tuple(m.strip() for m in members if m.strip()),
         )
 
 

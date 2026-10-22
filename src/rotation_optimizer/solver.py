@@ -39,6 +39,15 @@ with W = R * G * max(s) + 1. Every kept slot is worth more than the largest
 possible total score, so the solver first keeps as many preferred slots as
 the rules allow, then maximizes score among those schedules.
 
+Tie-break (used by plan_event for padded events): given preferred pairs Q,
+for example real host and real group pairs as opposed to placeholders,
+the score term is multiplied by K = R * G + 1 and Σ_{(h,g) in Q, r} x[h,g,r]
+is added. The tie-break can never outweigh one point of score, so it only
+chooses among schedules with equal score. Match scores are unchanged.
+
+Weak-round limit (optional): for each group g in L, at most M rounds may
+pair it with a host scoring 0 with it:  Σ_{h: s[h,g]=0, r} x[h,g,r] <= M.
+
 WHY CP-SAT
 ----------
 Every variable is boolean and every coefficient is an integer, so the model
@@ -76,6 +85,9 @@ def solve(
     fixed_slots: Iterable[tuple[int, str, str]] = (),
     forbidden_slots: Iterable[tuple[int, str, str]] = (),
     prefer_slots: Iterable[tuple[int, str, str]] = (),
+    tiebreak_pairs: Iterable[tuple[str, str]] = (),
+    weak_limit: int | None = None,
+    weak_groups: Iterable[str] = (),
 ) -> Schedule:
     """Return the optimal (or best-found) rotation schedule.
 
@@ -99,6 +111,9 @@ def solve(
         Keeping them takes strict priority over score (see the module
         docstring). The returned Schedule reports kept_slots, and
         objective_value is the weighted objective.
+      tiebreak_pairs: (host_id, group_id) pairs preferred when scores tie.
+      weak_limit, weak_groups: at most weak_limit rounds per listed group
+        with a host that scores 0 with it.
     An unknown id or round raises InfeasibleProblemError before solving.
 
     A problem can have several optimal schedules with the same score. With
@@ -217,7 +232,21 @@ def solve(
         for g in range(G)
         for r in range(rounds)
     )
-    weight = rounds * G * max(scores.values(), default=0) + 1
+    tie = {_pair(p, "tie-break pair") for p in tiebreak_pairs}
+    if tie:
+        k = rounds * G + 1
+        score_expr = k * score_expr + sum(x[h, g, r] for h, g in tie for r in range(rounds))
+        top = k * rounds * G * max(scores.values(), default=0) + rounds * G
+    else:
+        top = rounds * G * max(scores.values(), default=0)
+    if weak_limit is not None:
+        for g_id in weak_groups:
+            g = group_index[g_id]
+            weak = [x[h, g, r] for h in range(H) for r in range(rounds)
+                    if scores[hosts[h].host_id, groups[g].group_id] == 0]
+            if weak:
+                model.Add(sum(weak) <= weak_limit)
+    weight = top + 1
     if prefer:
         model.Maximize(weight * sum(x[h, g, r] for h, g, r in prefer) + score_expr)
     else:
