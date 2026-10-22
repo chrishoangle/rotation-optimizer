@@ -91,8 +91,14 @@ Host and fam counts do not need to match. With more fams than hosts, some
 fams get an open table for a round. With more hosts than fams, some hosts
 sit out a round. The tool warns when a fam gets more than one open round,
 but does not prevent it. A table hosted by two people is entered as one
-host. Requests such as "this fam must meet this host" are not supported
-yet.
+host.
+
+The app also takes pairing rules (must meet, never meet, or a host who is
+there only in some rounds). On the night, mark the rounds that already
+happened, cancel a host or fam, and re-plan. Finished rounds never change,
+the re-plan keeps the printed schedule wherever it can, and the app lists
+exactly which host cards to reprint. The command line tool does not take
+rules or cancellations yet.
 
 ## The problem
 

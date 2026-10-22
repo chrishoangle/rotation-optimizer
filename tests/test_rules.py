@@ -330,3 +330,61 @@ def test_schedule_csv_unknown_label_names_row():
     bad = "round,table,fam,host_table,score\n1,1,Public Affairs & Communications,Astronaut,0\n"
     with pytest.raises(SheetError, match="schedule row 2: No host table named 'Astronaut'"):
         load_schedule(io.StringIO(bad), hosts, fams)
+
+
+# ----------------------------------------------------------------------
+# The app's rules table, parsed without Streamlit.
+# ----------------------------------------------------------------------
+
+
+def test_parse_rule_rows():
+    from rotation_optimizer import parse_rule_rows
+
+    hosts = load_hosts(ROOT / "templates" / "hosts.csv")
+    fams = load_fams(ROOT / "templates" / "fams.csv")
+    rules, away = parse_rule_rows(
+        [
+            {"rule": "must meet", "host_table": "Pharmacy", "fam": "Bio & Chem", "rounds": "2"},
+            {"rule": "never meet", "host_table": "physician (md)", "fam": "Cog Sci & Pre-Health", "rounds": ""},
+            {"rule": "only in rounds", "host_table": "Academic Mentorship", "fam": "", "rounds": "1"},
+            {"rule": "", "host_table": "", "fam": "", "rounds": ""},
+        ],
+        hosts,
+        fams,
+        2,
+    )
+    assert rules == [Rule("must", "h02", "fam_10", (2,)), Rule("never", "h01", "fam_02", ())]
+    assert away == {"h09": [2]}
+
+
+def test_parse_rule_rows_reports_every_problem():
+    from rotation_optimizer import parse_rule_rows
+
+    hosts = load_hosts(ROOT / "templates" / "hosts.csv")
+    fams = load_fams(ROOT / "templates" / "fams.csv")
+    with pytest.raises(SheetError) as err:
+        parse_rule_rows(
+            [
+                {"rule": "must meet", "host_table": "Astronaut", "fam": "Bio & Chem", "rounds": ""},
+                {"rule": "must meet", "host_table": "Pharmacy", "fam": "Bio & Chem", "rounds": "5"},
+                {"rule": "only in rounds", "host_table": "Pharmacy", "fam": "", "rounds": ""},
+            ],
+            hosts,
+            fams,
+            2,
+        )
+    assert err.value.problems == [
+        "Rule 1: choose a host table from the list.",
+        "Rule 2: round 5 is outside 1 to 2.",
+        "Rule 3: only in rounds needs at least one round.",
+    ]
+
+
+def test_removed_after_lock_names_missing_rows():
+    from rotation_optimizer import removed_after_lock
+
+    hosts = load_hosts(ROOT / "templates" / "hosts.csv")
+    fams = load_fams(ROOT / "templates" / "fams.csv")
+    plan = plan_event(hosts, fams, 2)
+    labels = [h.name for h in hosts if h.host_id != "h03"]
+    assert removed_after_lock(plan, labels, [f.name for f in fams]) == ["Therapy & Rehab"]

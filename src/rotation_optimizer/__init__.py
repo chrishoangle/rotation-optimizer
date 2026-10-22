@@ -16,7 +16,16 @@ Public API:
 from .models import Assignment, GuestGroup, Host, Schedule
 from .scoring import build_score_matrix, tag_overlap_score
 from .solver import InfeasibleProblemError, solve
-from .sheets import SheetError, fam_id_by_label, host_id_by_label, load_fams, load_hosts, load_schedule
+from .sheets import (
+    SheetError,
+    fam_id_by_label,
+    host_id_by_label,
+    load_fams,
+    load_hosts,
+    load_schedule,
+    parse_rule_rows,
+    removed_after_lock,
+)
 from .planning import (
     EventPlan,
     Rule,
@@ -37,6 +46,8 @@ __all__ = [
     "fam_id_by_label",
     "host_id_by_label",
     "load_schedule",
+    "parse_rule_rows",
+    "removed_after_lock",
     "replan",
     "reprint_list",
     "plan_changes",

@@ -196,3 +196,83 @@ def load_schedule(
     if problems:
         raise SheetError(problems)
     return slots
+
+
+RULE_KINDS = {"must meet": "must", "never meet": "never", "only in rounds": "only"}
+
+
+def _parse_rounds(cell: str, rounds: int) -> tuple[int, ...]:
+    out = []
+    for part in cell.replace(";", ",").replace(" and ", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        n = int(part)  # ValueError is reported by the caller
+        if not 1 <= n <= rounds:
+            raise ValueError(f"round {n} is outside 1 to {rounds}")
+        out.append(n)
+    return tuple(sorted(set(out)))
+
+
+def parse_rule_rows(
+    rows: list[dict[str, str]], hosts: list[Host], fams: list[GuestGroup], rounds: int
+):
+    """Turn the app's rules table into Rule objects and host availability.
+
+    Each row has rule ("must meet", "never meet", or "only in rounds"),
+    host_table, fam, and rounds ("1, 2"; blank means any round). "only in
+    rounds" needs no fam: the host is away in every other round. Returns
+    (rules, host_away). Rows with every cell blank are ignored.
+    """
+    from .planning import Rule  # local import: planning imports nothing from sheets
+
+    problems: list[str] = []
+    rules: list = []
+    host_away: dict[str, list[int]] = {}
+    for i, raw in enumerate(rows, start=1):
+        row = {k: ("" if v is None else str(v)).strip() for k, v in raw.items()}
+        if not any(row.values()):
+            continue
+        kind = RULE_KINDS.get(row.get("rule", "").lower())
+        if kind is None:
+            problems.append(f"Rule {i}: choose must meet, never meet, or only in rounds.")
+            continue
+        try:
+            h = host_id_by_label(hosts, row.get("host_table", ""))
+        except SheetError:
+            problems.append(f"Rule {i}: choose a host table from the list.")
+            continue
+        try:
+            rs = _parse_rounds(row.get("rounds", ""), rounds)
+        except ValueError as err:
+            msg = str(err) if "outside" in str(err) else f"{row.get('rounds')!r} is not a list of round numbers like 1, 2"
+            problems.append(f"Rule {i}: {msg}.")
+            continue
+        if kind == "only":
+            if not rs:
+                problems.append(f"Rule {i}: only in rounds needs at least one round.")
+                continue
+            host_away[h] = sorted(set(range(1, rounds + 1)) - set(rs))
+            continue
+        try:
+            f = fam_id_by_label(fams, row.get("fam", ""))
+        except SheetError:
+            problems.append(f"Rule {i}: choose a fam from the list.")
+            continue
+        rules.append(Rule(kind, h, f, rs))
+    if problems:
+        raise SheetError(problems)
+    return rules, {h: rs for h, rs in host_away.items() if rs}
+
+
+def removed_after_lock(plan, host_labels: list[str], fam_labels: list[str]) -> list[str]:
+    """Names from the plan that are missing from the edited tables.
+
+    Once a round is locked, removing a row would rewrite what already
+    happened, so the app blocks it and points to the cancel action instead.
+    """
+    hosts = {s.strip().lower() for s in host_labels}
+    fams = {s.strip().lower() for s in fam_labels}
+    gone = [h.name for h in plan.hosts if h.name.lower() not in hosts]
+    gone += [f.name for f in plan.fams if f.name.lower() not in fams]
+    return gone
