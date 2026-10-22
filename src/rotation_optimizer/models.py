@@ -91,8 +91,18 @@ class Schedule:
 
     assignments: list[Assignment] = field(default_factory=list)
     total_score: int = 0
-    objective_bound: int | None = None  # equals total_score when optimality is proven
+    objective_bound: int | None = None  # equals objective_value when optimality is proven
     solver_runtime_s: float = 0.0
+    # The value of the objective the solver maximized. It equals total_score
+    # unless the solve also rewarded keeping preferred slots (see solver.py).
+    objective_value: int | None = None
+    kept_slots: int | None = None  # preferred slots kept, when any were given
+
+    @property
+    def proven_optimal(self) -> bool:
+        """True when the solver's bound equals the objective it maximized."""
+        value = self.total_score if self.objective_value is None else self.objective_value
+        return self.objective_bound is not None and self.objective_bound == value
 
     def by_round(self, round_number: int) -> list[Assignment]:
         return sorted(
