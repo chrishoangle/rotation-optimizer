@@ -8,8 +8,7 @@ constraint that no fam ever sees the same host twice.
 
 The fam profiles and host themes below mirror the real event. Individual
 alumni and admits are described at the group level only: no names, no
-emails, no employers, no linkable details. See CASE_STUDY.md for the full
-story of the event and the rotation decision.
+emails, no employers, no linkable details.
 """
 
 from __future__ import annotations

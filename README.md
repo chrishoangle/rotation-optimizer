@@ -117,9 +117,3 @@ s(h, g) = 0 when either set is empty.
 
 The formal model, the three constraints, and the reasoning behind using
 CP-SAT are in [docs/algorithm.md](docs/algorithm.md).
-
-## The story
-
-The project started from a real event I co-coordinated. The story of that
-dinner, and of the rotation decision behind it, is in
-[CASE_STUDY.md](CASE_STUDY.md).
