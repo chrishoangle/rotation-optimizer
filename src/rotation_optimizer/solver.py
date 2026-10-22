@@ -68,6 +68,11 @@ def solve(
     OR-Tools' default parallel search, which one is returned can change from
     run to run. Pass num_workers=1 for a single-threaded search that returns
     the same schedule on every run with the same OR-Tools version.
+
+    A single worker can be much slower to prove optimality. On the STEW
+    example with three rounds, single-worker search had not closed the bound
+    after 10 s, while the default search proved the optimum in about 0.07 s
+    (Python 3.10.12, OR-Tools 9.15.6755, 4 vCPU aarch64 Linux VM).
     """
     H = len(hosts)
     G = len(groups)
