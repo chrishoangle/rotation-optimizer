@@ -121,6 +121,11 @@ saved. If any alum declines or does not reply, the photo is cropped,
 blurred, or omitted. This is a courtesy, not a legal requirement, and it
 protects the maintainer if the question ever comes up.
 
+Status, October 2026: every alumni host gave verbal consent for the group
+photo and the table photos to be used in this public case study. Consent
+was given verbally, so there are no written replies to save. Admitted
+students who appear in a photo are not covered by this consent.
+
 ### What to do if a contribution violates this
 
 Reject the PR, delete the branch, and record the reason in a commit on
