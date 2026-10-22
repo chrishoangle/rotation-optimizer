@@ -74,6 +74,11 @@ def downloaded(p, name: str, nth: int = 0):
     return d.value
 
 
+def page_y(p, name: str) -> float:
+    """A button's position on the page, not the screen, so a scroll still in progress does not count."""
+    return button(p, name).evaluate("b => b.getBoundingClientRect().top + window.scrollY")
+
+
 def set_number(p, label: str, value: int) -> None:
     box = p.get_by_label(label, exact=True)
     box.fill(str(value))
@@ -190,10 +195,10 @@ def test_night_of_a_three_round_dinner(page):
     button(p, "Mark as printed").click()
     set_number(p, "Rounds already finished", 1)
     p.get_by_label("Cancel a host", exact=True).select_option(label="Pharmacy")
-    before = button(p, "Cancel fam").bounding_box()["y"]
+    before = page_y(p, "Cancel fam")
     button(p, "Cancel host").click()
     p.wait_for_selector("text=Yes, cancel Pharmacy")
-    assert abs(button(p, "Cancel fam").bounding_box()["y"] - before) < 2  # the question appears below both rows
+    assert abs(page_y(p, "Cancel fam") - before) < 2  # the question appears below both rows
     button(p, "Yes, cancel Pharmacy").click()
     p.wait_for_selector("text=Pharmacy is cancelled from round 2.")
     p.get_by_label("Cancel a fam", exact=True).select_option(label="Bio & Chem")
@@ -228,3 +233,44 @@ def test_hand_off_is_a_folder_with_a_readme(page):
     event = json.loads(z.read(next(n for n in names if n.endswith(".rotation.json"))))
     assert "How to open it" in readme
     assert all(not r["students"] for r in event["fams"]) and event["plan"] is None
+
+
+def paste(p, table: str, text: str) -> None:
+    p.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    p.evaluate("t => navigator.clipboard.writeText(t)", text)
+    p.locator(f'table[data-table="{table}"] tbody tr').first.locator("input").first.click()
+    p.keyboard.press("ControlOrMeta+V")
+    p.wait_for_timeout(200)
+
+
+def test_paste_from_a_spreadsheet_and_every_alum_gets_a_table(page):
+    p = page
+    button(p, "Start a blank event").click()
+    # A sheet with its own column order and a header row, as copied from Google Sheets.
+    hosts = ["Tags\tHost table name\tAlum's name"] + [
+        f"{t}\t{n}\tAlum {i}" for i, (n, t) in enumerate([
+            ("Medicine", "medicine; biology"), ("Law", "law; policy"), ("Tech", "software; data"),
+            ("Art", "art; design"), ("Finance", "finance; economics"), ("Teaching", "education; history"),
+            ("Film & TV", "film; writing"), ("Real Estate", "real estate")], start=1)]
+    paste(p, "hosts", "\r\n".join(hosts) + "\r\n")
+    assert "Pasted 8 host tables, matching columns by the header row." in text(p)
+    fams = [f"Fam {n}\t6\t{t}" for n, t in [("Red", "biology"), ("Blue", "law"), ("Gold", "data"), ("Teal", "design"),
+                                           ("Pink", "economics"), ("Gray", "history")]]
+    p.locator('table[data-table="fams"] tbody tr').first.locator("input").nth(1).click()
+    p.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    p.evaluate("t => navigator.clipboard.writeText(t)", "\n".join(fams))
+    p.keyboard.press("ControlOrMeta+V")
+    p.wait_for_timeout(200)
+    assert "Pasted 6 fams." in text(p)
+    got = p.eval_on_selector_all('table[data-table="hosts"] tbody tr',
+                                 "trs => trs.map(tr => [...tr.querySelectorAll('input')].map(i => i.value))")
+    assert got[0] == ["Medicine", "Alum 1", "medicine; biology"] and len(got) == 9
+    got = p.eval_on_selector_all('table[data-table="fams"] tbody tr',
+                                 "trs => trs.map(tr => [...tr.querySelectorAll('input')].map(i => i.value))")
+    assert got[5][1:4] == ["Fam Gray", "6", "history"]
+    find(p)
+    assert "Planned for 2 rounds, 6 fams and 8 host tables." in text(p)
+    p.get_by_role("tab", name="Host view").click()
+    rows = p.eval_on_selector_all("table.plain tbody tr", "trs => trs.map(tr => tr.innerText)")
+    assert len(rows) == 8 and all("Table " in r for r in rows)  # 12 places, so all 8 host tables host
+    assert "has no table in any round" not in text(p)

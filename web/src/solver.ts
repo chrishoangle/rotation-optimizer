@@ -10,7 +10,9 @@
 //   rules, cancellations, and finished rounds remove or fix variables
 //
 // The objective is the Python solver's: keep as many printed slots as
-// possible first, then the highest total score, then, among equal scores,
+// possible first, then spread the empty rounds evenly (when there are more
+// hosts than fams or the other way round), then the highest total score,
+// then, among equal scores,
 // the most real pairings, so no available host sits out while a fam has no
 // host. The weights make each level strictly more important than the next,
 // and the gap is set to zero, so "Optimal" means proven best.
@@ -43,6 +45,14 @@ export interface ModelInput {
    * fams can have no host; that is H + G - N real pairings per round.
    */
   minPairsPerRound: number;
+  /**
+   * Real hosts and fams with the rounds each is there, when the event is
+   * uneven. Rounds without a partner are spread evenly: the penalty
+   * sum over k = 1 .. rounds - 1 of max(0, empty - k) is zero while nobody
+   * sits out more than one round, and it ranks above score.
+   */
+  spreadHosts?: Record<string, number[]> | null;
+  spreadFams?: Record<string, number[]> | null;
 }
 
 export interface ModelResult {
@@ -127,10 +137,33 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
   const k = R * Math.max(G, m.hosts.length) + 1;
   const top = k * R * G * maxScore + R * G;
   const prefer = new Set(m.preferSlots.map(([r, h, f]) => index.get(slotKey(r, h, f))).filter((v): v is string => !!v));
-  const weight = top + 1;
+  let weight = top + 1;
+  const penalty: string[] = [];
+  const bounds: string[] = [];
+  if (m.spreadHosts && m.spreadFams) {
+    const items: [number[], string[]][] = [];
+    m.hosts.forEach((h, hi) => { if (m.spreadHosts![h.hostId]) items.push([m.spreadHosts![h.hostId], vars.filter((x) => x.hi === hi).map((x) => `${x.r}\u0000${x.v}`)]); });
+    m.fams.forEach((f, fi) => { if (m.spreadFams![f.groupId]) items.push([m.spreadFams![f.groupId], vars.filter((x) => x.fi === fi).map((x) => `${x.r}\u0000${x.v}`)]); });
+    let worst = 0;
+    for (const [rs, tagged] of items) {
+      const avail = [...new Set(rs)];
+      if (avail.length < 2) continue;
+      const set = new Set(avail.map(String));
+      const terms = tagged.filter((t) => set.has(t.split("\u0000")[0])).map((t) => t.split("\u0000")[1]);
+      for (let j = 1; j < avail.length; j++) {
+        const e = `e_${penalty.length}`;
+        penalty.push(e);
+        add([e, ...terms], ">=", avail.length - j);
+        bounds.push(` 0 <= ${e} <= ${avail.length - j}`);
+        worst += avail.length - j;
+      }
+    }
+    weight = weight * (worst + 1);
+  }
+  const fairWeight = top + 1;
   const coef = new Map<string, number>();
   for (const x of vars) coef.set(x.v, k * x.s + 1 + (prefer.has(x.v) ? weight : 0));
-  const objTerms = vars.map((x) => `+ ${coef.get(x.v)} ${x.v}`);
+  const objTerms = [...vars.map((x) => `+ ${coef.get(x.v)} ${x.v}`), ...penalty.map((e) => `- ${fairWeight} ${e}`)];
 
   const lp = [
     "Maximize",
@@ -140,6 +173,7 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
     ...(cons.length ? [] : [" c_empty: 0 x_zero >= 0"]),
     "Bounds",
     ...fixed.map((v) => ` ${v} = 1`),
+    ...bounds,
     "Binary",
     " " + (vars.map((x) => x.v).join(" ") || "x_zero"),
     "End",

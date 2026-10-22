@@ -91,6 +91,53 @@ which leaves enough Breaks for every absent host and enough Open tables for
 every absent group in every round. A cancelled host or group gets R4 for
 each real partner in each round it misses.
 
+#### Spreading the empty rounds
+
+With placeholders, maximizing score alone can pile the empty rounds onto a
+few people. A coordinator review found 12 host tables and 10 fams over 2
+rounds leaving one alum with no table at all, and 8 host tables and 11 fams
+over 3 rounds leaving one fam without a host twice while others always had
+one. Neither shows in the score, because placeholders score 0.
+
+For each real host or group $i$, let $A_i$ be the rounds it is there and
+$b_i$ the rounds in $A_i$ with no real partner. The planner minimizes
+
+$$
+P = \sum_i \sum_{k=1}^{|A_i| - 1} \max(0,\; b_i - k)
+$$
+
+which is zero while nobody sits out more than one round, and grows by more
+with each extra empty round, so it spreads empty rounds as evenly as the
+rules allow. In particular a host table gets at least one fam whenever the
+fams have enough places. Each $\max$ is an integer variable $e_{i,k} \ge 0$
+with $e_{i,k} \ge b_i - k$. $P$ ranks below kept slots and above score:
+kept slots, then even spread, then score, then the tie-break, each weighted
+so that it outweighs everything after it. $P$ is only added when there are
+placeholders; with $H = G$ and no cancellations every $b_i$ is 0.
+
+When a gap cannot be avoided the plan says so: a host table with no fam in
+any round gets a fairness note suggesting two alums share a table, and a fam
+with two open tables is told they are already shared out as evenly as
+possible. [`tests/test_uneven.py`](../tests/test_uneven.py) checks both
+review cases, and the web app's parity tests check that the browser solver
+reaches the same $P$ and the same score on all 40 shared cases.
+
+Synthetic events (tags from a fixed pattern, see the test file), Python
+3.13.16 and OR-Tools 9.15.6755 with 8 workers on a 2 vCPU x86_64 Xeon
+2.8 GHz cloud VM, and HiGHS 1.15.3 under Node 22.22.0 on the same VM:
+
+| H | G | R | score before | score after | fewest rounds hosted, after | CP-SAT | HiGHS |
+|---|---|---|---|---|---|---|---|
+| 12 | 10 | 2 | 617 | 617 | 1 (was 0) | 0.07 s | 0.21 s |
+| 8 | 11 | 3 | 533 | 533 | every fam hosted twice (was once) | 0.07 s | 0.11 s |
+| 30 | 8 | 5 | 1208 | 1183 | 1 (was 0) | 2.4 s | 0.26 s |
+| 25 | 30 | 4 | 2834 | 2834 | every fam hosted 3 times (was 2) | 3.0 s | 0.82 s |
+| 40 | 30 | 6 | 5436 | 5236 | 4 (was 1) | 22.7 s | 3.6 s |
+
+All were proven optimal. Before the change, CP-SAT took 0.73 s, 1.96 s and
+6.1 s on the three larger cases; the spread penalty slows its proof on this
+2 core machine, while the browser solver stays under 4 s.
+
 ### Re-planning while keeping the printed schedule
 
 After a cancellation, `replan()` locks the rounds that already happened

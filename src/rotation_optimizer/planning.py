@@ -278,6 +278,11 @@ def plan_event(
     weak_limit, when set, allows each fam at most that many rounds with a
     host who scores 0 with it or an open table.
 
+    When host tables and fams are uneven, empty rounds are spread evenly
+    before score is maximized: every host table gets a fam when there is
+    room, and no fam waits twice for a host while another never does (see
+    "Spreading the empty rounds" in docs/algorithm.md).
+
     When scores tie, a real host at a real fam is preferred over an open
     table or a break, so no available host sits out while a fam has no host.
 
@@ -344,6 +349,14 @@ def plan_event(
         if n_.kind == "never" and n_.rounds:
             forbidden_slots.update((r, n_.host_id, n_.fam_id) for r in n_.rounds)
 
+    # With placeholders, spread the empty rounds: no host table sits out
+    # every round while there is room, and no fam waits twice for a host
+    # while another fam always has one.
+    padded = n > min(len(hosts), len(fams))
+    every = range(1, rounds + 1)
+    spread_hosts = {h: [r for r in every if r not in host_away.get(h, [])] for h in sorted(host_ids)} if padded else None
+    spread_groups = {f: [r for r in every if r not in fam_away.get(f, [])] for f in sorted(fam_ids)} if padded else None
+
     try:
         schedule = solve(
             padded_hosts,
@@ -363,6 +376,8 @@ def plan_event(
             weak_limit=weak_limit,
             weak_groups=sorted(fam_ids) if weak_limit is not None else (),
             repeat_ok=[h.host_id for h in padded_hosts[len(hosts):]] + [f.group_id for f in padded_fams[len(fams):]],
+            spread_hosts=spread_hosts,
+            spread_groups=spread_groups,
         )
     except InfeasibleProblemError as err:
         if "no schedule satisfies every rule" not in str(err):
@@ -388,6 +403,7 @@ def plan_event(
 
     warnings = vocabulary_warnings(hosts, fams)
     warnings += fairness_warnings(fams, real, rounds, fam_away, {h.host_id: h.name for h in hosts})
+    warnings += host_warnings(hosts, real, rounds, host_away)
     if not schedule.proven_optimal:
         warnings.append(
             f"The solver stopped at the {time_limit_s:.0f} s limit before proving this is the best schedule."
@@ -478,6 +494,11 @@ def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, h
         return "No schedule fits these tables and rounds. Lower the number of rounds, or add host tables or fams."
     named = [words[x] for x in core]
     if len(named) == 1:
+        if core == [("weak", "")]:
+            return (
+                "The setting No fam gets more than one weak round cannot be met with these tables and rounds. "
+                "Untick it in the sidebar, or add tags so more hosts share interests with each fam."
+            )
         return f"{named[0][0].upper() + named[0][1:]} cannot be met with these tables and rounds. Change it or delete it."
     return ("These cannot all hold at once: " + "; ".join(named) + ". Change a round, or delete one of them.")
 
@@ -486,6 +507,35 @@ def _rounds_words(rounds: list[int]) -> str:
     if len(rounds) == 1:
         return f"round {rounds[0]}"
     return "rounds " + ", ".join(map(str, rounds[:-1])) + f" and {rounds[-1]}"
+
+
+OPEN_TABLES_SHARED = (
+    "There are more fams than host tables, so the open tables are already shared out as evenly as "
+    "possible. Add a host table to fix this."
+)
+
+
+def host_warnings(
+    hosts: list[Host],
+    real: list[Assignment],
+    rounds: int,
+    host_away: Mapping[str, Iterable[int]],
+) -> list[str]:
+    """Flag host tables that are there for at least one round but never get a fam.
+
+    The planner spreads hosting evenly, so this only happens when the fams
+    have fewer places, over all rounds, than there are host tables.
+    """
+    hosted = {a.host_id for a in real}
+    out = []
+    for h in hosts:
+        there = [r for r in range(1, rounds + 1) if r not in set(host_away.get(h.host_id, []))]
+        if there and h.host_id not in hosted:
+            out.append(
+                f"Fairness check: {h.name} has no table in any round, because there are more host tables "
+                "than places at the fams. Seat two alums at one host table, or add a round."
+            )
+    return out
 
 
 def fairness_warnings(
@@ -514,7 +564,8 @@ def fairness_warnings(
         if len(weak) > 1:
             out.append(
                 f"Fairness check: {f.name} gets no host or a 0-score host in {len(weak)} rounds ("
-                + "; ".join(weak) + "). Consider a must meet rule for this fam."
+                + "; ".join(weak) + "). " + (OPEN_TABLES_SHARED if all(w.endswith("no host") for w in weak)
+                                             else "Consider a must meet rule for this fam.")
             )
     totals = {f.group_id: sum(a.score for a in real if a.group_id == f.group_id) for f in fams}
     ordered = sorted(totals.values())

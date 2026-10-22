@@ -45,6 +45,15 @@ the score term is multiplied by K = R * G + 1 and Σ_{(h,g) in Q, r} x[h,g,r]
 is added. The tie-break can never outweigh one point of score, so it only
 chooses among schedules with equal score. Match scores are unchanged.
 
+Even spread (used by plan_event for padded events): for each real host
+and real group i, let b_i be the rounds it is there but has no real partner
+(a host at a Break, a group at an Open table), counted over its rounds A_i.
+The penalty P = Σ_i Σ_{k=1}^{|A_i|-1} max(0, b_i - k) is zero while nobody
+sits out more than one round and grows faster with each extra round, so
+minimizing it spreads the empty rounds as evenly as the rules allow. In
+particular a host table hosts at least once whenever there is room. P sits
+between kept slots and score: kept slots > even spread > score > tie-break.
+
 Weak-round limit (optional): for each group g in L, at most M rounds may
 pair it with a host scoring 0 with it:  Σ_{h: s[h,g]=0, r} x[h,g,r] <= M.
 
@@ -60,7 +69,7 @@ proof arrives in under one second.
 from __future__ import annotations
 
 import time
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from ortools.sat.python import cp_model
 
@@ -92,6 +101,8 @@ def solve(
     weak_limit: int | None = None,
     weak_groups: Iterable[str] = (),
     repeat_ok: Iterable[str] = (),
+    spread_hosts: Mapping[str, Iterable[int]] | None = None,
+    spread_groups: Mapping[str, Iterable[int]] | None = None,
 ) -> Schedule:
     """Return the optimal (or best-found) rotation schedule.
 
@@ -122,6 +133,9 @@ def solve(
         placeholders ("Open table" hosts and "Break" groups), so a fam can
         have no host in two rounds and a cancelled host can sit out two
         rounds. Pairs of two real ids never repeat.
+      spread_hosts, spread_groups: real host and group ids, each with the
+        rounds it is there. Rounds without a partner from the other mapping
+        are spread evenly (see the module docstring). Both or neither.
     An unknown id or round raises InfeasibleProblemError before solving.
 
     A problem can have several optimal schedules with the same score. With
@@ -258,6 +272,29 @@ def solve(
             if weak:
                 model.Add(sum(weak) <= weak_limit)
     weight = top + 1
+    if spread_hosts and spread_groups:
+        real_h = [host_index[h] for h in spread_hosts]
+        real_g = [group_index[g] for g in spread_groups]
+        items = [
+            (sorted(set(rs)), lambda r, h=host_index[h_id]: [x[h, g, r - 1] for g in real_g])
+            for h_id, rs in spread_hosts.items()
+        ] + [
+            (sorted(set(rs)), lambda r, g=group_index[g_id]: [x[h, g, r - 1] for h in real_h])
+            for g_id, rs in spread_groups.items()
+        ]
+        penalty = []
+        worst = 0
+        for avail, partners in items:
+            if len(avail) < 2:
+                continue
+            empty = len(avail) - sum(v for r in avail for v in partners(r))
+            for k in range(1, len(avail)):
+                e = model.NewIntVar(0, len(avail) - k, "")
+                model.Add(e >= empty - k)
+                penalty.append(e)
+                worst += len(avail) - k
+        score_expr = score_expr - weight * sum(penalty)
+        weight = weight * (worst + 1)
     if prefer:
         model.Maximize(weight * sum(x[h, g, r] for h, g, r in prefer) + score_expr)
     else:

@@ -494,7 +494,7 @@ def before_the_night(state: EventState, saved: bool) -> list[CheckItem]:
         "Find the best schedule (or re-plan): the schedule is missing or out of date.")
     if state.plan is not None and is_current(state):
         unfair = [w for w in state.plan.warnings if w.startswith("Fairness check")]
-        add(not unfair, "Every fam gets a fair share of matching hosts.",
+        add(not unfair, "Every fam gets a fair share of matching hosts, and every host table gets a fam.",
             f"Look at the {len(unfair)} fairness check{'s' if len(unfair) != 1 else ''} under the schedule.", optional=True)
     add(bool(hosts) and all(h.person for h in hosts), "Every host table has an alum's name for the host cards.",
         "Add alum names so host cards say who hosts each table.", optional=True)
