@@ -12,6 +12,9 @@ import io
 
 from .planning import EventPlan
 
+NO_HOST = "Open table (no host)"
+FAM_ABSENT = "Not attending this round"
+
 
 def schedule_rows(plan: EventPlan) -> list[dict[str, object]]:
     """One row per (round, fam), in round then fam order."""
@@ -21,10 +24,16 @@ def schedule_rows(plan: EventPlan) -> list[dict[str, object]]:
     for r in range(1, plan.rounds + 1):
         for f in plan.fams:
             a = by_slot.get((r, f.group_id))
+            if a:
+                host = hosts[a.host_id]
+            elif r in plan.fam_away.get(f.group_id, []):
+                host = FAM_ABSENT
+            else:
+                host = NO_HOST
             rows.append({
                 "round": r,
                 "fam": f.name,
-                "host_table": hosts[a.host_id] if a else "Open table (no host)",
+                "host_table": host,
                 "score": a.score if a else 0,
             })
     return rows

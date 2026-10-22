@@ -72,6 +72,7 @@ def load_hosts(source: str | Path | TextIO) -> list[Host]:
     problems: list[str] = []
     hosts: list[Host] = []
     seen: set[str] = set()
+    labels: set[str] = set()
     for i, row in enumerate(rows, start=2):  # row 1 is the header
         label = row.get("table_label", "")
         host_id = row.get("host_id") or f"h{i - 1:02d}"
@@ -83,6 +84,9 @@ def load_hosts(source: str | Path | TextIO) -> list[Host]:
         if host_id in seen:
             problems.append(f"hosts row {i}: host_id {host_id} is used more than once.")
         seen.add(host_id)
+        if label and label.lower() in labels:
+            problems.append(f"hosts row {i}: table_label {label} is used more than once. Labels must be unique.")
+        labels.add(label.lower())
         hosts.append(Host.make(host_id, label, label, tags))
     if problems:
         raise SheetError(problems)
@@ -95,6 +99,7 @@ def load_fams(source: str | Path | TextIO) -> list[GuestGroup]:
     problems: list[str] = []
     fams: list[GuestGroup] = []
     seen: set[str] = set()
+    labels: set[str] = set()
     for i, row in enumerate(rows, start=2):
         label = row.get("fam_label", "")
         fam_id = row.get("fam_id") or f"fam_{i - 1:02d}"
@@ -113,7 +118,54 @@ def load_fams(source: str | Path | TextIO) -> list[GuestGroup]:
         if fam_id in seen:
             problems.append(f"fams row {i}: fam_id {fam_id} is used more than once.")
         seen.add(fam_id)
+        if label and label.lower() in labels:
+            problems.append(f"fams row {i}: fam_label {label} is used more than once. Labels must be unique.")
+        labels.add(label.lower())
         fams.append(GuestGroup.make(fam_id, label, interests, size=size))
     if problems:
         raise SheetError(problems)
     return fams
+
+
+def host_id_by_label(hosts: list[Host], label: str) -> str:
+    """Look up a host id from its table label, ignoring case. Raises SheetError if unknown."""
+    for h in hosts:
+        if h.name.lower() == label.strip().lower():
+            return h.host_id
+    raise SheetError([f"No host table named {label!r}."])
+
+
+def fam_id_by_label(fams: list[GuestGroup], label: str) -> str:
+    """Look up a fam id from its label, ignoring case. Raises SheetError if unknown."""
+    for f in fams:
+        if f.name.lower() == label.strip().lower():
+            return f.group_id
+    raise SheetError([f"No fam named {label!r}."])
+
+
+def load_schedule(
+    source: str | Path | TextIO, hosts: list[Host], fams: list[GuestGroup]
+) -> list[tuple[int, str, str]]:
+    """Read a schedule CSV written by schedule_csv() back into (round, host_id, fam_id) slots.
+
+    Rows with an open table have no host and are skipped, which is how
+    replanning treats them: that fam stays without a host in that round.
+    """
+    rows = _rows(source, "schedule", ["round", "fam", "host_table"])
+    problems: list[str] = []
+    slots: list[tuple[int, str, str]] = []
+    for i, row in enumerate(rows, start=2):
+        if row["host_table"].lower().startswith(("open table", "not attending")):
+            continue
+        try:
+            r = int(row["round"])
+        except ValueError:
+            problems.append(f"schedule row {i}: round {row['round']!r} is not a whole number.")
+            continue
+        try:
+            slots.append((r, host_id_by_label(hosts, row["host_table"]), fam_id_by_label(fams, row["fam"])))
+        except SheetError as err:  # SheetError is a ValueError, so it is caught separately
+            problems.append(f"schedule row {i}: {err.problems[0]}")
+    if problems:
+        raise SheetError(problems)
+    return slots

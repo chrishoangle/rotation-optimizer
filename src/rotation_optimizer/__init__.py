@@ -7,21 +7,42 @@ Public API:
     solve: CP-SAT solver entry point
     InfeasibleProblemError: raised when the constraints cannot be met
     load_hosts, load_fams, SheetError: read coordinator CSV sheets
-    plan_event, EventPlan: solve a real event with uneven table counts
+    plan_event, EventPlan: solve a real event with uneven table counts and rules
+    replan: keep finished rounds and re-solve the rest after a change
+    load_schedule: read a schedule CSV back for replanning
     schedule_csv, seating_chart_html: files to hand out
 """
 
 from .models import Assignment, GuestGroup, Host, Schedule
 from .scoring import build_score_matrix, tag_overlap_score
 from .solver import InfeasibleProblemError, solve
-from .sheets import SheetError, load_fams, load_hosts
-from .planning import EventPlan, plan_event, vocabulary_warnings
+from .sheets import SheetError, fam_id_by_label, host_id_by_label, load_fams, load_hosts, load_schedule
+from .planning import (
+    EventPlan,
+    Rule,
+    RuleConflictError,
+    SlotChange,
+    plan_changes,
+    plan_event,
+    replan,
+    reprint_list,
+    vocabulary_warnings,
+)
 from .export import schedule_csv, schedule_rows, seating_chart_html
 
 __all__ = [
     "Assignment",
     "EventPlan",
     "SheetError",
+    "fam_id_by_label",
+    "host_id_by_label",
+    "load_schedule",
+    "replan",
+    "reprint_list",
+    "plan_changes",
+    "Rule",
+    "RuleConflictError",
+    "SlotChange",
     "load_fams",
     "load_hosts",
     "plan_event",
