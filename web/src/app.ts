@@ -23,6 +23,7 @@ import { FIELDS, formsScript } from "./forms";
 import { changeSlipsHtml, movesBetween } from "./moves";
 import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
 import { parsePasted } from "./paste";
+import { backupPacketHtml, coordinatorGuideHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml } from "./printables";
 import { csvRecords, sha256Hex } from "./py";
 import {
   CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
@@ -58,13 +59,17 @@ interface Ui {
   solving: boolean;
   explain: { round: number; famId: string } | null;
   pinned: { rule: CleanRow; text: string } | null;
+  confirmNames: boolean;
 }
 
 let ev: EventState;
+// Practice mode: the real event waits here while the coordinator tries a
+// rehearsal on a copy. Only the real event is ever saved in the browser.
+let practiceOriginal: EventState | null = null;
 let highs: HighsLike | null = null;
 const ui: Ui = {
   savedHash: "", savedAt: "", notes: {}, pending: {}, undo: null, confirmStart: null, confirmCancel: null,
-  solveError: null, tab: 1, unfinish: null, restored: "", solving: false, explain: null, pinned: null,
+  solveError: null, tab: 1, unfinish: null, restored: "", solving: false, explain: null, pinned: null, confirmNames: false,
 };
 
 function practiceEvent(): EventState {
@@ -88,7 +93,7 @@ function store(): void {
   clearTimeout(storeTimer);
   storeTimer = 0;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ event: saveEvent(ev), savedHash: ui.savedHash, savedAt: ui.savedAt, at: now() }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ event: saveEvent(practiceOriginal ?? ev), savedHash: ui.savedHash, savedAt: ui.savedAt, at: now() }));
   } catch { /* private window or storage full: the event file is still the copy to keep */ }
 }
 function persist(): void {
@@ -103,6 +108,7 @@ function versions(): Version[] {
   try { return JSON.parse(localStorage.getItem(VERSIONS_KEY) ?? "[]"); } catch { return []; }
 }
 function snapshot(why: string): void {
+  if (practiceOriginal) return;
   const list = [{ at: `${new Date().toLocaleDateString([], { month: "short", day: "numeric" })}, ${now()}`, why, event: saveEvent(ev) }, ...versions()].slice(0, 12);
   for (let n = list.length; n > 0; n--) {
     try { localStorage.setItem(VERSIONS_KEY, JSON.stringify(list.slice(0, n))); return; } catch { /* storage full: keep fewer */ }
@@ -139,6 +145,7 @@ function refresh(opts: { tables?: boolean; scrollTo?: string } = {}): void {
     renderSidebar();
     if (opts.tables) renderTables();
     renderUploads();
+    renderFamTotals();
     renderChecks();
     renderSchedule();
     renderChecklist();
@@ -255,6 +262,26 @@ function renderSidebar(): void {
       h("button", { className: "button wide", onclick: downloadOfflineCopy }, "Download an offline copy of this app"),
       h("p", { className: "help" }, "One file (about 5 MB) that opens in any browser with no internet, even if this website goes away. Keep it with the event file.")),
 
+    h("h2", {}, "Print for your team"),
+    h("div", { className: "stack" },
+      h("button", { className: "button wide", onclick: () => openPage(coordinatorGuideHtml(ev.title)) }, "Coordinator guide (2 pages)"),
+      h("button", { className: "button wide", onclick: () => openPage(roleCardsHtml(ev.title)) }, "Volunteer role cards"),
+      h("button", { className: "button wide", onclick: () => openPage(privacyNoteHtml()) }, "Privacy note for IT or a supervisor")),
+
+    h("h2", {}, "Rehearse"),
+    practiceOriginal
+      ? h("button", { className: "button wide primary", onclick: endPractice }, "End practice and go back to my event")
+      : h("button", { className: "button wide", disabled: !ev.plan, onclick: startPractice }, "Practice the night"),
+    h("p", { className: "help" }, ev.plan || practiceOriginal ? "Try cancellations, late alumni, and re-plans on a copy. Nothing you do in practice is kept." : "Make a schedule first, then practice the night on a copy."),
+
+    h("h2", {}, "Student names"),
+    ui.confirmNames ? h("div", { className: "msg warn" }, "Remove every student name from this event? The find-your-table page needs them.",
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: removeStudentNames }, "Remove names"),
+        h("button", { className: "button", onclick: () => { ui.confirmNames = false; renderSidebar(); } }, "Keep them")))
+      : h("button", { className: "button wide", disabled: !ev.fams.some((r) => (r.students ?? "").trim()), onclick: () => { ui.confirmNames = true; renderSidebar(); } }, "Remove student names"),
+    h("p", { className: "help" }, "For after the event, or before sharing the file. Alumni names and everything else stay."),
+
     h("h2", {}, "Start"),
     h("button", { className: "button wide", onclick: () => askStart("example") }, "Load the example dinner"),
     h("button", { className: "button wide", onclick: () => askStart("blank") }, "Start a blank event"),
@@ -320,6 +347,37 @@ async function copyFormsScript(): Promise<void> {
   renderSidebar();
   const d = document.querySelector<HTMLDetailsElement>("details.forms");
   if (d) d.open = true;
+}
+
+function removeStudentNames(): void {
+  snapshot("before removing student names");
+  ev.fams = ev.fams.map((r) => ({ ...r, students: "" }));
+  ui.confirmNames = false;
+  note("top", "ok", "Student names removed. Re-plan to update the printouts.");
+  refresh({ tables: true, scrollTo: "top" });
+}
+
+function startPractice(): void {
+  practiceOriginal = ev;
+  ev = loadEvent(saveEvent(ev));
+  setNightMode(true);
+}
+
+function endPractice(): void {
+  if (!practiceOriginal) return;
+  ev = practiceOriginal;
+  practiceOriginal = null;
+  ui.solveError = null;
+  night.confirm = null;
+  setNightMode(false);
+  note("top", "ok", "Practice ended. Your event is exactly as it was.");
+  refresh({ scrollTo: "top" });
+}
+
+function practiceBanner(): HTMLElement | null {
+  return practiceOriginal ? h("div", { className: "msg warn row spread practice" },
+    h("span", {}, h("strong", {}, "Practice: "), "nothing here is kept. Try a cancellation, a late alum, and a re-plan."),
+    h("button", { className: "button", onclick: endPractice }, "End practice")) : null;
 }
 
 function notesField(): HTMLElement {
@@ -687,6 +745,22 @@ function renderChecks(): void {
   findBtn.disabled = ui.solving;
 }
 
+function renderFamTotals(): void {
+  const el = document.getElementById("fam-totals");
+  if (!el) return;
+  const fams = ev.fams.filter((r) => (r.fam_label ?? "").trim());
+  const size = (r: CleanRow) => Number(r.size) || (r.students ?? "").split(/[;\n]/).filter((x) => x.trim()).length;
+  const sized = fams.map((r) => [r.fam_label, size(r)] as const).filter(([, n]) => n > 0);
+  if (!sized.length) { replace(el); return; }
+  const total = sized.reduce((t, [, n]) => t + n, 0);
+  const big = sized.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const small = sized.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const missing = fams.length - sized.length;
+  replace(el, `${total} students in ${sized.length} fam${sized.length !== 1 ? "s" : ""}` +
+    (sized.length > 1 ? `. Largest: ${big[0]} (${big[1]}). Smallest: ${small[0]} (${small[1]}).` : ".") +
+    (missing ? ` ${missing} fam${missing !== 1 ? "s have" : " has"} no size or student names yet.` : ""));
+}
+
 function fixSpelling(m: NearMiss): void {
   applySpelling(ev, m);
   refresh({ tables: true });
@@ -852,8 +926,28 @@ function renderSchedule(): void {
           h("button", { className: "button", onclick: markPrinted }, "Mark as printed"),
           h("span", { className: "help" }, ev.printed && ev.printedAt ? `Printed at ${ev.printedAt}. Changes below are listed against that version.`
             : ev.printed ? "Printed version marked. Changes below are listed against it." : "Not marked as printed yet. Click Mark as printed after you print."))),
+      h("h3", {}, "For your team"),
+      h("div", { className: "cards" },
+        printCard("Backup packet", "backup packet", () => backupPacketHtml(p, ev.title, ev.printedAt), "The whole schedule on paper, for the coordinator, in case every device fails."),
+        printCard("Plan summary", "plan summary", () => planSummaryHtml(p, ev.title, rulesInWords(), ev.notes), "One or two pages for a director: how good the plan is, the rules, and every pairing.")),
     ] : null,
   );
+}
+
+function printCard(label: string, file: string, make: () => string, help: string): HTMLElement {
+  return h("div", { className: "card" }, h("strong", {}, label), h("p", { className: "help" }, help),
+    h("div", { className: "row" },
+      h("button", { className: "button primary", onclick: () => openPage(make()) }, "Open to print"),
+      h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download")));
+}
+
+function rulesInWords(): string[] {
+  return ev.rules.filter((r) => r.rule && r.host_table).map((r) => {
+    const when = r.rounds ? ` in round${/[,; ]/.test(r.rounds.trim()) ? "s" : ""} ${r.rounds}` : "";
+    if (r.rule === "only in rounds") return `${r.host_table} only comes for round${/[,; ]/.test(r.rounds.trim()) ? "s" : ""} ${r.rounds}`;
+    if (r.rule === "stays with") return `${r.host_table} stays with ${r.fam || "one fam"} all night`;
+    return `${r.host_table} ${r.rule} ${r.fam}${when}`;
+  });
 }
 
 function roundTable(p: EventPlan, round: number, current: boolean): HTMLElement {
@@ -1117,8 +1211,9 @@ interface NightUi {
   on: boolean; query: string; showNext: boolean; late: boolean; lateProblem: string;
   confirm: { kind: "host" | "fam"; id: string; label: string; first: number; noShow: boolean } | null;
   justFinished: number | null;
+  before: EventPlan | null; // the plan before the last re-plan, when nothing is marked printed
 }
-const night: NightUi = { on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null };
+const night: NightUi = { on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null };
 let clockTimer = 0;
 
 function setNightMode(on: boolean): void {
@@ -1260,6 +1355,7 @@ function renderNightMode(): void {
     h("div", { className: "night-bar" },
       h("div", {}, h("strong", {}, ev.title), " ", h("span", { id: "night-clock", className: "help" }, now())),
       exit),
+    practiceBanner(),
     h("section", { className: "panel round-now" },
       h("p", { className: "big-round" }, `Round ${cur} of ${p.rounds}`),
       last ? h("p", { className: "help" }, "Last round. Nobody moves after this one.")
@@ -1278,15 +1374,17 @@ function renderNightMode(): void {
       h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
       h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {
         snapshot("before re-planning on the night");
+        night.before = ev.plan;
         const ok = await solve(true, "night");
         if (ok) logChange(ev, now(), "Re-planned.");
         nightRefresh();
       } }, "Re-plan now"),
       h("p", { id: "replan-status", className: "help" }),
       err ? h("div", { className: "msg error", role: "alert" }, err) : null) : null,
-    current && ev.printed ? (() => {
-      const tell = tellPeople(p, ev.printed!);
-      return tell ? [tell, h("section", { className: "panel" }, reprintPanel(p, ev.printed!))] : null;
+    current && (ev.printed || night.before) ? (() => {
+      const base = ev.printed ?? night.before!;
+      const tell = tellPeople(p, base);
+      return tell ? [tell, ev.printed ? h("section", { className: "panel" }, reprintPanel(p, ev.printed)) : null] : null;
     })() : null,
     confirm,
     h("section", { className: "panel" },
@@ -1365,6 +1463,7 @@ function renderShell(): void {
       h("h2", {}, "2. Fams"),
       h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. You can paste rows copied from a spreadsheet."),
       h("div", { id: "fams-table" }),
+      h("p", { id: "fam-totals", className: "help" }),
       h("h2", {}, "3. Pairing rules (optional)"),
       h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. Write rounds as 1 or 1, 2."),
       h("div", { id: "rules-table" }),
@@ -1385,7 +1484,7 @@ function renderShell(): void {
 function renderTopNote(): void {
   const el = document.getElementById("top-note");
   if (!el) return;
-  replace(el, ui.restored ? h("div", { className: "msg info row spread" }, ui.restored,
+  replace(el, practiceBanner(), ui.restored ? h("div", { className: "msg info row spread" }, ui.restored,
     h("button", { className: "button", onclick: () => { ui.restored = ""; renderTopNote(); } }, "OK")) : null, noteEl("top"));
 }
 

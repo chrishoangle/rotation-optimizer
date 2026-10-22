@@ -211,7 +211,9 @@ def test_night_of_a_three_round_dinner(page):
     body = text(p)
     assert "Pharmacy: cancelled from round 2" in body and "Bio & Chem: cancelled from round 2" in body
     assert re.search(r"Reprint: .*seating chart, round 2 page and round 3 page", body)
-    page_html = Path(downloaded(p, "Download", 4).path()).read_text()
+    with p.expect_download() as d:
+        p.locator(".card", has_text="Reprint seating chart pages").get_by_role("button", name="Download").click()
+    page_html = Path(d.value.path()).read_text()
     assert "Replaces the earlier copy" in page_html
     assert jargon(body) == []
 
@@ -383,3 +385,34 @@ def test_mark_as_printed_downloads_a_backup_and_versions_can_be_restored(page):
     p.locator(".versions li", has_text="before re-planning").first.get_by_role("button", name="Restore").click()
     p.wait_for_selector("text=Restored the version from")
     assert "Planned for 2 rounds" in text(p)
+
+
+def test_practice_the_night_changes_nothing(page):
+    p = page
+    find(p)
+    assert "students in 10 fams" in p.inner_text("#fam-totals")
+    before = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
+    button(p, "Practice the night").click()
+    p.wait_for_selector("text=Practice:")
+    button(p, "Didn't show").first.click()
+    button(p, "Yes, cancel").click()
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    button(p, "End practice").click()
+    p.wait_for_selector("text=Practice ended. Your event is exactly as it was.")
+    after = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
+    assert json.loads(after)["cancel_hosts"] == {} and json.loads(after)["night_log"] == []
+    assert json.loads(after)["plan"] == json.loads(before)["plan"]
+
+
+def test_remove_student_names_and_team_pages(page):
+    p = page
+    with p.expect_popup() as pop:
+        button(p, "Coordinator guide (2 pages)").click()
+    assert "if this happens, do this" in pop.value.inner_text("body")
+    pop.value.close()
+    button(p, "Remove student names").click()
+    button(p, "Remove names").click()
+    p.wait_for_selector("text=Student names removed.")
+    saved = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
+    assert "Student 01" not in json.dumps(json.loads(saved)["fams"])

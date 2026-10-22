@@ -1,0 +1,188 @@
+// Pages for the people around the coordinator: a two-page guide, cards for
+// volunteers, a paper backup of the whole schedule, a plan summary for a
+// director, and a privacy note for IT. Volunteers change every year, so
+// these replace a training meeting.
+
+import { sharedPairings } from "./explain";
+import { hostViewRows, scheduleRows } from "./export";
+import { EventPlan, provenOptimal } from "./planning";
+import { htmlEscape as e } from "./py";
+
+const APP_URL = "https://chrishoangle.github.io/rotation-optimizer/app/";
+
+function page(title: string, body: string, extraCss = ""): string {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${e(title)}</title>
+<style>
+@page { size: letter; margin: 0.6in; }
+* { box-sizing: border-box; }
+body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1c1c1e; margin: 0; }
+@media screen { body { margin: 24px; max-width: 8in; } }
+h1 { font-size: 22px; margin: 0 0 6px; } h2 { font-size: 17px; margin: 18px 0 6px; } h3 { font-size: 15px; margin: 12px 0 4px; }
+p, li { margin: 4px 0; } ol, ul { padding-left: 20px; margin: 4px 0; }
+.meta { color: #5c5c63; }
+.break { break-before: page; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 6px 0 12px; }
+th, td { text-align: left; border-bottom: 1px solid #d9d6cf; padding: 4px 6px; vertical-align: top; }
+th { color: #5c5c63; font-weight: 600; }
+.if { break-inside: avoid; margin: 8px 0; }
+.if strong { display: block; }
+${extraCss}
+</style></head><body>
+${body}
+</body></html>
+`;
+}
+
+/** Two pages: planning in steps, then "on the night, if this happens, do this". */
+export function coordinatorGuideHtml(title: string): string {
+  const ifs: [string, string][] = [
+    ["An alum cancels before the night", "Open the event, click Open night mode or use Changes on the night, cancel them from round 1, and Re-plan. Reprint only the pages listed."],
+    ["An alum doesn't show up", "In night mode, under Check-in, tap Didn't show next to their name, then Re-plan now. Hand out the change slips, or tell the runner what the page says."],
+    ["An alum has to leave early", "Night mode, Someone has to leave: choose them and the first round they miss, then Re-plan now."],
+    ["An alum arrives late, or an extra one comes", "Night mode, tap An alum arrived late, fill in their table name and fields, choose the round they join, then Re-plan now. If every fam already has a host, seat them with a host table that shares their fields."],
+    ["A student walks in", "Nothing to change: they join any fam with space."],
+    ["A whole fam leaves", "Night mode, Someone has to leave, choose the fam, then Re-plan now."],
+    ["A round runs long", "Nothing to change in the tool. Tap Round finished only when hosts actually move."],
+    ["The wifi is down", "The page still opens on any device that visited it before. If not, open the offline copy file you downloaded, then Open a saved event file."],
+    ["The laptop dies", "Use the backup packet on paper to run the night, or open the printed backup event file on a phone or a second laptop."],
+    ["Something looks wrong in the schedule", "Click Why? next to the pairing. To change it, choose a different host there; it becomes a rule, and Undo puts it back."],
+  ];
+  return page(`${title}: coordinator guide`, `
+<h1>${e(title)}: coordinator guide</h1>
+<p class="meta">Rotation Optimizer, ${e(APP_URL)}. Fams stay seated all night; alumni host tables move each round.</p>
+<h2>Before the night</h2>
+<ol>
+<li><strong>Collect sign-ups.</strong> In the sidebar, Collect sign-ups with Google Forms makes one form for alumni and one for students with the same list of fields. Or fill in the Hosts and Fams templates.</li>
+<li><strong>Upload or paste.</strong> Upload each form's CSV, or paste rows from a spreadsheet into the tables. Check the warnings under the tables.</li>
+<li><strong>Add rules if needed.</strong> must meet, never meet, only in rounds (for alumni who come late or leave early), or stays with (for an alum who cannot move between tables).</li>
+<li><strong>Find the best schedule.</strong> Read the fairness notes. Click Why? on anything that looks odd, and choose a different host there if you know better.</li>
+<li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, and the backup packet. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
+<li><strong>Brief volunteers.</strong> Print the volunteer role cards and hand one to each person.</li>
+</ol>
+<h2>The 30-second explanation for staff</h2>
+<p>Students stay seated with their fam. Alumni move tables every round. The tool picks who goes where so every fam meets people in their fields and nobody meets the same alum twice. If someone cancels, we press one button and it tells us who to send where and what to reprint.</p>
+<h2 class="break">On the night: if this happens, do this</h2>
+<p>Open the event and click <strong>Open night mode</strong>. It works on a phone. Tap <strong>Round finished</strong> each time hosts move.</p>
+${ifs.map(([when, what]) => `<div class="if"><strong>${e(when)}</strong>${e(what)}</div>`).join("\n")}
+<h2>After the night</h2>
+<p>Write what you learned in Notes for next year (sidebar), then click Hand off to next year and pass the folder on.</p>
+`);
+}
+
+/** Half a page per volunteer role. */
+export function roleCardsHtml(title: string): string {
+  const roles: [string, string[]][] = [
+    ["Check-in (door)", [
+      "Greet alumni and send students to sit with their fam. Students stay at that table all night.",
+      "Tell the coordinator each alum who arrives, or tick them in night mode, Check-in.",
+      "At the start of round 1, tell the coordinator who has not arrived.",
+      "A student without a fam: point them to the find-your-table page, or any fam with space.",
+    ]],
+    ["Runner", [
+      "Move alumni between rounds. Each alum's host card says their table for every round.",
+      "When the coordinator re-plans, hand out the change slips, or tell each alum the sentence on the page.",
+      "Keep spare host cards and the seating chart with you.",
+      "If an alum is lost, ask the coordinator to search Where is in night mode.",
+    ]],
+    ["MC", [
+      "Use the run sheet for timing. Announce each round when the coordinator says go.",
+      "Read out the lines under For the MC to read out when the schedule changes.",
+      "Say clearly: students stay seated, alumni move.",
+    ]],
+    ["Floater", [
+      "Sit with any fam that has no host for a round (the seating chart shows Open table).",
+      "Help the runner find alumni between rounds.",
+      "Take photos only if the event allows it.",
+    ]],
+  ];
+  const cards = roles.map(([role, lines]) => `<div class="role"><p class="event">${e(title)}</p><h2>${e(role)}</h2><ul>${lines.map((l) => `<li>${e(l)}</li>`).join("")}</ul><p class="ask">Questions: ask the coordinator.</p></div>`).join("\n");
+  return page(`${title}: volunteer role cards`, `<div class="roles">${cards}</div>`, `
+.roles { display: grid; grid-template-columns: 1fr; gap: 0.25in; }
+.role { border: 2px dashed #8a8780; border-radius: 10px; padding: 12px 16px; min-height: 4.4in; break-inside: avoid; }
+.role h2 { font-size: 24px; margin: 2px 0 8px; } .role li { font-size: 15px; margin: 6px 0; }
+.event { color: #5c5c63; margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; } .ask { color: #5c5c63; margin-top: 10px; }
+`);
+}
+
+/** The whole schedule on paper: every round, every host, and how to run the night without a device. */
+export function backupPacketHtml(p: EventPlan, title: string, printedAt: string): string {
+  const rounds = Array.from({ length: p.rounds }, (_, i) => i + 1);
+  const rows = scheduleRows(p);
+  const roundTables = rounds.map((r) => `<h2>Round ${r}</h2><table><tr><th>Table</th><th>Fam</th><th>Host table</th></tr>${rows.filter((x) => x.round === r).map((x) => `<tr><td>${x.table}</td><td>${e(x.fam)}</td><td>${e(String(x.host_table))}</td></tr>`).join("")}</table>`).join("");
+  const hv = hostViewRows(p);
+  const cols = hv.length ? Object.keys(hv[0]) : [];
+  const names: Record<string, string> = { host_table: "Host table", host_name: "Alum" };
+  const hostTable = `<table><tr>${cols.map((c) => `<th>${e(names[c] ?? c[0].toUpperCase() + c.slice(1))}</th>`).join("")}</tr>${hv.map((r) => `<tr>${cols.map((c) => `<td>${e(r[c])}</td>`).join("")}</tr>`).join("")}</table>`;
+  return page(`${title}: backup packet`, `
+<h1>${e(title)}: backup packet</h1>
+<p class="meta">The whole schedule on paper${printedAt ? `, as printed at ${e(printedAt)}` : ""}. Keep this with the coordinator in case every device fails.</p>
+<h2>Running the night from this packet</h2>
+<ol>
+<li>Students stay seated all night. Alumni move to the table listed for each round.</li>
+<li>If an alum is missing, their fam has no host that round. Send a floater, or ask a nearby host table to share.</li>
+<li>Do not re-plan by hand. Note changes on this page, and update the tool when a device is back.</li>
+</ol>
+<h2 class="break">Where each alum goes</h2>
+${hostTable}
+<div class="break"></div>
+${roundTables}
+`);
+}
+
+/** One or two pages for a director: the numbers, the rules, the notes, and every pairing. */
+export function planSummaryHtml(p: EventPlan, title: string, rulesText: string[], notes: string): string {
+  const [shared, all] = sharedPairings(p);
+  const fairness = p.warnings.filter((w) => w.startsWith("Fairness check")).map((w) => w.replace(/^Fairness check: /, ""));
+  const rows = scheduleRows(p);
+  const rounds = Array.from({ length: p.rounds }, (_, i) => i + 1);
+  return page(`${title}: plan summary`, `
+<h1>${e(title)}: plan summary</h1>
+<p class="meta">${p.fams.length} fams, ${p.hosts.length} host tables, ${p.rounds} round${p.rounds !== 1 ? "s" : ""}. Made with Rotation Optimizer.</p>
+<h2>How good is the plan</h2>
+<ul>
+<li>${shared} of ${all} pairings share at least one interest.</li>
+<li>${provenOptimal(p) ? "Proven best possible: no other schedule with these tables and rules scores higher." : "Not proven best possible: the solver stopped early."}</li>
+<li>No fam meets the same alum twice.</li>
+</ul>
+<h2>Rules the plan follows</h2>
+${rulesText.length ? `<ul>${rulesText.map((r) => `<li>${e(r)}</li>`).join("")}</ul>` : "<p>None. Pairings are by shared interests only.</p>"}
+<h2>Things to know</h2>
+${fairness.length ? `<ul>${fairness.map((f) => `<li>${e(f)}</li>`).join("")}</ul>` : "<p>Every fam gets a fair share of matching hosts, and every host table gets a fam.</p>"}
+${notes.trim() ? `<h2>Coordinator notes</h2><p>${e(notes.trim())}</p>` : ""}
+<h2>Every pairing</h2>
+<table><tr><th>Table</th><th>Fam</th>${rounds.map((r) => `<th>Round ${r}</th>`).join("")}</tr>
+${[...new Set(rows.map((x) => x.table))].map((t) => {
+  const mine = rows.filter((x) => x.table === t);
+  return `<tr><td>${t}</td><td>${e(mine[0].fam)}</td>${rounds.map((r) => { const x = mine.find((y) => y.round === r); return `<td>${x ? e(String(x.host_table)) : ""}${x && x.score === 0 ? " *" : ""}</td>`; }).join("")}</tr>`;
+}).join("")}
+</table>
+<p class="meta">* shares no interest with the fam, or no host that round.</p>
+`);
+}
+
+/** For IT or a supervisor who asks where the data goes. */
+export function privacyNoteHtml(): string {
+  return page("Rotation Optimizer: privacy note", `
+<h1>Rotation Optimizer: where the data goes</h1>
+<p class="meta">${e(APP_URL)}. Free and open source: https://github.com/chrishoangle/rotation-optimizer</p>
+<h2>In short</h2>
+<p>Nothing typed or uploaded into Rotation Optimizer is sent anywhere. The page, the schedule solver, and the printouts all run inside the browser on the coordinator's computer. There is no account, no server database, and no analytics.</p>
+<h2>What is stored, and where</h2>
+<ul>
+<li><strong>In the browser.</strong> The current event and the last twelve versions are kept in this browser's local storage on this computer, so work survives a reload. Clearing the browser's site data removes them.</li>
+<li><strong>In files the coordinator saves.</strong> Save event file, Mark as printed, and Hand off to next year download files to the computer. They go wherever the coordinator puts them.</li>
+<li><strong>Offline copy.</strong> After one visit the browser keeps the page's own files (not event data) so it opens without internet.</li>
+</ul>
+<h2>Personal information</h2>
+<ul>
+<li>Uploads keep only the columns the coordinator picks. Email, phone, and timestamp columns from forms are always dropped.</li>
+<li>Student names are optional; they are used only for the find-your-table page. Remove student names in the sidebar deletes them from the event.</li>
+<li>Hand off to next year removes student names, check-in, cancellations, and schedules.</li>
+<li>The Google Forms the tool can create live in the coordinator's own Google account and do not collect email addresses.</li>
+</ul>
+<h2>Network</h2>
+<p>The page loads its own files from GitHub Pages. It makes no other network requests. The offline copy makes none at all.</p>
+`);
+}
