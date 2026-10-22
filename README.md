@@ -5,6 +5,9 @@ rounds, this tool finds the rotation schedule that maximizes career-interest
 alignment under the no-repeat constraint, with proven optimality in under
 one second on realistic problem sizes.
 
+Project page with an interactive schedule builder:
+https://chrishoangle.github.io/rotation-optimizer/
+
 ## Install
 
 Requires Python 3.10 or newer.
