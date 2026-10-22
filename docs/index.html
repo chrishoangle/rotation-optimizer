@@ -97,6 +97,24 @@ code { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo
 details { margin-top: 12px; font-size: 15px; }
 summary { cursor: pointer; color: var(--accent); }
 .placeholder { border: 1px dashed var(--line); border-radius: 12px; padding: 18px; color: var(--muted); }
+.tables { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); margin-top: 18px; }
+.tcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.tcard img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--code); }
+.tcard .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.tcard h3 { margin: 0; font-size: 17px; }
+.tcard .visits { font-size: 14px; display: grid; gap: 4px; }
+.tcard .visits b { font-variant-numeric: tabular-nums; }
+.tcard details { margin: 0; font-size: 14px; }
+.mini { display: grid; grid-template-columns: 1fr 70px 26px; gap: 6px; align-items: center; font-size: 13px; margin-top: 4px; }
+.mini .t { height: 8px; background: var(--accent-soft); border-radius: 3px; }
+.mini .f { height: 100%; background: var(--accent); border-radius: 3px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.filters button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.tcard[hidden] { display: none; }
+.groupphoto { margin: 18px 0 0; }
+.groupphoto img { width: 100%; border-radius: 12px; display: block; }
+.groupphoto figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
 footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
 @media (max-width: 560px) {
   body { font-size: 16px; }
@@ -110,6 +128,7 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
 <a class="skip" href="#build">Skip to the schedule builder</a>
 <nav><div class="wrap">
   <strong>rotation-optimizer</strong>
+  <a href="#tables">The tables</a>
   <a href="#build">Try it</a>
   <a href="#zero">The forced zero</a>
   <a href="#scale">Scaling</a>
@@ -140,6 +159,17 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
     <div class="card"><div class="label">Built</div><p>A CP-SAT model with three constraints and a tag-overlap score. The solver returns a schedule plus a bound, and equal values prove optimality.</p></div>
     <div class="card"><div class="label">Found</div><p>Four fams draw on the same four hosts for every nonzero match. Counting visits shows at least one zero-score slot is forced, in any schedule.</p></div>
   </div>
+</div></section>
+
+<section id="tables"><div class="wrap">
+  <h2>The ten host tables</h2>
+  <p>Each table was hosted by one or two alumni who share a career field. The tags are what a student at that table could ask about, and they drive the match score. Filter by area, then open a card to see how the table scored with every fam.</p>
+  <figure class="groupphoto" id="groupFig" hidden>
+    <img src="images/group-photo.jpg" alt="Alumni hosts and admitted students at the dinner">
+    <figcaption>The night of the dinner.</figcaption>
+  </figure>
+  <div class="filters" id="filters" role="group" aria-label="Filter tables by area"></div>
+  <div class="tables" id="tableCards"></div>
 </div></section>
 
 <section id="build"><div class="wrap">
@@ -246,7 +276,7 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
       var v = flat[s.getAttribute("data-k")];
       if (v !== undefined) s.textContent = v;
     });
-    buildBuilder(); buildZero(); buildBars(); buildHeat();
+    buildTables(); buildBuilder(); buildZero(); buildBars(); buildHeat();
   }
 
   function sc(h, f) { return D.scores[h][f]; }
@@ -326,6 +356,54 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
     } else {
       st.textContent = "Valid schedule scoring " + total + ", which is " + (D.meta.total_score - total) + " below the proven maximum.";
     }
+  }
+
+  var AREAS = [
+    ["All", null],
+    ["Health", /medicine|pharmacy|therapy|pre-med|healthcare|allied health/],
+    ["Engineering & physics", /engineering|physics|aerospace|semiconductor/],
+    ["Public service & education", /public service|nonprofit|policy|admissions|higher education/]
+  ];
+
+  function buildTables() {
+    var g = el("groupFig"), gi = g.querySelector("img");
+    gi.addEventListener("load", function () { g.hidden = false; });
+    if (gi.complete && gi.naturalWidth) g.hidden = false;
+
+    var visits = {};
+    D.optimal.forEach(function (a) { (visits[a.host] = visits[a.host] || []).push(a); });
+    el("tableCards").innerHTML = D.hosts.map(function (h) {
+      var v = (visits[h.id] || []).sort(function (a, b) { return a.round - b.round; }).map(function (a) {
+        return "<span>Round " + a.round + ": " + esc(famById[a.fam].name) + " <b" + (a.score ? "" : ' class="zero"') + ">(" + a.score + ")</b></span>";
+      }).join("");
+      var ranked = D.fams.map(function (f) { return [f, sc(h.id, f.id)]; }).sort(function (a, b) { return b[1] - a[1]; });
+      var max = Math.max(1, ranked[0][1]);
+      var mini = ranked.map(function (x) {
+        return '<div class="mini"><span>' + esc(shortFam(x[0].name)) + '</span><span class="t"><span class="f" style="display:block;width:' + (100 * x[1] / max) + '%"></span></span><span class="num" style="text-align:right">' + x[1] + "</span></div>";
+      }).join("");
+      var tags = h.tags.map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; }).join("");
+      return '<article class="tcard" data-tags="' + esc(h.tags.join("|") + "|" + h.theme.toLowerCase()) + '">' +
+        '<img src="images/tables/' + h.id + '.jpg" alt="The ' + esc(h.theme) + ' table at the dinner" loading="lazy" hidden>' +
+        '<div class="body"><h3>' + esc(h.theme) + '</h3><div class="chips">' + tags + "</div>" +
+        '<div class="visits">' + v + "</div>" +
+        "<details><summary>Scores with every fam</summary>" + mini + "</details></div></article>";
+    }).join("");
+    el("tableCards").querySelectorAll("img").forEach(function (img) {
+      img.addEventListener("load", function () { img.hidden = false; });
+      img.addEventListener("error", function () { img.remove(); });
+    });
+
+    el("filters").innerHTML = AREAS.map(function (a, i) {
+      return '<button type="button" data-i="' + i + '" aria-pressed="' + (i === 0) + '">' + esc(a[0]) + "</button>";
+    }).join("");
+    el("filters").addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      var re = AREAS[+b.dataset.i][1];
+      el("filters").querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+      el("tableCards").querySelectorAll(".tcard").forEach(function (c) {
+        c.hidden = !!re && !re.test(c.dataset.tags);
+      });
+    });
   }
 
   function buildZero() {
