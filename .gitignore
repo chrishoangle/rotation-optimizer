@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Real alumni data stays off the repo, per the CLAUDE.md privacy rule
+stew-real.json
+stew-real.*
+
+# Privacy backstops for any other local event data
+private/
+data/
+tests/private/
+*.csv
+*.xlsx
