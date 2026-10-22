@@ -224,8 +224,9 @@ function renderSidebar(): void {
     openFile,
     h("label", { for: "open-event", className: "button wide" }, "Open a saved event file"),
     noteEl("file"),
+    notesField(),
     h("button", { className: "button wide", onclick: handOff }, "Hand off to next year"),
-    h("p", { className: "help" }, "A folder for next year's coordinator: the event file without student names, cancellations, or schedules, plus a note on how to open it."),
+    h("p", { className: "help" }, "A folder for next year's coordinator: the event file without student names, cancellations, or schedules, plus a note on how to open it, your notes, and what changed on the night."),
 
     h("h2", {}, "Start"),
     h("button", { className: "button wide", onclick: () => askStart("example") }, "Load the example dinner"),
@@ -248,6 +249,13 @@ function renderSidebar(): void {
     uploads,
   );
   renderSaveStatus(saved);
+}
+
+function notesField(): HTMLElement {
+  const box = h("textarea", { rows: 3, "aria-label": "Notes for next year", placeholder: "For example: Table 7 is by the kitchen and loud." }) as HTMLTextAreaElement;
+  box.value = ev.notes;
+  box.addEventListener("input", () => { ev.notes = box.value; persist(); renderSaveStatus(); });
+  return field("Notes for next year", box, "Kept in the event file and in the hand-off. No student names here, please.");
 }
 
 function renderSaveStatus(saved = fileHash(ev) === ui.savedHash): void {
@@ -287,10 +295,11 @@ What was kept
 The host tables, alum names, and tags; the fams, table numbers, sizes, and
 interests; the pairing rules; and the settings.
 
-What was removed
-Student names, the night's cancellations, finished rounds, and every schedule.
-Update the tables for your year, then click Find the best schedule.
-`;
+What was removed from the event file
+Student names, the night's cancellations, check-in, finished rounds, and
+every schedule. Update the tables for your year, then click Find the best
+schedule.
+${ev.notes.trim() ? `\nNotes from this year's coordinator\n${ev.notes.trim()}\n` : ""}${ev.nightLog.length ? `\nWhat happened on the night\n${ev.nightLog.map((e) => `${e.at}  ${e.text}`).join("\n")}\n` : ""}`;
   const zip = zipFiles([
     { name: `${base} handoff/README.txt`, text: readme },
     { name: `${base} handoff/${base} handoff.rotation.json`, text: saveEvent(handoffEvent(ev)) },

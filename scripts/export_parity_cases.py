@@ -32,6 +32,7 @@ from rotation_optimizer.event import (
     before_the_night,
     check_inputs,
     fingerprint,
+    handoff_event,
     load_event,
     near_misses,
     normalize_state,
@@ -196,6 +197,7 @@ def main() -> None:
         "group_student_rows": [],
         "fairness": [],
         "host_warnings": [],
+        "event_file": [],
         "fingerprint": [],
         "before_the_night": [],
     }
@@ -251,6 +253,12 @@ def main() -> None:
         messages["host_warnings"].append({"hosts": [[h.host_id, h.name] for h in hosts], "real": [[1, "h1", "f0", 5], [2, "h2", "f0", 5]],
                                           "rounds": 2, "host_away": away,
                                           "out": host_warnings(hosts, [Assignment(1, "h1", "f0", 5), Assignment(2, "h2", "f0", 5)], 2, away)})
+
+    st = event(practice_h, practice_f, 2, arrived=["h01", "h03"], notes="Table 7 is by the kitchen.",
+               night_log=[{"at": "7:42 PM", "text": "Pharmacy cancelled from round 2."}])
+    hand = handoff_event(st)
+    messages["event_file"].append({"text": save_event(st), "arrived": st.arrived, "notes": st.notes, "night_log": st.night_log,
+                                   "handoff": {"arrived": hand.arrived, "notes": hand.notes, "night_log": hand.night_log}})
 
     # Printouts for fixed plans, byte for byte.
     printouts = []

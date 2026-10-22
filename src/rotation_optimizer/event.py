@@ -57,6 +57,9 @@ class EventState:
     start_time: str = ""  # for the run sheet, for example "6:30 PM"; blank leaves times to fill in
     round_minutes: int = 20  # for the run sheet
     printed_at: str = ""  # when Mark as printed was clicked, for example "7:12 PM"
+    arrived: list[str] = field(default_factory=list)  # host ids checked in on the night
+    notes: str = ""  # notes for next year's coordinator, kept in the hand-off
+    night_log: list[dict] = field(default_factory=list)  # {"at": "7:42 PM", "text": "..."} for each change on the night
 
 
 @dataclass
@@ -397,6 +400,9 @@ def save_event(state: EventState) -> str:
             "start_time": state.start_time,
             "round_minutes": state.round_minutes,
             "printed_at": state.printed_at,
+            "arrived": state.arrived,
+            "notes": state.notes,
+            "night_log": state.night_log,
         },
         indent=2,
     )
@@ -430,6 +436,9 @@ def load_event(text: str | bytes) -> EventState:
             start_time=str(d.get("start_time", "")),
             round_minutes=int(d.get("round_minutes", 20)),
             printed_at=str(d.get("printed_at", "")),
+            arrived=[str(x) for x in d.get("arrived", [])],
+            notes=str(d.get("notes", "")),
+            night_log=[{"at": str(e.get("at", "")), "text": str(e.get("text", ""))} for e in d.get("night_log", [])],
         )
     except (KeyError, TypeError, ValueError):
         raise SheetError(["That saved event is incomplete or damaged, so it cannot be loaded."]) from None
@@ -439,8 +448,9 @@ def handoff_event(state: EventState) -> EventState:
     """A copy for next year's coordinator: same tables and rules, no students and no night.
 
     Keeps the event name, rounds, host tables (names, alums, tags), fam
-    names, sizes, and interests, rules, and settings. Clears student names,
-    cancellations, finished rounds, and every schedule.
+    names, sizes, and interests, rules, settings, and the notes for next
+    year. Clears student names, cancellations, finished rounds, check-in,
+    the night's log, and every schedule.
     """
     fams = [{**r, "students": ""} for r in state.fams]
     return EventState(
@@ -452,6 +462,7 @@ def handoff_event(state: EventState) -> EventState:
         one_weak_round=state.one_weak_round,
         start_time=state.start_time,
         round_minutes=state.round_minutes,
+        notes=state.notes,
     )
 
 

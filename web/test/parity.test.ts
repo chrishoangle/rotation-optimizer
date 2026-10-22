@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import highsLoader from "highs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { beforeTheNight, checkInputs, fingerprint, loadEvent, nearMisses, solveEvent } from "../src/event";
+import { beforeTheNight, checkInputs, fingerprint, handoffEvent, loadEvent, nearMisses, saveEvent, solveEvent } from "../src/event";
 import {
   hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, seatingChartHtml, tableTentsHtml,
 } from "../src/export";
@@ -107,6 +107,16 @@ describe("messages and helpers match Python", () => {
       const hosts = c.hosts.map(([id, name]: [string, string]) => makeHost(id, name, name, ["x"]));
       const real = c.real.map(([r, h, g, sc]: [number, string, string, number]) => ({ round: r, hostId: h, groupId: g, score: sc }));
       expect(hostWarnings(hosts, real, c.rounds, c.host_away)).toEqual(c.out);
+    }
+  });
+  it("event file keeps check-in, notes, and the night's log", () => {
+    for (const c of m.event_file) {
+      const s = loadEvent(c.text);
+      expect([s.arrived, s.notes, s.nightLog]).toEqual([c.arrived, c.notes, c.night_log]);
+      const again = loadEvent(saveEvent(s));
+      expect([again.arrived, again.notes, again.nightLog]).toEqual([c.arrived, c.notes, c.night_log]);
+      const hand = handoffEvent(s);
+      expect({ arrived: hand.arrived, notes: hand.notes, night_log: hand.nightLog }).toEqual(c.handoff);
     }
   });
   it("before the night", () => {

@@ -34,13 +34,16 @@ export interface EventState {
   startTime: string;
   roundMinutes: number;
   printedAt: string;
+  arrived: string[]; // host ids checked in on the night
+  notes: string; // notes for next year's coordinator, kept in the hand-off
+  nightLog: { at: string; text: string }[]; // each change on the night
 }
 
 export function newEvent(p: Partial<EventState> = {}): EventState {
   return {
     title: "Alumni dinner", rounds: 2, hosts: [], fams: [], rules: [], finished: 0, cancelHosts: {}, cancelFams: {},
     plan: null, planInputs: null, printed: null, oneWeakRound: false, planTables: null, startTime: "", roundMinutes: 20,
-    printedAt: "", ...p,
+    printedAt: "", arrived: [], notes: "", nightLog: [], ...p,
   };
 }
 
@@ -315,6 +318,9 @@ export function saveEvent(s: EventState): string {
     start_time: s.startTime,
     round_minutes: s.roundMinutes,
     printed_at: s.printedAt,
+    arrived: s.arrived,
+    notes: s.notes,
+    night_log: s.nightLog,
   }, null, 2);
 }
 
@@ -334,6 +340,8 @@ export function loadEvent(text: string): EventState {
       plan: planFromDict(d.plan), planInputs: d.plan_inputs, printed: planFromDict(d.printed),
       oneWeakRound: !!d.one_weak_round, planTables: d.plan_tables ?? null, startTime: String(d.start_time ?? ""),
       roundMinutes: Number(d.round_minutes ?? 20), printedAt: String(d.printed_at ?? ""),
+      arrived: (d.arrived ?? []).map(String), notes: String(d.notes ?? ""),
+      nightLog: (d.night_log ?? []).map((e: any) => ({ at: String(e.at ?? ""), text: String(e.text ?? "") })),
     });
   } catch {
     throw new SheetError(["That saved event is incomplete or damaged, so it cannot be loaded."]);
@@ -345,6 +353,7 @@ export function handoffEvent(s: EventState): EventState {
   return newEvent({
     title: s.title, rounds: s.rounds, hosts: structuredClone(s.hosts), fams: s.fams.map((r) => ({ ...r, students: "" })),
     rules: structuredClone(s.rules), oneWeakRound: s.oneWeakRound, startTime: s.startTime, roundMinutes: s.roundMinutes,
+    notes: s.notes,
   });
 }
 
