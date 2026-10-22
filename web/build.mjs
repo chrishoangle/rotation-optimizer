@@ -1,6 +1,7 @@
 // Builds the site into ../docs/app, which GitHub Pages serves at
 // https://chrishoangle.github.io/rotation-optimizer/app/.
 import { build } from "esbuild";
+import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const out = new URL("../docs/app/", import.meta.url);
@@ -23,4 +24,13 @@ await build({
 copyFileSync(new URL("./node_modules/highs/build/highs.wasm", import.meta.url), new URL("highs.wasm", out));
 copyFileSync(new URL("./src/style.css", import.meta.url), new URL("style.css", out));
 writeFileSync(new URL("index.html", out), readFileSync(new URL("./index.html", import.meta.url), "utf8"));
+// The service worker keeps a copy of these files on the coordinator's device,
+// so the page opens with no internet after one visit. Its cache name changes
+// with the files, so a new release replaces the old copy.
+const files = ["./", "index.html", "app.js", "style.css", "highs.wasm"];
+const hash = createHash("sha256");
+for (const f of files.slice(1)) hash.update(readFileSync(new URL(f, out)));
+writeFileSync(new URL("sw.js", out), readFileSync(new URL("./src/sw.js", import.meta.url), "utf8")
+  .replace("__CACHE__", `rotation-optimizer-${pkg.version}-${hash.digest("hex").slice(0, 12)}`)
+  .replace("__FILES__", JSON.stringify(files)));
 console.log("built docs/app");

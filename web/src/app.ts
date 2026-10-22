@@ -94,6 +94,20 @@ function persist(): void {
   clearTimeout(storeTimer);
   storeTimer = window.setTimeout(store, 250);
 }
+// Recent versions, so a wrong click or a bad re-plan can be taken back
+// even without a saved file. Kept in this browser only, newest first.
+const VERSIONS_KEY = "rotation-optimizer:versions";
+interface Version { at: string; why: string; event: string }
+function versions(): Version[] {
+  try { return JSON.parse(localStorage.getItem(VERSIONS_KEY) ?? "[]"); } catch { return []; }
+}
+function snapshot(why: string): void {
+  const list = [{ at: `${new Date().toLocaleDateString([], { month: "short", day: "numeric" })}, ${now()}`, why, event: saveEvent(ev) }, ...versions()].slice(0, 12);
+  for (let n = list.length; n > 0; n--) {
+    try { localStorage.setItem(VERSIONS_KEY, JSON.stringify(list.slice(0, n))); return; } catch { /* storage full: keep fewer */ }
+  }
+}
+
 // Write any change still waiting before the page goes away.
 window.addEventListener("pagehide", () => { if (storeTimer) store(); });
 
@@ -190,6 +204,7 @@ function renderSidebar(): void {
     if (!f) return;
     try {
       const state = loadEvent(await readFile(f));
+      if (!blank()) snapshot(`before opening ${f.name}`);
       startOver(state, `Opened ${f.name}.`);
     } catch (err) {
       note("file", "error", err instanceof SheetError ? err.problems[0] : "That file could not be opened.");
@@ -230,8 +245,14 @@ function renderSidebar(): void {
     h("label", { for: "open-event", className: "button wide" }, "Open a saved event file"),
     noteEl("file"),
     notesField(),
+    versionsBox(),
     h("button", { className: "button wide", onclick: handOff }, "Hand off to next year"),
     h("p", { className: "help" }, "A folder for next year's coordinator: the event file without student names, cancellations, or schedules, plus a note on how to open it, your notes, and what changed on the night."),
+
+    h("details", {}, h("summary", {}, "Working without internet"),
+      h("p", { className: "help", id: "offline-status" }, offlineText()),
+      h("button", { className: "button wide", onclick: downloadOfflineCopy }, "Download an offline copy of this app"),
+      h("p", { className: "help" }, "One file (about 5 MB) that opens in any browser with no internet, even if this website goes away. Keep it with the event file.")),
 
     h("h2", {}, "Start"),
     h("button", { className: "button wide", onclick: () => askStart("example") }, "Load the example dinner"),
@@ -254,6 +275,25 @@ function renderSidebar(): void {
     uploads,
   );
   renderSaveStatus(saved);
+}
+
+function versionsBox(): HTMLElement | null {
+  const list = versions();
+  if (!list.length) return null;
+  return h("details", {}, h("summary", {}, `Earlier versions in this browser (${list.length})`),
+    h("p", { className: "help" }, "Saved automatically before big steps. Restoring one keeps your current version in this list too."),
+    h("ul", { className: "versions" }, list.map((v, i) => h("li", {}, h("span", {}, `${v.at}: ${v.why}`),
+      h("button", { className: "button small", onclick: () => {
+        snapshot("before restoring an earlier version");
+        try { startOver(loadEvent(list[i].event), `Restored the version from ${v.at}.`); } catch { note("file", "error", "That version could not be restored."); renderSidebar(); }
+      } }, "Restore")))));
+}
+
+function offlineText(): string {
+  if (location.protocol === "file:") return "This is the offline copy: it works with no internet.";
+  return navigator.serviceWorker?.controller
+    ? "This page is saved on this device, so it opens and plans with no internet."
+    : "After this page finishes loading once, it is saved on this device and works with no internet.";
 }
 
 function notesField(): HTMLElement {
@@ -325,6 +365,7 @@ function askStart(kind: "example" | "blank"): void {
 }
 
 function replaceEvent(kind: "example" | "blank"): void {
+  if (!blank()) snapshot(kind === "example" ? "before loading the example" : "before starting a blank event");
   if (kind === "example") startOver(practiceEvent(), "Loaded the example dinner: 10 host tables and 10 fams. Click Find the best schedule.");
   else startOver(newEvent({ title: "New event" }), "Started a blank event. Add host tables and fams below, or upload them.");
 }
@@ -631,9 +672,47 @@ function restoreRows(): void {
   refresh({ tables: true });
 }
 
+declare global { interface Window { HIGHS_WASM_BASE64?: string } }
+
 function getHighs(): Promise<HighsLike> {
   if (highs) return Promise.resolve(highs);
-  return highsLoader({ locateFile: (f: string) => new URL(f, document.baseURI).href }).then((x) => (highs = x as unknown as HighsLike));
+  // The one-file offline copy carries the solver inside the page.
+  const embedded = window.HIGHS_WASM_BASE64;
+  const opts = embedded
+    ? {
+      instantiateWasm: (imports: WebAssembly.Imports, done: (i: WebAssembly.Instance, m: WebAssembly.Module) => void) => {
+        WebAssembly.instantiate(Uint8Array.from(atob(embedded), (ch) => ch.charCodeAt(0)), imports).then((r) => done(r.instance, r.module));
+        return {};
+      },
+    }
+    : { locateFile: (f: string) => new URL(f, document.baseURI).href };
+  return highsLoader(opts as never).then((x) => (highs = x as unknown as HighsLike));
+}
+
+/** The whole app as one HTML file that opens from a USB stick or a laptop with no internet. */
+async function downloadOfflineCopy(): Promise<void> {
+  try {
+    const [js, css, wasm] = await Promise.all([
+      fetch("app.js").then((r) => r.text()), fetch("style.css").then((r) => r.text()),
+      fetch("highs.wasm").then((r) => r.arrayBuffer()),
+    ]);
+    const bytes = new Uint8Array(wasm);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const page = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rotation Optimizer (offline copy ${__VERSION__})</title>
+<style>${css}</style></head><body>
+<div id="app" aria-live="polite"><p class="loading">Loading the planner…</p></div>
+<script>window.HIGHS_WASM_BASE64 = "${btoa(bin)}";</script>
+<script type="module">${js.replace(/<\/script/gi, "<\\/script")}</script>
+</body></html>
+`;
+    download(`Rotation Optimizer ${__VERSION__} offline.html`, page, "text/html");
+  } catch {
+    note("file", "error", "The offline copy could not be made. Check your internet connection and try again.");
+    renderSidebar();
+  }
 }
 
 async function solve(keepPrinted: boolean, where: "tables" | "night"): Promise<boolean> {
@@ -661,6 +740,7 @@ async function findSchedule(): Promise<void> {
     refresh({ scrollTo: "checks" });
     return;
   }
+  if (ev.plan) snapshot("before re-planning");
   const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
   if (ok) note("schedule", "ok", "Schedule updated.");
   refresh({ tables: true, scrollTo: ok ? "schedule" : "checks" });
@@ -829,7 +909,12 @@ function metric(label: string, value: string, help: string): HTMLElement {
 function markPrinted(): void {
   ev.printed = ev.plan;
   ev.printedAt = now();
-  note("printed", "ok", "Marked as printed. Later changes will be listed against this version.");
+  // A backup of exactly what was printed, in case this computer has trouble on the night.
+  download(fileName("printed backup", "rotation.json"), saveEvent(ev), "application/json");
+  ui.savedHash = fileHash(ev);
+  ui.savedAt = now();
+  snapshot("marked as printed");
+  note("printed", "ok", "Marked as printed, and a backup of the event file was downloaded. Keep it with the printouts, or on a second device. Later changes will be listed against this version.");
   refresh();
 }
 
@@ -927,6 +1012,7 @@ function renderNight(): void {
       h("label", {}, modeKeep, " Keep the printed schedule where possible"),
       h("label", {}, modeFresh, " Re-plan from scratch (nothing printed yet)")),
     h("button", { className: "button primary big wide", disabled: !!problems.length || ui.solving, onclick: async () => {
+      snapshot("before re-planning on the night");
       const ok = await solve(modeKeep.checked, "night");
       if (ok) note("changes", "ok", "Schedule updated.");
       refresh({ tables: true, scrollTo: ok ? "changes" : "night-error" });
@@ -1165,6 +1251,7 @@ function renderNightMode(): void {
     !current || err ? h("section", { className: "panel stale-panel" },
       h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
       h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {
+        snapshot("before re-planning on the night");
         const ok = await solve(true, "night");
         if (ok) logChange(ev, now(), "Re-planned.");
         nightRefresh();
@@ -1301,6 +1388,12 @@ function boot(): void {
     renderTopNote();
     renderTables();
     refresh();
+  }
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(() => {
+      const el = document.getElementById("offline-status");
+      if (el) el.textContent = "This page is saved on this device, so it opens and plans with no internet.";
+    }).catch(() => { /* still works online */ });
   }
   getHighs().catch(() => {
     if (night.on) return; // night mode shows the error when a re-plan is tried

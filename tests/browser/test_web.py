@@ -334,3 +334,52 @@ def test_why_a_pairing_and_choosing_a_different_host(page):
     button(p, "Undo").click()
     p.wait_for_selector("text=Undone: the rule is removed")
     assert "Bio & Chem" not in p.eval_on_selector_all('table[data-table="rules"] select[data-col="fam"]', "ss => ss.map(s => s.value).join()")
+
+
+def test_works_with_no_internet_after_one_visit(page):
+    p = page
+    p.evaluate("() => navigator.serviceWorker.ready")
+    p.reload()
+    p.wait_for_selector("text=1. Host tables")
+    p.wait_for_function("() => !!navigator.serviceWorker.controller")
+    p.context.set_offline(True)
+    try:
+        p.reload()
+        p.wait_for_selector("text=1. Host tables")
+        find(p)
+        assert "Proven best possible" in text(p)
+        p.get_by_text("Working without internet").click()
+        assert "saved on this device" in text(p)
+    finally:
+        p.context.set_offline(False)
+
+
+def test_offline_copy_is_one_file_that_plans(page, tmp_path):
+    p = page
+    p.get_by_text("Working without internet").click()
+    copy = tmp_path / "offline.html"
+    downloaded(p, "Download an offline copy of this app").save_as(copy)
+    assert copy.stat().st_size > 4_000_000
+    q = p.context.new_page()
+    errors: list[str] = []
+    q.on("pageerror", lambda e: errors.append(str(e)))
+    q.goto(copy.as_uri())
+    q.wait_for_selector("text=1. Host tables")
+    find(q)
+    assert "Proven best possible" in text(q)
+    assert errors == []
+
+
+def test_mark_as_printed_downloads_a_backup_and_versions_can_be_restored(page):
+    p = page
+    find(p)
+    with p.expect_download() as d:
+        button(p, "Mark as printed").click()
+    assert "printed backup" in d.value.suggested_filename
+    set_number(p, "Rounds", 3)
+    find(p)
+    assert "Planned for 3 rounds" in text(p)
+    p.get_by_text("Earlier versions in this browser").click()
+    p.locator(".versions li", has_text="before re-planning").first.get_by_role("button", name="Restore").click()
+    p.wait_for_selector("text=Restored the version from")
+    assert "Planned for 2 rounds" in text(p)
