@@ -62,6 +62,38 @@ Run the tests:
 python -m pytest tests/ -v
 ```
 
+## Plan your own event
+
+Fill in two sheets, one row per host table and one row per fam. Start from
+[`templates/hosts.csv`](templates/hosts.csv) and
+[`templates/fams.csv`](templates/fams.csv), which hold the example dinner.
+Tags and interests are keywords separated by semicolons. A tag only adds to
+a score when a fam lists the exact same word, so the tool lists every tag
+that has no match on the other side.
+
+In the browser, with no code:
+
+```bash
+pip install -e ".[app]"
+streamlit run app/streamlit_app.py
+```
+
+From the command line:
+
+```bash
+rotation-optimizer --hosts templates/hosts.csv --fams templates/fams.csv \
+  --rounds 2 --out-csv schedule.csv --out-html seating_chart.html
+```
+
+The seating chart is a printable page with one section per round.
+
+Host and fam counts do not need to match. With more fams than hosts, some
+fams get an open table for a round. With more hosts than fams, some hosts
+sit out a round. The tool warns when a fam gets more than one open round,
+but does not prevent it. A table hosted by two people is entered as one
+host. Requests such as "this fam must meet this host" are not supported
+yet.
+
 ## The problem
 
 At a rotating networking dinner, guest groups stay at their tables and
