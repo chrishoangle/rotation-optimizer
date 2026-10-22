@@ -274,3 +274,43 @@ def test_paste_from_a_spreadsheet_and_every_alum_gets_a_table(page):
     rows = p.eval_on_selector_all("table.plain tbody tr", "trs => trs.map(tr => tr.innerText)")
     assert len(rows) == 8 and all("Table " in r for r in rows)  # 12 places, so all 8 host tables host
     assert "has no table in any round" not in text(p)
+
+
+def test_night_mode_check_in_no_show_and_late_alum(page):
+    p = page
+    find(p)
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.wait_for_selector("text=Round 1 of 2")
+    assert "Check-in: 0 of 10 alumni here" in text(p)
+    button(p, "Not here yet").first.click()
+    assert "Check-in: 1 of 10 alumni here" in text(p)
+    button(p, "Didn't show").first.click()
+    p.wait_for_selector("text=didn't show up. Cancel them from round 1?")
+    button(p, "Yes, cancel").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "An alum arrived late, or a new one came").click()
+    p.get_by_label("Host table name").fill("Real Estate")
+    p.get_by_label("Alum's name").fill("Alum K")
+    p.get_by_label("Tags").fill("finance; economics")
+    button(p, "Add").click()
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    body = text(p)
+    assert re.search(r"Alum K \(Real Estate\): new host\. In round 1, go to Table \d+", body)
+    assert "Changes are waiting" not in body
+    p.get_by_label("Where is").fill("alum k")
+    assert "Round 2: Table" in p.inner_text("#where-results")
+    button(p, "Round 1 is finished: hosts move now").click()
+    assert "Round 2 of 2" in text(p) and "Last round" in text(p)
+    p.get_by_text("Tonight's log").click()
+    log = text(p)
+    assert "did not show up, cancelled from round 1." in log and "Added Alum K (Real Estate) as a host from round 1." in log
+    assert jargon(text(p)) == []
+    # A reload during the event comes back to night mode.
+    p.reload()
+    p.wait_for_selector("text=Round 2 of 2")
+    p.set_viewport_size({"width": 390, "height": 844})
+    assert p.evaluate("document.documentElement.scrollWidth") <= 390
+    button(p, "Back to planning").click()
+    p.wait_for_selector("text=1. Host tables")

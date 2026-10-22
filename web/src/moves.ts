@@ -82,6 +82,16 @@ export function movesBetween(before: EventPlan, after: EventPlan, from: number):
     }
     if (lines.length) mc.push(`Before round ${r}: ${lines.join(". ")}.`);
   }
+  // A host added on the night who still has no table: say so once, with what to do.
+  for (const h of after.hosts) {
+    if (before.hosts.some((x) => x.hostId === h.hostId)) continue;
+    const there = Array.from({ length: after.rounds - from + 1 }, (_, k) => from + k)
+      .filter((r) => !has(after.hostAway, h.hostId, r) && !has(after.hostLimits, h.hostId, r));
+    if (there.length && there.every((r) => !seatOf(after, h.hostId, r))) {
+      hosts.push({ hostId: h.hostId, round: there[0], now: "No table yet", was: "New host",
+        text: `${hostLabel(after, h.hostId)}: every fam already has a host, so no table for now. Seat them with a host table that shares their interests.` });
+    }
+  }
   return { hosts, fams, mc };
 }
 

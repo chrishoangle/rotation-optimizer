@@ -12,13 +12,14 @@ import {
   removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
 } from "./event";
 import {
-  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, scheduleRows, seatingChartHtml, tableTentsHtml,
+  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, scheduleRows, seatingChartHtml, tableNumbers, tableTentsHtml,
 } from "./export";
 import {
   EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
   reprintList, slotText, weakCount,
 } from "./planning";
 import { changeSlipsHtml, movesBetween } from "./moves";
+import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
 import { parsePasted } from "./paste";
 import { csvRecords, sha256Hex } from "./py";
 import {
@@ -809,6 +810,8 @@ function renderNight(): void {
   const modeFresh = h("input", { type: "radio", name: "mode", value: "fresh" }) as HTMLInputElement;
   replace(box,
     h("h2", { id: "night-title" }, "5. Changes on the night"),
+    h("div", { className: "msg info row spread" }, "On the night, use night mode: one screen with the round, check-in, where everyone is, cancellations, and late alumni. It works on a phone.",
+      h("button", { className: "button primary", onclick: () => setNightMode(true) }, "Open night mode")),
     h("p", { className: "help" }, "In this order: set the rounds that already happened, cancel anyone who can't come, then click Re-plan. Finished rounds never change. Then reprint only the pages listed under Reprint."),
     field("Rounds already finished", finished),
     wantLower !== null ? h("div", { className: "msg warn" },
@@ -830,7 +833,7 @@ function renderNight(): void {
       h("p", {}, "Cancel ", h("strong", {}, cc.name), ` from round ${cc.first}` + (cc.first < p.rounds ? " on?" : "?")),
       h("div", { className: "row" },
         h("button", { className: "button primary big", onclick: () => {
-          (cc.kind === "host" ? ev.cancelHosts : ev.cancelFams)[cc.id] = cc.first;
+          if (cc.kind === "host") cancelHost(ev, cc.id, cc.first, now()); else cancelFam(ev, cc.id, cc.first, now());
           ui.confirmCancel = null;
           note("cancellations", "info", `${cc.name} is cancelled from round ${cc.first}. Click Re-plan to update the schedule.`);
           refresh();
@@ -874,8 +877,13 @@ function changesSincePrinted(): HTMLElement {
     Printed: slotText(printed, c.round, c.famId), Now: slotText(p, c.round, c.famId),
   })), {}) : h("p", {}, "Nothing changed."));
   if (isCurrent(ev)) { const tell = tellPeople(p, printed); if (tell) box.appendChild(tell); }
+  box.appendChild(reprintPanel(p, printed));
+  return box;
+}
+
+function reprintPanel(p: EventPlan, printed: EventPlan): HTMLElement {
   const out = reprintList(printed, p);
-  box.appendChild(h("p", {}, h("strong", {}, "Reprint: "), describeReprint(out, p).join("; ") || "nothing."));
+  const box = h("div", {}, h("p", {}, h("strong", {}, "Reprint: "), describeReprint(out, p).join("; ") || "nothing."));
   if (isCurrent(ev)) {
     const stamp = now();
     const buttons: HTMLElement[] = [];
@@ -912,6 +920,207 @@ function reprintButton(label: string, file: string, make: () => string): HTMLEle
       h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download")));
 }
 
+
+// ----------------------------------------------------------------------
+// Night mode: one focused screen for the event itself.
+// ----------------------------------------------------------------------
+
+const MODE_KEY = "rotation-optimizer:mode";
+interface NightUi {
+  on: boolean; query: string; showNext: boolean; late: boolean; lateProblem: string;
+  confirm: { kind: "host" | "fam"; id: string; label: string; first: number; noShow: boolean } | null;
+  justFinished: number | null;
+}
+const night: NightUi = { on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null };
+let clockTimer = 0;
+
+function setNightMode(on: boolean): void {
+  night.on = on;
+  try { localStorage.setItem(MODE_KEY, on ? "night" : "plan"); } catch { /* fine: it only remembers the screen */ }
+  clearInterval(clockTimer);
+  if (on) {
+    renderNightMode();
+    clockTimer = window.setInterval(() => {
+      const c = document.getElementById("night-clock");
+      if (c) c.textContent = now();
+    }, 15000);
+    window.scrollTo(0, 0);
+  } else {
+    renderShell();
+    renderTables();
+    refresh({ scrollTo: "night" });
+  }
+}
+
+function nightRefresh(): void {
+  persist();
+  const y = window.scrollY;
+  renderNightMode();
+  window.scrollTo(0, y);
+}
+
+function hostLabelRow(id: string): string {
+  const r = ev.hosts.find((x) => x.host_id === id);
+  return r ? (r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label) : id;
+}
+
+function renderNightMode(): void {
+  const app = document.getElementById("app")!;
+  const p = ev.plan;
+  const exit = h("button", { className: "button", onclick: () => setNightMode(false) }, "Back to planning");
+  if (!p) {
+    replace(app, h("main", { className: "night-mode" },
+      h("div", { className: "night-bar" }, h("strong", {}, ev.title), exit),
+      h("div", { className: "msg info" }, "Make a schedule first: go back to planning and click Find the best schedule.")));
+    return;
+  }
+  const cur = currentRound(ev);
+  const last = cur >= p.rounds;
+  const current = isCurrent(ev);
+  const err = ui.solveError && ui.solveError.fp === fingerprint(ev) && ui.solveError.where === "night" ? ui.solveError.text : "";
+  const tables = tableNumbers(p);
+  const showRound = night.showNext && !last ? cur + 1 : cur;
+  const rows = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]).map((f) => {
+    const a = p.assignments.find((x) => x.round === showRound && x.groupId === f.groupId);
+    const host = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
+    const gone = (p.famAway[f.groupId] ?? []).includes(showRound);
+    return h("li", { className: host ? "" : "empty" },
+      h("span", { className: "tn" }, `Table ${tables[f.groupId]}`),
+      h("span", { className: "fam" }, f.name),
+      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"));
+  });
+
+  // Where is...
+  const search = h("input", { type: "search", value: night.query, placeholder: "Type an alum, host table, fam, or student", "aria-label": "Where is" }) as HTMLInputElement;
+  const results = h("div", { id: "where-results" });
+  const showResults = () => replace(results, whereIs(p, night.query, cur).map((f) =>
+    h("div", { className: "found" }, h("strong", {}, f.title), h("ul", {}, f.lines.map((l) => h("li", {}, l))))),
+  night.query.trim().length >= 2 && !whereIs(p, night.query, cur).length ? h("p", { className: "help" }, "No match.") : null);
+  search.addEventListener("input", () => { night.query = search.value; showResults(); });
+  showResults();
+
+  // Check-in.
+  const expected = ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts));
+  const here = expected.filter((r) => ev.arrived.includes(r.host_id)).length;
+  const missing = notArrived(ev);
+  const checkIn = h("details", { className: "panel", open: ev.finished === 0 },
+    h("summary", {}, `Check-in: ${here} of ${expected.length} alumni here`),
+    h("ul", { className: "checkin" }, expected.map((r) => {
+      const isHere = ev.arrived.includes(r.host_id);
+      return h("li", {},
+        h("button", { className: `button ${isHere ? "primary" : ""}`, "aria-pressed": isHere ? "true" : "false", onclick: () => {
+          ev.arrived = isHere ? ev.arrived.filter((x) => x !== r.host_id) : [...ev.arrived, r.host_id];
+          nightRefresh();
+        } }, isHere ? "Here" : "Not here yet"),
+        h("span", {}, hostLabelRow(r.host_id)),
+        !isHere ? h("button", { className: "button small", onclick: () => {
+          night.confirm = { kind: "host", id: r.host_id, label: hostLabelRow(r.host_id), first: cur, noShow: true };
+          nightRefresh();
+        } }, "Didn't show") : null);
+    })),
+    missing.length && ev.finished === 0 ? h("p", { className: "help" }, `${missing.length} not here yet. If someone doesn't come, tap Didn't show next to their name, then Re-plan now.`) : null,
+    h("p", { className: "help" }, "A student who walks in just joins a fam: nothing to change here."));
+
+  // Someone has to leave.
+  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
+  const leave = (kind: "host" | "fam") => {
+    const options = kind === "host"
+      ? ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts)).map((r) => [r.host_id, hostLabelRow(r.host_id)])
+      : ev.fams.filter((r) => r.fam_id && r.fam_label && !(r.fam_id in ev.cancelFams)).map((r) => [r.fam_id, r.fam_label]);
+    const who = h("select", { "aria-label": kind === "host" ? "Alum who has to leave" : "Fam that has to leave" },
+      h("option", { value: "" }, kind === "host" ? "Choose an alum…" : "Choose a fam…"), options.map(([id, l]) => h("option", { value: id }, l))) as HTMLSelectElement;
+    const from = h("select", { "aria-label": kind === "host" ? "Alum misses from round" : "Fam misses from round" },
+      openRounds.map((r) => h("option", { value: r, selected: r === cur }, `from round ${r}`))) as HTMLSelectElement;
+    return h("div", { className: "row leave" }, who, from,
+      h("button", { className: "button", onclick: () => {
+        if (!who.value) return;
+        night.confirm = { kind, id: who.value, label: who.selectedOptions[0].textContent ?? "", first: Number(from.value), noShow: false };
+        nightRefresh();
+      } }, kind === "host" ? "Alum can't stay" : "Fam can't stay"));
+  };
+  const c = night.confirm;
+  const confirm = c ? h("div", { className: "panel confirm", role: "alertdialog" },
+    h("p", {}, c.noShow ? `${c.label} didn't show up. Cancel them from round ${c.first}?` : `Cancel ${c.label} from round ${c.first}` + (c.first < p.rounds ? " on?" : "?")),
+    h("div", { className: "row" },
+      h("button", { className: "button primary big", onclick: () => {
+        if (c.kind === "host") cancelHost(ev, c.id, c.first, now(), c.noShow);
+        else cancelFam(ev, c.id, c.first, now());
+        night.confirm = null;
+        nightRefresh();
+      } }, "Yes, cancel"),
+      h("button", { className: "button big", onclick: () => { night.confirm = null; nightRefresh(); } }, "No"))) : null;
+
+  // A late alum.
+  const lateBox = night.late ? (() => {
+    const table = h("input", { type: "text", "aria-label": "Host table name", placeholder: "Host table name, for example Real Estate" }) as HTMLInputElement;
+    const person = h("input", { type: "text", "aria-label": "Alum's name", placeholder: "Alum's name" }) as HTMLInputElement;
+    const tags = h("input", { type: "text", "aria-label": "Tags", placeholder: "Tags, for example finance; real estate" }) as HTMLInputElement;
+    const from = h("select", { "aria-label": "Joins from round" }, openRounds.map((r) => h("option", { value: r }, `Joins from round ${r}`))) as HTMLSelectElement;
+    return h("div", { className: "panel" },
+      h("h3", {}, "Add a late alum"),
+      table, person, tags, from,
+      night.lateProblem ? h("div", { className: "msg error" }, night.lateProblem) : null,
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: () => {
+          night.lateProblem = addLateHost(ev, { table: table.value, person: person.value, tags: tags.value, from: Number(from.value) }, now());
+          if (!night.lateProblem) night.late = false;
+          nightRefresh();
+        } }, "Add"),
+        h("button", { className: "button", onclick: () => { night.late = false; night.lateProblem = ""; nightRefresh(); } }, "Cancel")));
+  })() : h("button", { className: "button wide", onclick: () => { night.late = true; nightRefresh(); } }, "An alum arrived late, or a new one came");
+
+  replace(app, h("main", { className: "night-mode", id: "main" },
+    h("div", { className: "night-bar" },
+      h("div", {}, h("strong", {}, ev.title), " ", h("span", { id: "night-clock", className: "help" }, now())),
+      exit),
+    h("section", { className: "panel round-now" },
+      h("p", { className: "big-round" }, `Round ${cur} of ${p.rounds}`),
+      last ? h("p", { className: "help" }, "Last round. Nobody moves after this one.")
+        : h("button", { className: "button primary big wide", onclick: () => {
+          finishRound(ev, now());
+          night.justFinished = ev.finished;
+          nightRefresh();
+        } }, `Round ${cur} is finished: hosts move now`),
+      night.justFinished === ev.finished && ev.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "help" }, `Round ${ev.finished} marked finished. `,
+        h("button", { className: "button link", onclick: () => {
+          ev.finished -= 1; night.justFinished = null;
+          logChange(ev, now(), `Round ${ev.finished + 1} un-finished.`);
+          nightRefresh();
+        } }, "Undo")) : null),
+    !current || err ? h("section", { className: "panel stale-panel" },
+      h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
+      h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {
+        const ok = await solve(true, "night");
+        if (ok) logChange(ev, now(), "Re-planned.");
+        nightRefresh();
+      } }, "Re-plan now"),
+      h("p", { id: "replan-status", className: "help" }),
+      err ? h("div", { className: "msg error", role: "alert" }, err) : null) : null,
+    current && ev.printed ? (() => {
+      const tell = tellPeople(p, ev.printed!);
+      return tell ? [tell, h("section", { className: "panel" }, reprintPanel(p, ev.printed!))] : null;
+    })() : null,
+    confirm,
+    h("section", { className: "panel" },
+      h("div", { className: "row spread" },
+        h("h2", {}, showRound === cur ? `Round ${cur}: who is where` : `Next, round ${showRound}`),
+        last ? null : h("button", { className: "button small", onclick: () => { night.showNext = !night.showNext; nightRefresh(); } },
+          night.showNext ? `Show round ${cur}` : `Show round ${cur + 1}`)),
+      current ? null : h("p", { className: "help warn-text" }, "Old schedule: re-plan to see the changes."),
+      h("ul", { className: "now-list" }, rows)),
+    h("section", { className: "panel" }, h("h2", {}, "Where is…"), search, results),
+    checkIn,
+    h("section", { className: "panel" },
+      h("h2", {}, "Someone has to leave"),
+      openRounds.length ? [leave("host"), leave("fam")] : h("p", { className: "help" }, "Every round is finished."),
+      h("p", { className: "help" }, "Then tap Re-plan now at the top. Finished rounds never change.")),
+    h("section", { className: "panel" }, lateBox),
+    h("details", { className: "panel" }, h("summary", {}, `Tonight's log (${ev.nightLog.length})`),
+      ev.nightLog.length ? h("ul", {}, [...ev.nightLog].reverse().map((e) => h("li", {}, `${e.at}  ${e.text}`))) : h("p", { className: "help" }, "Nothing yet.")),
+    h("p", { className: "help" }, "Everything you do here is saved in this browser as you go. Keep the event file too: Back to planning, then Save event file."),
+  ));
+}
+
 // ----------------------------------------------------------------------
 // Page.
 // ----------------------------------------------------------------------
@@ -922,7 +1131,7 @@ const START_HERE = [
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
-  "**6. On the night.** If someone cancels: set **Rounds already finished**, click **Cancel host** or **Cancel fam**, then **Re-plan**. Reprint only the pages listed under **Reprint**.",
+  "**6. On the night.** Click **Open night mode** (under the schedule). It shows the round, who is where, and check-in, and works on a phone. When someone cancels, doesn't show, or arrives late, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint.",
   "**7. Next year.** Click **Hand off to next year** for a copy without student names or the night's changes.",
 ];
 
@@ -1009,11 +1218,17 @@ function boot(): void {
     ev = practiceEvent();
     ui.savedHash = fileHash(ev);
   }
-  renderShell();
-  renderTopNote();
-  renderTables();
-  refresh();
+  let mode = "";
+  try { mode = localStorage.getItem(MODE_KEY) ?? ""; } catch { /* the planning screen is the default */ }
+  if (mode === "night" && ev.plan) setNightMode(true);
+  else {
+    renderShell();
+    renderTopNote();
+    renderTables();
+    refresh();
+  }
   getHighs().catch(() => {
+    if (night.on) return; // night mode shows the error when a re-plan is tried
     note("checks", "error", "The schedule solver could not load. Check your internet connection and reload the page.");
     renderChecks();
   });
