@@ -91,7 +91,7 @@ class Schedule:
 
     assignments: list[Assignment] = field(default_factory=list)
     total_score: int = 0
-    objective_bound: int | None = None  # OR-Tools' proof of optimality
+    objective_bound: int | None = None  # equals total_score when optimality is proven
     solver_runtime_s: float = 0.0
 
     def by_round(self, round_number: int) -> list[Assignment]:

@@ -1,9 +1,11 @@
 """rotation_optimizer: find the best rotation schedule for networking events.
 
 Public API:
-    Host, GuestGroup, Schedule, Assignment  — data models
-    tag_overlap_score                        — default scorer
-    solve                                    — CP-SAT solver entry point
+    Host, GuestGroup, Schedule, Assignment: data models
+    tag_overlap_score: default scorer
+    build_score_matrix: precomputed scores for every host-group pair
+    solve: CP-SAT solver entry point
+    InfeasibleProblemError: raised when the constraints cannot be met
 """
 
 from .models import Assignment, GuestGroup, Host, Schedule

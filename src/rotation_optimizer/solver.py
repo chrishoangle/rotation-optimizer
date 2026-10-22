@@ -22,18 +22,13 @@ Find an assignment x[h, g, r] ∈ {0, 1} such that:
 Maximizing:
          Σ_{h,g,r} s[h, g] * x[h, g, r]
 
-WHY CP-SAT INSTEAD OF ILP (e.g., PuLP + CBC/GLPK)?
---------------------------------------------------
-This is a pure combinatorial problem with no continuous variables and all
-integer coefficients. CP-SAT's lazy clause generation and no-good learning
-handle the no-repeat constraint (C3) more efficiently than branch-and-bound
-on an ILP relaxation, which has to re-derive the same combinatorial structure
-through cutting planes. Empirically CP-SAT also returns an optimality proof
-(objective_bound == objective) on problems this size in well under a second,
-which the demo relies on for its correctness guarantee.
-
-For R=2 and H=G=10 the search space is 10! * 9! ≈ 1.3 × 10^12 round-pairs,
-tiny for CP-SAT and solved to proven optimality instantly.
+WHY CP-SAT
+----------
+Every variable is boolean and every coefficient is an integer, so the model
+fits CP-SAT without scaling. CP-SAT also reports a best objective bound. When
+the bound equals the returned score, the schedule is proven optimal. See
+docs/algorithm.md for measured runtimes and the problem sizes where that
+proof arrives in under one second.
 """
 
 from __future__ import annotations

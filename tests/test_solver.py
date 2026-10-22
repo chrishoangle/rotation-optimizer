@@ -116,7 +116,7 @@ def test_solver_proves_optimality_on_realistic_size():
     ]
     schedule = solve(hosts, groups, rounds=2)
     assert schedule.total_score == schedule.objective_bound, (
-        "solver did not prove optimality on a 6x6x2 problem — formulation "
+        "solver did not prove optimality on a 6x6x2 problem: formulation "
         "may be inefficient"
     )
 

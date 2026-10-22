@@ -5,9 +5,9 @@ integer score matrix; the semantics of "match quality" live here. This means
 you can swap in a different scoring function (e.g., sentence embeddings)
 without touching the optimization layer.
 
-The default scorer uses weighted tag overlap with a saturation term, which
-rewards precise matches without letting a host with many generic tags
-dominate every slot.
+The default scorer is scaled Jaccard overlap between a host's tags and a
+group's interests. Dividing by the union keeps a host with many tags from
+scoring high against every group just by having more tags.
 """
 
 from __future__ import annotations
@@ -28,14 +28,15 @@ class Scorer(Protocol):
 
 
 def tag_overlap_score(host: Host, group: GuestGroup, *, scale: int = 100) -> int:
-    """Default scorer: scaled Jaccard-like overlap with a precision bonus.
+    """Default scorer: round(scale * |T ∩ I| / |T ∪ I|), with scale = 100.
 
-    The raw signal is |host.tags ∩ group.interests|. To normalize across
-    hosts with different tag-set sizes, we divide by |host.tags ∪ group.interests|
-    (classic Jaccard), then scale to an integer so the solver can work with it.
+    T is host.tags and I is group.interests. The result is 0 when either set
+    is empty. Rounding uses Python's built-in round, which sends exact halves
+    to the nearest even integer. The score is an integer because CP-SAT
+    works on integers.
 
-    An empty intersection returns 0, not an error — unrelated host/group pairs
-    are legal in the schedule, they just contribute nothing to the objective.
+    An empty intersection returns 0, not an error. Unrelated host-group pairs
+    are legal in the schedule. They contribute nothing to the objective.
     """
     if not host.tags or not group.interests:
         return 0
@@ -58,8 +59,8 @@ def build_score_matrix(
     """Precompute scores for every (host, group) pair.
 
     Returned as a dict rather than a list-of-lists so the solver can index by
-    stable string ids rather than list position — safer when hosts or groups
-    get added/removed between runs.
+    stable string ids rather than list position. This is safer when hosts or
+    groups get added or removed between runs.
     """
     return {
         (h.host_id, g.group_id): scorer(h, g)
