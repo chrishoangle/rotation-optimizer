@@ -52,6 +52,7 @@ def solve(
     *,
     scorer: Scorer = tag_overlap_score,
     time_limit_s: float = 30.0,
+    num_workers: int | None = None,
 ) -> Schedule:
     """Return the optimal (or best-found) rotation schedule.
 
@@ -62,6 +63,11 @@ def solve(
 
     Raises InfeasibleProblemError if preconditions fail or the solver
     cannot find any feasible assignment within time_limit_s.
+
+    A problem can have several optimal schedules with the same score. With
+    OR-Tools' default parallel search, which one is returned can change from
+    run to run. Pass num_workers=1 for a single-threaded search that returns
+    the same schedule on every run with the same OR-Tools version.
     """
     H = len(hosts)
     G = len(groups)
@@ -117,6 +123,8 @@ def solve(
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_s
+    if num_workers is not None:
+        solver.parameters.num_workers = num_workers
     start = time.perf_counter()
     status = solver.Solve(model)
     elapsed = time.perf_counter() - start
