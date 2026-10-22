@@ -314,3 +314,23 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     assert p.evaluate("document.documentElement.scrollWidth") <= 390
     button(p, "Back to planning").click()
     p.wait_for_selector("text=1. Host tables")
+
+
+def test_why_a_pairing_and_choosing_a_different_host(page):
+    p = page
+    find(p)
+    assert re.search(r"Pairings that share an interest\s+18 of 20", text(p))
+    row = p.locator("table.schedule tbody tr", has_text="Bio & Chem").first
+    row.get_by_role("button", name="Why?").click()
+    why = p.inner_text(".why")
+    assert "Bio & Chem both list" in why or "shares none of Bio & Chem" in why
+    pick = p.get_by_label("Host for Bio & Chem in round 1")
+    current = pick.evaluate("s => s.value")
+    other = pick.evaluate("(s, cur) => [...s.options].map(o => o.value).find(v => v !== cur)", current)
+    pick.select_option(other)
+    button(p, "Use this host").click()
+    p.wait_for_selector("text=kept as a must meet rule")
+    assert "Bio & Chem" in p.eval_on_selector_all('table[data-table="rules"] select[data-col="fam"]', "ss => ss.map(s => s.value).join()")
+    button(p, "Undo").click()
+    p.wait_for_selector("text=Undone: the rule is removed")
+    assert "Bio & Chem" not in p.eval_on_selector_all('table[data-table="rules"] select[data-col="fam"]', "ss => ss.map(s => s.value).join()")

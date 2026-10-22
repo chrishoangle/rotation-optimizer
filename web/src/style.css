@@ -164,3 +164,8 @@ main.night-mode { max-width: 720px; margin: 0 auto; padding: 1rem 1rem 4rem; }
   .now-list .who { grid-column: 2; }
   .big-round { font-size: 1.6rem; }
 }
+table.plain.schedule tr.weak td:nth-child(3), table.plain.schedule tr.weak td:nth-child(4) { color: var(--warn); font-weight: 600; }
+table.plain.schedule tr.explain td { background: var(--info-bg); }
+.why p { margin: .3rem 0; }
+.why .row { align-items: end; }
+.why .field { flex: 1 1 18rem; margin: .3rem 0; }

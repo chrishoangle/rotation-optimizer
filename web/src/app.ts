@@ -12,12 +12,13 @@ import {
   removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
 } from "./event";
 import {
-  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, scheduleRows, seatingChartHtml, tableNumbers, tableTentsHtml,
+  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, seatingChartHtml, tableNumbers, tableTentsHtml,
 } from "./export";
 import {
   EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
   reprintList, slotText, weakCount,
 } from "./planning";
+import { explainPairing, sharedPairings } from "./explain";
 import { changeSlipsHtml, movesBetween } from "./moves";
 import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
 import { parsePasted } from "./paste";
@@ -54,13 +55,15 @@ interface Ui {
   unfinish: number | null;
   restored: string;
   solving: boolean;
+  explain: { round: number; famId: string } | null;
+  pinned: { rule: CleanRow; text: string } | null;
 }
 
 let ev: EventState;
 let highs: HighsLike | null = null;
 const ui: Ui = {
   savedHash: "", savedAt: "", notes: {}, pending: {}, undo: null, confirmStart: null, confirmCancel: null,
-  solveError: null, tab: 1, unfinish: null, restored: "", solving: false,
+  solveError: null, tab: 1, unfinish: null, restored: "", solving: false, explain: null, pinned: null,
 };
 
 function practiceEvent(): EventState {
@@ -695,14 +698,11 @@ function renderSchedule(): void {
   const notes = p.warnings.filter((w) => !w.startsWith("Fairness check"));
   const unmatched = unmatchedShare(p);
   const pairings = p.assignments.length + openSlots(p).length;
-  const rows = scheduleRows(p);
   ui.tab = Math.min(ui.tab, p.rounds + 1);
   const tabs = h("div", { className: "tabs", role: "tablist" },
     [...Array.from({ length: p.rounds }, (_, i) => `Round ${i + 1}`), "Host view"].map((label, i) =>
       h("button", { role: "tab", "aria-selected": ui.tab === i + 1 ? "true" : "false", className: "tab", onclick: () => { ui.tab = i + 1; steady(renderSchedule); } }, label)));
-  const tabBody = ui.tab <= p.rounds
-    ? dataTable(rows.filter((r) => r.round === ui.tab).map(({ round: _r, ...rest }) => rest), NAMES)
-    : dataTable(hostViewRows(p), NAMES);
+  const tabBody = ui.tab <= p.rounds ? roundTable(p, ui.tab, current) : dataTable(hostViewRows(p), NAMES);
   const printouts: [string, string, () => string, string][] = [
     ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title), "One page per round for the room, then a find-your-table page."],
     ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title), "Half a page per host: where to go each round and what to talk about."],
@@ -719,10 +719,13 @@ function renderSchedule(): void {
       current ? null : h("p", {}, h("strong", {}, "Not current. "), "This is the old schedule, shown for reference only."),
       h("p", {}, "Planned for ", h("strong", {}, `${p.rounds} round${p.rounds !== 1 ? "s" : ""}`), `, ${p.fams.length} fams and ${p.hosts.length} host tables.`),
       h("div", { className: "metrics" },
-        metric("Total match score", String(p.totalScore), "The sum of every pairing's score. Higher is better."),
+        metric("Pairings that share an interest", `${sharedPairings(p)[0]} of ${sharedPairings(p)[1]}`, "A pairing shares an interest when the host and the fam list at least one of the same words. Open tables count as not sharing."),
         metric("Proven best possible", provenOptimal(p) ? "Yes" : "Not proven", "Yes means no other schedule with these tables and rules scores higher."),
-        metric("Weak pairings", String(weakCount(p)), "Pairings where the host and fam share no tags, plus rounds where a fam has no host.")),
-      h("p", { className: "help" }, `In a good plan most pairings share at least one tag. Here ${weakCount(p)} of ${pairings} share none` + (openSlots(p).length ? " or have no host." : ".")),
+        metric("Total match score", String(p.totalScore), "The sum of every pairing's score. Only useful to compare two plans for the same event.")),
+      h("p", { className: "help" }, `In a good plan most pairings share at least one interest. Here ${weakCount(p)} of ${pairings} share none` + (openSlots(p).length ? " or have no host." : ".") +
+        " Click Why? next to any pairing to see the reason, or to choose a different host."),
+      ui.pinned ? h("div", { className: "msg ok row spread" }, ui.pinned.text,
+        h("button", { className: "button", onclick: undoPin }, "Undo")) : null,
       fairness.length ? h("details", {}, h("summary", {}, `Fairness: ${fairness.length} thing${fairness.length !== 1 ? "s" : ""} to look at`),
         fairness.map((w) => h("p", {}, w.replace(/^Fairness check: /, "")))) : null,
       h("details", { open: unmatched > 0.3 }, h("summary", {}, "Notes on tags"),
@@ -745,6 +748,78 @@ function renderSchedule(): void {
             : ev.printed ? "Printed version marked. Changes below are listed against it." : "Not marked as printed yet. Click Mark as printed after you print."))),
     ] : null,
   );
+}
+
+function roundTable(p: EventPlan, round: number, current: boolean): HTMLElement {
+  const tables = tableNumbers(p);
+  const fams = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
+  const body: HTMLElement[] = [];
+  for (const f of fams) {
+    const a = p.assignments.find((x) => x.round === round && x.groupId === f.groupId);
+    const open = ui.explain && ui.explain.round === round && ui.explain.famId === f.groupId;
+    body.push(h("tr", { className: a && a.score > 0 ? "" : "weak" },
+      h("td", {}, String(tables[f.groupId])), h("td", {}, f.name), h("td", {}, slotText(p, round, f.groupId)), h("td", {}, a ? String(a.score) : "0"),
+      h("td", {}, h("button", { className: "button small", "aria-expanded": open ? "true" : "false", onclick: () => {
+        ui.explain = open ? null : { round, famId: f.groupId };
+        steady(renderSchedule);
+      } }, open ? "Close" : "Why?"))));
+    if (open) body.push(h("tr", { className: "explain" }, h("td", { colSpan: 5 }, explainPanel(p, round, f.groupId, current))));
+  }
+  return h("div", { className: "scroll" }, h("table", { className: "plain schedule" },
+    h("thead", {}, h("tr", {}, ["Table", "Fam", "Host table", "Score", ""].map((c) => h("th", {}, c)))), h("tbody", {}, body)));
+}
+
+function explainPanel(p: EventPlan, round: number, famId: string, current: boolean): HTMLElement {
+  const x = explainPairing(p, round, famId);
+  const pick = h("select", { "aria-label": `Host for ${famName(p, famId)} in round ${round}` },
+    x.options.map((o) => h("option", { value: o.hostId, selected: o.current }, `${o.label}: score ${o.score}, ${o.where}`))) as HTMLSelectElement;
+  return h("div", { className: "why" },
+    x.lines.map((l) => h("p", {}, l)),
+    current && !ev.plan!.lockedRounds.includes(round) && round > ev.finished ? h("div", { className: "row" },
+      h("label", { className: "field" }, h("span", { className: "label" }, `Choose the host for round ${round}`), pick),
+      h("button", { className: "button primary", onclick: () => pinHost(round, famId, pick.value) }, "Use this host")) :
+      h("p", { className: "help" }, round <= ev.finished ? "This round already happened." : "Re-plan first, then you can choose a host here."),
+    h("p", { className: "help" }, "Choosing a host adds a must meet rule for this round under Pairing rules, and re-plans everything else around it."));
+}
+
+async function pinHost(round: number, famId: string, hostId: string): Promise<void> {
+  const p = ev.plan!;
+  const host = p.hosts.find((x) => x.hostId === hostId)!;
+  const fam = p.fams.find((x) => x.groupId === famId)!;
+  if (p.assignments.some((a) => a.round === round && a.groupId === famId && a.hostId === hostId)) { ui.explain = null; steady(renderSchedule); return; }
+  const before = { score: p.totalScore, shared: sharedPairings(p) };
+  const rule: CleanRow = { rule: "must meet", host_table: host.name, fam: fam.name, rounds: String(round) };
+  ev.rules.push(rule);
+  const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
+  if (!ok) {
+    const why = ui.solveError?.text ?? "";
+    ev.rules = ev.rules.filter((r) => r !== rule);
+    ui.solveError = null;
+    note("schedule", "error", `${host.name} cannot meet ${fam.name} in round ${round}: ${why}`);
+    refresh({ tables: true });
+    return;
+  }
+  const q = ev.plan!;
+  ui.explain = null;
+  ui.pinned = {
+    rule,
+    text: `Done: ${host.name} meets ${fam.name} in round ${round}, kept as a must meet rule. ` +
+      `Pairings that share an interest: ${before.shared[0]} of ${before.shared[1]} before, ${sharedPairings(q)[0]} of ${sharedPairings(q)[1]} now. ` +
+      `Match score ${before.score} before, ${q.totalScore} now.`,
+  };
+  refresh({ tables: true });
+}
+
+async function undoPin(): Promise<void> {
+  const pin = ui.pinned;
+  if (!pin) return;
+  const same = (r: CleanRow) => r.rule === pin.rule.rule && r.host_table === pin.rule.host_table && r.fam === pin.rule.fam && r.rounds === pin.rule.rounds;
+  const i = ev.rules.findIndex(same);
+  if (i >= 0) ev.rules.splice(i, 1);
+  ui.pinned = null;
+  const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
+  if (ok) note("schedule", "ok", "Undone: the rule is removed and the schedule is re-planned.");
+  refresh({ tables: true });
 }
 
 function metric(label: string, value: string, help: string): HTMLElement {
