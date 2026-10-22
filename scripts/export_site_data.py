@@ -36,17 +36,20 @@ def load_example():
 
 
 def find_bottleneck(host_ids, fam_ids, scores, rounds):
-    """Return the smallest set of fams that cannot all avoid a zero-score slot.
+    """Return the set of fams with the largest shortfall of nonzero visits.
 
     Each fam needs `rounds` visits from distinct hosts that score above zero
     with it. A host can make at most `rounds` visits in total, and at most one
     to any single fam. So a set of fams S can receive at most
     sum over hosts h of min(rounds, number of fams in S that h scores above
     zero with). If that capacity is below rounds * |S|, some fam in S must
-    get a zero-score slot in every feasible schedule. This is the cut
-    condition of the matching flow, checked by brute force over all subsets.
+    get a zero-score slot in every feasible schedule. The shortfall, demand
+    minus capacity, is a lower bound on the number of zero-score slots in any
+    feasible schedule. All subsets are checked by brute force, and the
+    smallest subset with the largest shortfall is returned.
     """
     nonzero = {f: [h for h in host_ids if scores[h, f] > 0] for f in fam_ids}
+    best = None
     for size in range(1, len(fam_ids) + 1):
         for subset in combinations(fam_ids, size):
             capacity = {}
@@ -55,22 +58,24 @@ def find_bottleneck(host_ids, fam_ids, scores, rounds):
                 if reach:
                     capacity[h] = min(rounds, reach)
             demand = rounds * len(subset)
-            if sum(capacity.values()) < demand:
-                return {
+            shortfall = demand - sum(capacity.values())
+            if shortfall > 0 and (best is None or shortfall > best["shortfall"]):
+                best = {
                     "fams": list(subset),
                     "nonzero_hosts": {f: nonzero[f] for f in subset},
                     "host_capacity": capacity,
                     "demand": demand,
                     "capacity": sum(capacity.values()),
+                    "shortfall": shortfall,
                 }
-    return None
+    return best
 
 
 def build_site_data() -> dict:
     ex = load_example()
     hosts, fams = ex.HOSTS, ex.FAMS
     scores = build_score_matrix(hosts, fams)
-    schedule = solve(hosts, fams, rounds=ROUNDS)
+    schedule = solve(hosts, fams, rounds=ROUNDS, num_workers=1)
 
     totals = schedule.per_group_scores()
     ordered = sorted(totals.values())
@@ -78,6 +83,13 @@ def build_site_data() -> dict:
 
     host_ids = [h.host_id for h in hosts]
     fam_ids = [f.group_id for f in fams]
+    hand = [
+        {"round": r, "host": h, "fam": f, "score": scores[h, f]}
+        for r, rnd in sorted(ex.HAND_SCHEDULE.items())
+        for f, h in sorted(rnd.items())
+    ]
+    hand_total = sum(a["score"] for a in hand)
+    bottleneck = find_bottleneck(host_ids, fam_ids, scores, ROUNDS)
     return {
         "meta": {
             "python": platform.python_version(),
@@ -90,6 +102,11 @@ def build_site_data() -> dict:
             "proven_optimal": schedule.total_score == schedule.objective_bound,
             "runtime_s": round(schedule.solver_runtime_s, 3),
             "admits": sum(f.size for f in fams),
+            "hand_total": hand_total,
+            "hand_zeros": sum(1 for a in hand if a["score"] == 0),
+            "solver_zeros": sum(1 for a in schedule.assignments if a.score == 0),
+            "min_zero_slots": bottleneck["shortfall"] if bottleneck else 0,
+            "gap_pct": round(100 * (schedule.total_score - hand_total) / schedule.total_score, 1),
         },
         "hosts": [
             {"id": h.host_id, "theme": h.theme, "tags": sorted(h.tags)} for h in hosts
@@ -111,7 +128,8 @@ def build_site_data() -> dict:
         ],
         "fam_totals": {f: totals[f] for f in fam_ids},
         "median_fam_total": median,
-        "bottleneck": find_bottleneck(host_ids, fam_ids, scores, ROUNDS),
+        "hand": hand,
+        "bottleneck": bottleneck,
     }
 
 

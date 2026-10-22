@@ -34,20 +34,27 @@ The first lines of output:
 
 ```
 ========================================================================
-Total match score: 374
-Objective bound:   374 (PROVED OPTIMAL)
-Solver runtime:    0.009 s
+Total match score: 341
+Objective bound:   341 (PROVED OPTIMAL)
+Solver runtime:    0.011 s
 ========================================================================
 ```
 
 `PROVED OPTIMAL` is printed only when the solver's objective bound equals
 the score of the schedule it returned. That equality is the proof that no
 better schedule exists under the constraints. The script then prints both
-rounds and each fam's total score across the night.
+rounds, each fam's total score across the night, and a comparison with the
+rotation built by hand for the real event. That hand schedule follows all
+three rules and scores 309 with three zero-score slots. The solver's
+schedule scores 341 with two, the fewest any schedule can have.
+
+The example solves with `num_workers=1`. The event has several optimal
+schedules with the same score, and a single-threaded search returns the
+same one on every run, so the printed schedule is reproducible.
 
 Measured on: H = 10, G = 10, R = 2; Python 3.10.12; OR-Tools 9.15.6755;
 a 4 vCPU aarch64 Linux VM on an Apple Silicon MacBook Pro. Runtime was
-0.009 s in each of 5 runs.
+0.011 s in each of 5 runs.
 
 Run the tests:
 

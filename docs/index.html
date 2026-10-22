@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rotation Optimizer: Christopher Le</title>
-<meta name="description" content="A CP-SAT solver that finds the proven-optimal rotation schedule for a networking dinner, and the zero-score slot no schedule can avoid.">
-<meta property="og:title" content="The optimal schedule gave one table nothing.">
+<meta name="description" content="A CP-SAT solver that finds the proven-optimal rotation schedule for a networking dinner, compared with the schedule built by hand for the real event.">
+<meta property="og:title" content="Even the optimal schedule leaves two tables with nothing.">
 <meta property="og:description" content="A CP-SAT rotation scheduler built from a real alumni dinner. Proven optimal in milliseconds.">
 <meta property="og:type" content="website">
 <style>
@@ -138,10 +138,11 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
 <main>
 <section><div class="wrap">
   <p class="kicker">Constraint programming · Python · OR-Tools CP-SAT · GitHub Actions</p>
-  <h1>The optimal schedule gave one table nothing.</h1>
-  <p class="lede">At a real alumni dinner, ten career-themed host tables rotated between ten fams of admitted transfer students over two rounds. This solver finds the rotation that maximizes career-interest alignment and proves no better one exists. Even the best schedule leaves one fam with a host who shares none of its interests for one round. No schedule can avoid that.</p>
+  <h1>Even the optimal schedule leaves two tables with nothing.</h1>
+  <p class="lede">At a real alumni dinner, ten career-themed host tables rotated between ten fams of admitted transfer students over two rounds. I built that rotation by hand. This solver finds the rotation that maximizes career-interest alignment and proves no better one exists. In the best schedule, two fams each spend one round with a host who shares none of their interests. A counting argument shows no schedule can do better than two.</p>
   <p class="stats">
-    Score <b><span data-k="total_score">374</span></b>, bound <b><span data-k="objective_bound">374</span></b>, proven optimal in <b><span data-k="runtime_s">0.009</span> s</b>
+    Solver: score <b><span data-k="total_score">341</span></b>, bound <b><span data-k="objective_bound">341</span></b>, proven optimal in <b><span data-k="runtime_s">0.011</span> s</b>
+    · Hand schedule from the night: <b><span data-k="hand_total">309</span></b>
     · <b><span data-k="H">10</span></b> hosts, <b><span data-k="G">10</span></b> fams, <b><span data-k="R">2</span></b> rounds, <b><span data-k="admits">67</span></b> admits
     · tests in CI on Python 3.10 and 3.12
   </p>
@@ -157,7 +158,7 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
   <div class="three">
     <div class="card"><div class="label">Problem</div><p>Hosts rotate, fams stay seated, and no fam may meet the same host twice. A strong pairing used in round 1 is gone for round 2, so the schedule has to be planned as a whole.</p></div>
     <div class="card"><div class="label">Built</div><p>A CP-SAT model with three constraints and a tag-overlap score. The solver returns a schedule plus a bound, and equal values prove optimality.</p></div>
-    <div class="card"><div class="label">Found</div><p>Four fams draw on the same four hosts for every nonzero match. Counting visits shows at least one zero-score slot is forced, in any schedule.</p></div>
+    <div class="card"><div class="label">Found</div><p>The hand schedule used on the night scored 309 with three zero-score slots. The solver scores 341 with two, and two is the fewest any schedule can have.</p></div>
   </div>
 </div></section>
 
@@ -174,14 +175,15 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
 
 <section id="build"><div class="wrap">
   <h2>Build it by hand</h2>
-  <p>This is how the real dinner was scheduled: by hand. Pick a host for each fam in each round. The score next to each host is its match score with that fam. A host can sit at one table per round, and no fam can see the same host twice.</p>
+  <p>This is how the real dinner was scheduled: by hand. Load the rotation used on the night, or start from scratch. Pick a host for each fam in each round. The score next to each host is its match score with that fam. A host can sit at one table per round, and no fam can see the same host twice.</p>
   <div class="scorebar">
     <div><div class="big"><span id="yourScore">0</span> <small>your score</small></div></div>
-    <div><div class="big"><span data-k="total_score">374</span> <small>proven maximum</small></div></div>
+    <div><div class="big"><span data-k="total_score">341</span> <small>proven maximum</small></div></div>
     <div><div class="big"><span id="filled">0</span><small> / 20 slots</small></div></div>
   </div>
   <div id="status" class="status" aria-live="polite">Pick hosts to start.</div>
   <div class="controls">
+    <button class="btn ghost" type="button" id="showHand">Load the night's hand schedule</button>
     <button class="btn ghost" type="button" id="showSolver">Show the solver's schedule</button>
     <button class="btn ghost" type="button" id="clear">Clear</button>
   </div>
@@ -192,18 +194,18 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
 </div></section>
 
 <section id="zero"><div class="wrap">
-  <h2>Why one zero is forced</h2>
-  <p>In the solver's schedule, the <b id="zeroFam">Public Affairs &amp; Communications fam</b> gets the <b id="zeroHost">Pharmacy</b> table in round 2, a score of <span class="zero">0</span>. That looks like a solver mistake. It is not, and a short count shows why.</p>
+  <h2>Why two zeros are forced</h2>
+  <p>The solver's schedule has two zero-score slots: <span id="zeroList">two fams each meet a host who shares none of their interests</span>. That looks like a solver mistake. It is not, and a short count shows why.</p>
   <p>Each fam needs two visits, from two different hosts. The table below lists four fams and every host that scores above zero with each of them.</p>
   <div class="scroll"><table id="bottleneck">
     <thead><tr><th>Fam</th><th>Hosts scoring above zero</th></tr></thead>
     <tbody></tbody>
   </table></div>
-  <p style="margin-top:16px" id="countText">These four fams need 8 nonzero visits. Only four hosts can supply them. Each host makes at most two visits in total, and at most one to any single fam. The Pharmacy table matches only one of the four fams, so it can supply one visit. That caps the supply at 7 visits for 8 slots.</p>
-  <p class="callout">At least one of these fams gets a zero-score slot in every feasible schedule. The test <code>test_no_feasible_schedule_avoids_a_zero_slot</code> confirms it: forbid every zero-score pairing, and CP-SAT reports the model infeasible.</p>
+  <p style="margin-top:16px" id="countText">These four fams need 8 nonzero visits. Each host makes at most two visits in total, and at most one to any single fam, so a host that matches only one of these fams can supply only one visit. Added up, the hosts can supply 6 visits for 8 slots.</p>
+  <p class="callout">So every feasible schedule has at least <span data-k="min_zero_slots">2</span> zero-score slots. The solver's schedule has exactly <span data-k="solver_zeros">2</span>. The hand schedule from the night had <span data-k="hand_zeros">3</span>. The test <code>test_min_zero_slots_is_tight</code> confirms the minimum with CP-SAT.</p>
 
   <h3 style="margin-top:34px">Per-fam totals in the optimal schedule</h3>
-  <p>Maximizing the sum is not the same as treating every fam well. The bars show each fam's two-round total. The dark mark is the median, <span data-k="median_fam_total">40</span>, and the orange mark is 60% of it, the line the example flags for coaching.</p>
+  <p>Maximizing the sum is not the same as treating every fam well. The bars show each fam's two-round total. The dark mark is the median, <span data-k="median_fam_total">38</span>, and the orange mark is 60% of it, the line the example flags for coaching.</p>
   <div class="bars" id="bars"></div>
   <div class="legend"><span>Dark mark: median</span><span>Orange mark: 60% of median</span><span>Orange bar: below 60% of median</span></div>
 </div></section>
@@ -219,19 +221,19 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
 
 <section id="scale"><div class="wrap">
   <h2>Where "under one second" holds</h2>
-  <p>The same 10 hosts and 10 fams, with more rounds. Measured by <code>benchmarks/rounds_sweep.py</code> with a 10 s limit on Python 3.10.12 and OR-Tools 9.15.6755, in a 4 vCPU aarch64 Linux VM on an Apple Silicon MacBook Pro. Results matched across two runs.</p>
+  <p>The same 10 hosts and 10 fams, with more rounds. Measured by <code>benchmarks/rounds_sweep.py</code> with a 10 s limit on Python 3.10.12 and OR-Tools 9.15.6755, in a 4 vCPU aarch64 Linux VM on an Apple Silicon MacBook Pro. Scores matched across two runs. The reported bound at 4 and 10 rounds varied between runs, which is expected when the solver stops at the limit.</p>
   <div class="scroll"><table>
     <thead><tr><th class="num">Rounds</th><th class="num">Score</th><th class="num">Bound</th><th>Proven optimal</th><th class="num">Runtime (s)</th></tr></thead>
     <tbody>
-      <tr><td class="num">1</td><td class="num">208</td><td class="num">208</td><td>yes</td><td class="num">0.005</td></tr>
-      <tr><td class="num">2</td><td class="num">374</td><td class="num">374</td><td>yes</td><td class="num">0.008</td></tr>
-      <tr><td class="num">3</td><td class="num">484</td><td class="num">484</td><td>yes</td><td class="num">0.046</td></tr>
-      <tr><td class="num">4</td><td class="num">538</td><td class="num">568</td><td>no, stopped at limit</td><td class="num">10.004</td></tr>
-      <tr><td class="num">5</td><td class="num">556</td><td class="num">556</td><td>yes</td><td class="num">2.148</td></tr>
-      <tr><td class="num">10</td><td class="num">574</td><td class="num">1403</td><td>no, stopped at limit</td><td class="num">10.004</td></tr>
+      <tr><td class="num">1</td><td class="num">193</td><td class="num">193</td><td>yes</td><td class="num">0.004</td></tr>
+      <tr><td class="num">2</td><td class="num">341</td><td class="num">341</td><td>yes</td><td class="num">0.008</td></tr>
+      <tr><td class="num">3</td><td class="num">442</td><td class="num">442</td><td>yes</td><td class="num">0.069</td></tr>
+      <tr><td class="num">4</td><td class="num">497</td><td class="num">526</td><td>no, stopped at limit</td><td class="num">10.005</td></tr>
+      <tr><td class="num">5</td><td class="num">515</td><td class="num">567</td><td>no, stopped at limit</td><td class="num">10.074</td></tr>
+      <tr><td class="num">10</td><td class="num">542</td><td class="num">1093</td><td>no, stopped at limit</td><td class="num">10.004</td></tr>
     </tbody>
   </table></div>
-  <p style="margin-top:16px">Proven optimality in under one second held for up to three rounds. At ten rounds every host meets every fam once, so every feasible schedule scores 574, yet the solver could not close the bound in 10 s. Why four rounds is harder than five has not been investigated.</p>
+  <p style="margin-top:16px">Proven optimality in under one second held for up to three rounds. At ten rounds every host meets every fam once, so every feasible schedule scores 542, yet the solver could not close the bound in 10 s.</p>
 </div></section>
 
 <section><div class="wrap">
@@ -239,7 +241,7 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
   <div class="three">
     <div class="card"><div class="label">Model</div><p>Boolean x[h, f, r]. C1: each host at one table per round. C2: each fam gets one host per round. C3: no host and fam pair repeats.</p></div>
     <div class="card"><div class="label">Proof</div><p>"Optimal" means the solver's objective bound equals the returned score. Anything less is reported as a gap, never as optimal.</p></div>
-    <div class="card"><div class="label">Tests</div><p>pytest checks C1 to C3, the proven optimum on the example, this page's numbers against a fresh solve, and the forced-zero claim.</p></div>
+    <div class="card"><div class="label">Tests</div><p>pytest checks C1 to C3, the proven optimum on the example, the hand schedule's score, this page's numbers against a fresh solve, and the forced-zero minimum.</p></div>
     <div class="card"><div class="label">Privacy</div><p>The example uses real fam profiles at the group level only. No alumni or admit names, employers, or contact details are in the repo.</p></div>
   </div>
 </div></section>
@@ -297,6 +299,11 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
       state[s.dataset.f + "|" + s.dataset.r] = s.value; update();
     });
     el("clear").addEventListener("click", function () { state = {}; syncSelects(); update(); });
+    el("showHand").addEventListener("click", function () {
+      state = {};
+      D.hand.forEach(function (a) { state[a.fam + "|" + a.round] = a.host; });
+      syncSelects(); update();
+    });
     el("showSolver").addEventListener("click", function () {
       state = {};
       D.optimal.forEach(function (a) { state[a.fam + "|" + a.round] = a.host; });
@@ -350,6 +357,8 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
       st.textContent = "Pick hosts to start.";
     } else if (filled < 20) {
       st.textContent = "No rule broken so far. " + (20 - filled) + " slots left.";
+    } else if (D.hand.every(function (a) { return state[a.fam + "|" + a.round] === a.host; })) {
+      st.textContent = "This is the rotation used on the night. It is valid and scores " + total + ", which is " + (D.meta.total_score - total) + " below the proven maximum.";
     } else if (total === D.meta.total_score) {
       st.className = "status good";
       st.textContent = "Valid schedule scoring " + total + ". That matches the proven maximum.";
@@ -407,12 +416,16 @@ footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
   }
 
   function buildZero() {
-    var z = D.optimal.filter(function (a) { return a.score === 0; })[0];
-    if (z) {
-      el("zeroFam").textContent = famById[z.fam].name;
-      el("zeroHost").textContent = hostById[z.host].theme;
+    var zs = D.optimal.filter(function (a) { return a.score === 0; });
+    if (zs.length) {
+      el("zeroList").innerHTML = zs.map(function (a) {
+        return "the <b>" + esc(famById[a.fam].name) + "</b> gets the <b>" + esc(hostById[a.host].theme) + "</b> table in round " + a.round;
+      }).join(", and ");
     }
     var b = D.bottleneck;
+    el("countText").textContent = "These " + b.fams.length + " fams need " + b.demand + " nonzero visits. Each host makes at most " + D.meta.R +
+      " visits in total, and at most one to any single fam, so a host that matches only one of these fams can supply only one visit. Added up, the hosts can supply " +
+      b.capacity + " visits for " + b.demand + " slots.";
     document.querySelector("#bottleneck tbody").innerHTML = b.fams.map(function (f) {
       var chips = b.nonzero_hosts[f].map(function (h) {
         var cls = b.host_capacity[h] < D.meta.R ? "chip one" : "chip";

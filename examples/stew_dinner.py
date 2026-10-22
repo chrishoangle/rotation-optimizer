@@ -19,6 +19,10 @@ from rotation_optimizer import GuestGroup, Host, solve
 # ----------------------------------------------------------------------
 # Hosts: career-themed tables.
 #
+# These are the ten host units that actually rotated on the night. Three
+# tables from the sign-up list did not rotate and are not modeled. The two
+# education hosts rotated separately, so they are two units here.
+#
 # Each entry represents one table hosted by one or two alums whose careers
 # share a theme. The tag list captures the kinds of questions a student at
 # that table could meaningfully ask. Pair structure (solo vs duo) matters
@@ -82,11 +86,10 @@ HOSTS = [
         "Nonprofit & Social Impact",
         [
             "nonprofit",
-            "fundraising",
+            "consulting",
             "advocacy",
             "education reform",
             "public service",
-            "development",
         ],
     ),
     Host.make(
@@ -129,15 +132,13 @@ HOSTS = [
     ),
     Host.make(
         "h09",
-        "Urban Planning & Public Service table",
-        "Urban Planning & Public Service",
+        "Academic Mentorship table",
+        "Academic Mentorship",
         [
-            "urban planning",
-            "public service",
-            "housing",
-            "humanities",
-            "policy",
-            "local government",
+            "academic advising",
+            "mentorship",
+            "higher education",
+            "student success",
         ],
     ),
     Host.make(
@@ -372,8 +373,37 @@ FAM_NOTES: dict[str, str] = {
 }
 
 
+# ----------------------------------------------------------------------
+# The rotation used on the night, built by hand before this solver existed.
+# Keys are rounds, then fam id to host id. Recorded at the theme level from
+# the event's rotation sheet; no names.
+# ----------------------------------------------------------------------
+
+HAND_SCHEDULE: dict[int, dict[str, str]] = {
+    1: {
+        "fam_01": "h10", "fam_02": "h01", "fam_03": "h09", "fam_04": "h04",
+        "fam_05": "h08", "fam_06": "h05", "fam_07": "h07", "fam_08": "h02",
+        "fam_09": "h06", "fam_10": "h03",
+    },
+    2: {
+        "fam_01": "h05", "fam_02": "h02", "fam_03": "h10", "fam_04": "h07",
+        "fam_05": "h06", "fam_06": "h09", "fam_07": "h03", "fam_08": "h08",
+        "fam_09": "h04", "fam_10": "h01",
+    },
+}
+
+
+def score_hand_schedule() -> tuple[int, int]:
+    """Return (total score, zero-score slots) for HAND_SCHEDULE."""
+    from rotation_optimizer import build_score_matrix
+
+    scores = build_score_matrix(HOSTS, FAMS)
+    slots = [scores[h, f] for rnd in HAND_SCHEDULE.values() for f, h in rnd.items()]
+    return sum(slots), sum(1 for s in slots if s == 0)
+
+
 def main() -> None:
-    schedule = solve(HOSTS, FAMS, rounds=2)
+    schedule = solve(HOSTS, FAMS, rounds=2, num_workers=1)
 
     print("=" * 72)
     print(f"Total match score: {schedule.total_score}")
@@ -412,6 +442,12 @@ def main() -> None:
             print(f"    - {fams_by_id[gid].name}  ({totals[gid]})")
     else:
         print("  No fams significantly below median.")
+
+    hand_total, hand_zeros = score_hand_schedule()
+    solver_zeros = sum(1 for a in schedule.assignments if a.score == 0)
+    print("\n--- Hand schedule from the night vs solver ---")
+    print(f"  Hand schedule: score {hand_total}, zero-score slots {hand_zeros}")
+    print(f"  Solver:        score {schedule.total_score}, zero-score slots {solver_zeros}")
 
 
 if __name__ == "__main__":

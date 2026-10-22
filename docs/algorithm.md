@@ -63,8 +63,8 @@ scaling or relaxation. CP-SAT also reports a best objective bound alongside
 the solution. When the bound equals the returned score, no better schedule
 exists. That equality is how this project defines "optimal."
 
-On the 10x10x2 STEW example, the solver returns a score of 374 with a bound
-of 374. The test
+On the 10x10x2 STEW example, the solver returns a score of 341 with a bound
+of 341. The test
 [`tests/test_example.py::test_example_proves_optimality`](../tests/test_example.py)
 checks this on every run, and
 [`test_example_solves_under_one_second`](../tests/test_example.py) checks the
@@ -87,24 +87,25 @@ The table below comes from
 [`benchmarks/rounds_sweep.py`](../benchmarks/rounds_sweep.py) on the STEW
 example with $H = G = 10$, a 10 s time limit, Python 3.10.12, and OR-Tools
 9.15.6755, run in a 4 vCPU aarch64 Linux VM on an Apple Silicon MacBook Pro.
-The results matched across two runs.
+The sweep uses OR-Tools' default parallel search. Scores matched across
+two runs. The reported bound at $R = 4$ and $R = 10$ varied between runs,
+which is expected when the solver stops at the time limit.
 
 | R  | Score | Bound | Proven optimal | Runtime (s) |
 |---:|------:|------:|:--------------:|------------:|
-| 1  | 208   | 208   | yes            | 0.005       |
-| 2  | 374   | 374   | yes            | 0.008       |
-| 3  | 484   | 484   | yes            | 0.046       |
-| 4  | 538   | 568   | no             | 10.004      |
-| 5  | 556   | 556   | yes            | 2.148       |
-| 10 | 574   | 1403  | no             | 10.004      |
+| 1  | 193   | 193   | yes            | 0.004       |
+| 2  | 341   | 341   | yes            | 0.008       |
+| 3  | 442   | 442   | yes            | 0.069       |
+| 4  | 497   | 526   | no             | 10.005      |
+| 5  | 515   | 567   | no             | 10.074      |
+| 10 | 542   | 1093  | no             | 10.004      |
 
-Proven optimality in under one second held for $R \leq 3$. At $R = 4$ the
-solver stopped at the time limit with a gap between score and bound. At
-$R = 10$ every host meets every group exactly once, so every feasible
-schedule scores the sum of the whole score matrix, 574. The solver found
-that schedule but could not close the bound within 10 s. Why the gap stays
-open there, and why $R = 5$ proves faster than $R = 4$, has not been
-investigated.
+Proven optimality in under one second held for $R \leq 3$. At $R = 4$ and
+$R = 5$ the solver stopped at the time limit with a gap between score and
+bound. At $R = 10$ every host meets every group exactly once, so every
+feasible schedule scores the sum of the whole score matrix, 542. The
+solver found that schedule but could not close the bound within 10 s. Why
+the gap stays open there has not been investigated.
 
 ## Scoring
 
@@ -133,8 +134,20 @@ The default objective maximizes the *sum* of scores. A schedule can be
 sum-optimal while leaving one group with two low-scoring matches. The
 `Schedule.per_group_scores` method surfaces this, and the STEW example
 flags groups scoring below 60% of the median. In the example's optimal
-schedule, the Public Affairs & Communications fam scores 18 in round 1 and
-0 in round 2, for a total of 18 against a median of 40.
+schedule with `num_workers=1`, the Public Affairs & Communications fam
+scores 8 in round 1 and 0 in round 2, for a total of 8 against a median of
+38. Only one host scores above zero with that fam, so a zero in one of its
+two rounds is unavoidable.
+
+Across all fams, a counting argument gives a lower bound on zero-score
+slots. A set of fams S needs $R \cdot |S|$ nonzero visits. Host h can
+supply at most $\min(R, n_h)$ of them, where $n_h$ is the number of fams in
+S that h scores above zero with, because no host visits a fam twice. For
+four of the example's fams, demand is 8 and supply is 6, so every feasible
+schedule has at least 2 zero-score slots. The solver's schedule has
+exactly 2, and the hand schedule used at the event had 3.
+[`tests/test_site_data.py::test_min_zero_slots_is_tight`](../tests/test_site_data.py)
+confirms the minimum of 2 with CP-SAT.
 
 For stronger fairness guarantees, a max-min objective is possible:
 

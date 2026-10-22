@@ -36,7 +36,7 @@ def example():
 
 @pytest.fixture(scope="module")
 def schedule(example) -> Schedule:
-    return solve(example.HOSTS, example.FAMS, rounds=ROUNDS)
+    return solve(example.HOSTS, example.FAMS, rounds=ROUNDS, num_workers=1)
 
 
 def test_example_is_10x10(example):
@@ -51,14 +51,14 @@ def test_example_proves_optimality(schedule):
 
 
 def test_example_matches_readme_score(schedule):
-    """The README quotes a total score of 374. If this fails, update the README in the same commit."""
-    assert schedule.total_score == 374
+    """The README quotes a total score of 341. If this fails, update the README in the same commit."""
+    assert schedule.total_score == 341
 
 
 def test_example_solves_under_one_second(schedule):
     """The README sentence promises under one second.
 
-    The measured runtime is about 0.009 s, so the one second threshold leaves
+    The measured runtime is about 0.011 s, so the one second threshold leaves
     a wide margin for slower CI machines.
     """
     assert schedule.solver_runtime_s < 1.0
@@ -88,3 +88,33 @@ def test_example_c3_no_pair_repeats(schedule):
 def test_example_assignment_count(schedule):
     """Exactly G slots per round are filled: 10 fams times 2 rounds."""
     assert len(schedule.assignments) == 10 * ROUNDS
+
+
+def test_hand_schedule_is_valid(example):
+    """The schedule used on the night satisfies C1, C2, and C3."""
+    hand = example.HAND_SCHEDULE
+    host_ids = sorted(h.host_id for h in example.HOSTS)
+    fam_ids = sorted(f.group_id for f in example.FAMS)
+    for rnd in hand.values():
+        assert sorted(rnd) == fam_ids  # C2
+        assert sorted(rnd.values()) == host_ids  # C1
+    for f in fam_ids:
+        assert len({hand[r][f] for r in hand}) == len(hand)  # C3
+
+
+def test_hand_schedule_scores_below_optimum(example, schedule):
+    """The README and site quote the hand schedule at 309 against the solver's 341."""
+    total, zeros = example.score_hand_schedule()
+    assert total == 309
+    assert zeros == 3
+    assert total < schedule.total_score
+
+
+def test_single_worker_solve_is_repeatable(example):
+    """With num_workers=1 the example prints the same schedule on every run, so docs can show it."""
+    runs = [
+        sorted((a.round_number, a.group_id, a.host_id) for a in
+               solve(example.HOSTS, example.FAMS, rounds=ROUNDS, num_workers=1).assignments)
+        for _ in range(3)
+    ]
+    assert runs[0] == runs[1] == runs[2]

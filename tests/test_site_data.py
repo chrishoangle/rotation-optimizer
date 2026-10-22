@@ -83,7 +83,7 @@ def test_exported_schedule_scores_add_up(data):
 
 
 def test_bottleneck_capacity_is_short(data):
-    """The site's counting argument: the listed fams need more nonzero visits than exist."""
+    """The site's counting argument: the listed fams need more nonzero visits than hosts can supply."""
     b = data["bottleneck"]
     R = data["meta"]["R"]
     recomputed = 0
@@ -93,6 +93,39 @@ def test_bottleneck_capacity_is_short(data):
     assert recomputed == b["capacity"]
     assert b["demand"] == R * len(b["fams"])
     assert b["capacity"] < b["demand"]
+    assert b["shortfall"] == b["demand"] - b["capacity"] == data["meta"]["min_zero_slots"]
+
+
+def test_hand_data_matches_example(data, example):
+    hand = {(a["round"], a["fam"]): a["host"] for a in data["hand"]}
+    expected = {(r, f): h for r, rnd in example.HAND_SCHEDULE.items() for f, h in rnd.items()}
+    assert hand == expected
+    assert all(a["score"] == data["scores"][a["host"]][a["fam"]] for a in data["hand"])
+    total, zeros = example.score_hand_schedule()
+    assert data["meta"]["hand_total"] == total
+    assert data["meta"]["hand_zeros"] == zeros
+
+
+def test_min_zero_slots_is_tight(data):
+    """The counting bound is achieved: no feasible schedule has fewer zero slots, and the solver's has exactly that many."""
+    hosts = [h["id"] for h in data["hosts"]]
+    fams = [f["id"] for f in data["fams"]]
+    R = data["meta"]["R"]
+    m = cp_model.CpModel()
+    x = {(h, f, r): m.NewBoolVar(f"x_{h}_{f}_{r}") for h in hosts for f in fams for r in range(R)}
+    for r in range(R):
+        for h in hosts:
+            m.AddExactlyOne([x[h, f, r] for f in fams])
+        for f in fams:
+            m.AddExactlyOne([x[h, f, r] for h in hosts])
+    for h in hosts:
+        for f in fams:
+            m.Add(sum(x[h, f, r] for r in range(R)) <= 1)
+    m.Minimize(sum(x[h, f, r] for (h, f, r) in x if data["scores"][h][f] == 0))
+    solver = cp_model.CpSolver()
+    assert solver.Solve(m) == cp_model.OPTIMAL
+    assert int(solver.ObjectiveValue()) == data["meta"]["min_zero_slots"]
+    assert data["meta"]["solver_zeros"] == data["meta"]["min_zero_slots"]
 
 
 def test_no_feasible_schedule_avoids_a_zero_slot(data):

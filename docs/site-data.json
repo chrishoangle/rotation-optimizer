@@ -5,11 +5,16 @@
     "H": 10,
     "G": 10,
     "R": 2,
-    "total_score": 374,
-    "objective_bound": 374,
+    "total_score": 341,
+    "objective_bound": 341,
     "proven_optimal": true,
-    "runtime_s": 0.009,
-    "admits": 67
+    "runtime_s": 0.011,
+    "admits": 67,
+    "hand_total": 309,
+    "hand_zeros": 3,
+    "solver_zeros": 2,
+    "min_zero_slots": 2,
+    "gap_pct": 9.4
   },
   "hosts": [
     {
@@ -62,9 +67,8 @@
       "theme": "Nonprofit & Social Impact",
       "tags": [
         "advocacy",
-        "development",
+        "consulting",
         "education reform",
-        "fundraising",
         "nonprofit",
         "public service"
       ]
@@ -106,14 +110,12 @@
     },
     {
       "id": "h09",
-      "theme": "Urban Planning & Public Service",
+      "theme": "Academic Mentorship",
       "tags": [
-        "housing",
-        "humanities",
-        "local government",
-        "policy",
-        "public service",
-        "urban planning"
+        "academic advising",
+        "higher education",
+        "mentorship",
+        "student success"
       ]
     },
     {
@@ -330,12 +332,12 @@
     "h05": {
       "fam_01": 0,
       "fam_02": 0,
-      "fam_03": 8,
+      "fam_03": 9,
       "fam_04": 0,
       "fam_05": 0,
-      "fam_06": 30,
+      "fam_06": 33,
       "fam_07": 0,
-      "fam_08": 0,
+      "fam_08": 9,
       "fam_09": 0,
       "fam_10": 0
     },
@@ -376,13 +378,13 @@
       "fam_10": 0
     },
     "h09": {
-      "fam_01": 18,
+      "fam_01": 0,
       "fam_02": 0,
-      "fam_03": 18,
+      "fam_03": 10,
       "fam_04": 0,
       "fam_05": 0,
-      "fam_06": 30,
-      "fam_07": 0,
+      "fam_06": 0,
+      "fam_07": 11,
       "fam_08": 0,
       "fam_09": 0,
       "fam_10": 0
@@ -403,9 +405,9 @@
   "optimal": [
     {
       "round": 1,
-      "host": "h09",
+      "host": "h10",
       "fam": "fam_01",
-      "score": 18
+      "score": 8
     },
     {
       "round": 1,
@@ -415,9 +417,144 @@
     },
     {
       "round": 1,
+      "host": "h09",
+      "fam": "fam_03",
+      "score": 10
+    },
+    {
+      "round": 1,
+      "host": "h08",
+      "fam": "fam_04",
+      "score": 30
+    },
+    {
+      "round": 1,
+      "host": "h06",
+      "fam": "fam_05",
+      "score": 22
+    },
+    {
+      "round": 1,
+      "host": "h05",
+      "fam": "fam_06",
+      "score": 33
+    },
+    {
+      "round": 1,
+      "host": "h07",
+      "fam": "fam_07",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h02",
+      "fam": "fam_08",
+      "score": 9
+    },
+    {
+      "round": 1,
+      "host": "h04",
+      "fam": "fam_09",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h03",
+      "fam": "fam_10",
+      "score": 20
+    },
+    {
+      "round": 2,
+      "host": "h02",
+      "fam": "fam_01",
+      "score": 0
+    },
+    {
+      "round": 2,
+      "host": "h07",
+      "fam": "fam_02",
+      "score": 20
+    },
+    {
+      "round": 2,
       "host": "h10",
       "fam": "fam_03",
       "score": 18
+    },
+    {
+      "round": 2,
+      "host": "h04",
+      "fam": "fam_04",
+      "score": 33
+    },
+    {
+      "round": 2,
+      "host": "h08",
+      "fam": "fam_05",
+      "score": 20
+    },
+    {
+      "round": 2,
+      "host": "h03",
+      "fam": "fam_06",
+      "score": 0
+    },
+    {
+      "round": 2,
+      "host": "h09",
+      "fam": "fam_07",
+      "score": 11
+    },
+    {
+      "round": 2,
+      "host": "h05",
+      "fam": "fam_08",
+      "score": 9
+    },
+    {
+      "round": 2,
+      "host": "h06",
+      "fam": "fam_09",
+      "score": 20
+    },
+    {
+      "round": 2,
+      "host": "h01",
+      "fam": "fam_10",
+      "score": 18
+    }
+  ],
+  "fam_totals": {
+    "fam_01": 8,
+    "fam_02": 40,
+    "fam_03": 28,
+    "fam_04": 63,
+    "fam_05": 42,
+    "fam_06": 33,
+    "fam_07": 31,
+    "fam_08": 18,
+    "fam_09": 40,
+    "fam_10": 38
+  },
+  "median_fam_total": 38,
+  "hand": [
+    {
+      "round": 1,
+      "host": "h10",
+      "fam": "fam_01",
+      "score": 8
+    },
+    {
+      "round": 1,
+      "host": "h01",
+      "fam": "fam_02",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h09",
+      "fam": "fam_03",
+      "score": 10
     },
     {
       "round": 1,
@@ -435,7 +572,7 @@
       "round": 1,
       "host": "h05",
       "fam": "fam_06",
-      "score": 30
+      "score": 33
     },
     {
       "round": 1,
@@ -463,27 +600,27 @@
     },
     {
       "round": 2,
-      "host": "h02",
+      "host": "h05",
       "fam": "fam_01",
       "score": 0
     },
     {
       "round": 2,
-      "host": "h07",
+      "host": "h02",
       "fam": "fam_02",
-      "score": 20
+      "score": 10
     },
     {
       "round": 2,
-      "host": "h05",
+      "host": "h10",
       "fam": "fam_03",
-      "score": 8
+      "score": 18
     },
     {
       "round": 2,
-      "host": "h08",
+      "host": "h07",
       "fam": "fam_04",
-      "score": 30
+      "score": 18
     },
     {
       "round": 2,
@@ -495,7 +632,7 @@
       "round": 2,
       "host": "h09",
       "fam": "fam_06",
-      "score": 30
+      "score": 0
     },
     {
       "round": 2,
@@ -505,9 +642,9 @@
     },
     {
       "round": 2,
-      "host": "h10",
+      "host": "h08",
       "fam": "fam_08",
-      "score": 8
+      "score": 0
     },
     {
       "round": 2,
@@ -522,19 +659,6 @@
       "score": 18
     }
   ],
-  "fam_totals": {
-    "fam_01": 18,
-    "fam_02": 40,
-    "fam_03": 26,
-    "fam_04": 63,
-    "fam_05": 42,
-    "fam_06": 60,
-    "fam_07": 30,
-    "fam_08": 17,
-    "fam_09": 40,
-    "fam_10": 38
-  },
-  "median_fam_total": 40,
   "bottleneck": {
     "fams": [
       "fam_01",
@@ -544,7 +668,6 @@
     ],
     "nonzero_hosts": {
       "fam_01": [
-        "h09",
         "h10"
       ],
       "fam_03": [
@@ -554,21 +677,22 @@
       ],
       "fam_06": [
         "h05",
-        "h09",
         "h10"
       ],
       "fam_08": [
         "h02",
+        "h05",
         "h10"
       ]
     },
     "host_capacity": {
       "h02": 1,
       "h05": 2,
-      "h09": 2,
+      "h09": 1,
       "h10": 2
     },
     "demand": 8,
-    "capacity": 7
+    "capacity": 6,
+    "shortfall": 2
   }
 }
