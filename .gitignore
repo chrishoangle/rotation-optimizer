@@ -25,3 +25,12 @@ data/
 tests/private/
 *.csv
 *.xlsx
+
+# Original full-size photos with camera metadata stay local
+*.JPG
+*.JPEG
+*.HEIC
+*.heic
+# Web-ready copies are resized and stripped of metadata, so they are allowed
+!docs/images/*.jpg
+!docs/images/tables/*.jpg
