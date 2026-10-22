@@ -18,6 +18,7 @@ import {
   EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
   reprintList, slotText, weakCount,
 } from "./planning";
+import { changeSlipsHtml, movesBetween } from "./moves";
 import { parsePasted } from "./paste";
 import { csvRecords, sha256Hex } from "./py";
 import {
@@ -872,6 +873,7 @@ function changesSincePrinted(): HTMLElement {
     Round: c.round, Table: tables[c.famId] ?? "", Fam: famName(p, c.famId),
     Printed: slotText(printed, c.round, c.famId), Now: slotText(p, c.round, c.famId),
   })), {}) : h("p", {}, "Nothing changed."));
+  if (isCurrent(ev)) { const tell = tellPeople(p, printed); if (tell) box.appendChild(tell); }
   const out = reprintList(printed, p);
   box.appendChild(h("p", {}, h("strong", {}, "Reprint: "), describeReprint(out, p).join("; ") || "nothing."));
   if (isCurrent(ev)) {
@@ -886,6 +888,21 @@ function changesSincePrinted(): HTMLElement {
     }
   }
   return box;
+}
+
+/** Who has to be told what, against the printed cards, for the rounds still to come. */
+function tellPeople(p: EventPlan, printed: EventPlan): HTMLElement | null {
+  const m = movesBetween(printed, p, ev.finished + 1);
+  if (!m.hosts.length && !m.fams.length) return null;
+  const at = now();
+  return h("div", { className: "panel tell" },
+    h("h3", {}, "What to tell people"),
+    m.hosts.length ? h("ul", {}, m.hosts.map((x) => h("li", {}, x.text))) : null,
+    m.fams.length ? h("ul", {}, m.fams.map((x) => h("li", {}, x.text))) : null,
+    m.mc.length ? [h("p", { className: "help" }, "For the MC to read out:"), h("ul", {}, m.mc.map((x) => h("li", {}, x)))] : null,
+    m.hosts.length ? h("div", { className: "row" },
+      h("button", { className: "button primary", onclick: () => openPage(changeSlipsHtml(p, m.hosts, ev.title, at)) }, "Print change slips"),
+      h("span", { className: "help" }, "One slip per alum, quicker than reprinting a whole card.")) : null);
 }
 
 function reprintButton(label: string, file: string, make: () => string): HTMLElement {

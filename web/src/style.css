@@ -134,3 +134,6 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
   .cancel-row { grid-template-columns: 1fr; }
 }
 main .field input[type=number] { max-width: 9rem; }
+.panel.tell { border-color: var(--accent); }
+.panel.tell ul { margin: .3rem 0 .6rem 1.1rem; padding: 0; }
+.panel.tell li { padding: .15rem 0; }
