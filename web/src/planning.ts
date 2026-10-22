@@ -215,11 +215,17 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
     for (const r of nv.rounds.length ? nv.rounds : range(rounds)) forbidden.add(slotKey(r, nv.hostId, nv.famId));
   }
   const keep = (o.keep ?? []).filter(([r, h, f]) => !lockedRounds.has(r) && r <= rounds && hostIds.has(h) && famIds.has(f));
+  // Uneven events: spread the empty rounds, as the Python planner does.
+  const padded = n > Math.min(hosts.length, fams.length);
+  const there = (away: Record<string, number[]>, id: string) => range(rounds).filter((r) => !(away[id] ?? []).includes(r));
+  const spreadHosts = padded ? Object.fromEntries(hosts.map((h) => [h.hostId, there(hostAway, h.hostId)])) : null;
+  const spreadFams = padded ? Object.fromEntries(fams.map((f) => [f.groupId, there(famAway, f.groupId)])) : null;
   const result = solveModel(highs, {
     hosts, fams, rounds,
     required: rules.filter((x) => x.kind === "must").map((x) => ({ hostId: x.hostId, famId: x.famId, rounds: x.rounds })),
     forbiddenSlots: forbidden, fixedSlots: locked, preferSlots: keep, hostAway, famAway,
     weakLimit: o.weakLimit ?? null, timeLimitS, minPairsPerRound: hosts.length + fams.length - n,
+    spreadHosts, spreadFams,
   });
   if (result.status === "infeasible") {
     if (o.diagnose === false) throw new RuleConflictError("No schedule satisfies every rule.");
@@ -239,6 +245,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
   const warnings = [
     ...vocabularyWarnings(hosts, fams),
     ...fairnessWarnings(fams, real, rounds, famAway, Object.fromEntries(hosts.map((h) => [h.hostId, h.name]))),
+    ...hostWarnings(hosts, real, rounds, hostAway),
   ];
   if (result.status !== "optimal") warnings.push(`The solver stopped at the ${Math.round(timeLimitS)} s limit before proving this is the best schedule.`);
   return {
@@ -303,6 +310,9 @@ function explainConflict(
   }
   if (!core.length) return "No schedule fits these tables and rounds. Lower the number of rounds, or add host tables or fams.";
   const named = core.map((x) => words[x]);
+  if (core.length === 1 && core[0] === "weak\u0000") {
+    return "The setting No fam gets more than one weak round cannot be met with these tables and rounds. Untick it in the sidebar, or add tags so more hosts share interests with each fam.";
+  }
   if (named.length === 1) return `${upperFirst(named[0])} cannot be met with these tables and rounds. Change it or delete it.`;
   return "These cannot all hold at once: " + named.join("; ") + ". Change a round, or delete one of them.";
 }
@@ -310,6 +320,17 @@ function explainConflict(
 function roundsWords(rounds: number[]): string {
   if (rounds.length === 1) return `round ${rounds[0]}`;
   return "rounds " + rounds.slice(0, -1).join(", ") + ` and ${rounds[rounds.length - 1]}`;
+}
+
+export const OPEN_TABLES_SHARED =
+  "There are more fams than host tables, so the open tables are already shared out as evenly as possible. Add a host table to fix this.";
+
+/** Host tables that are there for at least one round but never get a fam. */
+export function hostWarnings(hosts: Host[], real: Assignment[], rounds: number, hostAway: Record<string, number[]>): string[] {
+  const hosted = new Set(real.map((a) => a.hostId));
+  return hosts
+    .filter((h) => range(rounds).some((r) => !(hostAway[h.hostId] ?? []).includes(r)) && !hosted.has(h.hostId))
+    .map((h) => `Fairness check: ${h.name} has no table in any round, because there are more host tables than places at the fams. Seat two alums at one host table, or add a round.`);
 }
 
 export function fairnessWarnings(
@@ -327,7 +348,8 @@ export function fairnessWarnings(
       else if (a.score === 0) weak.push(`round ${r}: ${hostNames[a.hostId]}, no shared interests`);
     }
     if (weak.length > 1) {
-      out.push(`Fairness check: ${f.name} gets no host or a 0-score host in ${weak.length} rounds (` + weak.join("; ") + "). Consider a must meet rule for this fam.");
+      out.push(`Fairness check: ${f.name} gets no host or a 0-score host in ${weak.length} rounds (` + weak.join("; ") + "). "
+        + (weak.every((w) => w.endsWith("no host")) ? OPEN_TABLES_SHARED : "Consider a must meet rule for this fam."));
       flagged.add(f.name);
     }
   }

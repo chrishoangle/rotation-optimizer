@@ -374,7 +374,7 @@ export function beforeTheNight(s: EventState, saved: boolean): CheckItem[] {
   add(isCurrent(s), "The schedule is up to date.", "Find the best schedule (or re-plan): the schedule is missing or out of date.");
   if (s.plan && isCurrent(s)) {
     const unfair = s.plan.warnings.filter((w) => w.startsWith("Fairness check"));
-    add(!unfair.length, "Every fam gets a fair share of matching hosts.",
+    add(!unfair.length, "Every fam gets a fair share of matching hosts, and every host table gets a fam.",
       `Look at the ${unfair.length} fairness check${unfair.length !== 1 ? "s" : ""} under the schedule.`, true);
   }
   add(!!hosts.length && hosts.every((h) => h.person), "Every host table has an alum's name for the host cards.",

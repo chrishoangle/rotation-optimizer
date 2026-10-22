@@ -38,8 +38,8 @@ from rotation_optimizer.event import (
     save_event,
     solve_event,
 )
-from rotation_optimizer.planning import RuleConflictError, fairness_warnings
-from rotation_optimizer.models import Assignment, GuestGroup
+from rotation_optimizer.planning import RuleConflictError, fairness_warnings, host_warnings
+from rotation_optimizer.models import Assignment, GuestGroup, Host
 from rotation_optimizer.sheets import (
     SheetError,
     column_report,
@@ -71,7 +71,27 @@ def outcome(s: EventState, keep_printed: bool = True) -> dict:
     except InfeasibleProblemError as err:
         return {"error": str(err)}
     return {"total": plan.total_score, "proven": plan.proven_optimal, "kept": plan.kept_slots,
+            "spread_penalty": spread_penalty(plan),
             "weak": plan.weak_count(), "warnings_no_fairness": [w for w in plan.warnings if not w.startswith("Fairness")]}
+
+
+def spread_penalty(plan) -> int:
+    """The even-spread penalty the planner minimizes (see solver.py), measured on a finished plan.
+
+    Two equally good schedules can spread the empty rounds differently, but
+    they always have the same penalty, so this is what the web app must match.
+    """
+    total = 0
+    every = range(1, plan.rounds + 1)
+    sides = [(h.host_id, set(plan.host_away.get(h.host_id, [])) | set(plan.host_limits.get(h.host_id, [])),
+              {a.round_number for a in plan.assignments if a.host_id == h.host_id}) for h in plan.hosts]
+    sides += [(f.group_id, set(plan.fam_away.get(f.group_id, [])),
+               {a.round_number for a in plan.assignments if a.group_id == f.group_id}) for f in plan.fams]
+    for _, away, met in sides:
+        avail = [r for r in every if r not in away]
+        empty = sum(1 for r in avail if r not in met)
+        total += sum(max(0, empty - k) for k in range(1, len(avail)))
+    return total
 
 
 def main() -> None:
@@ -96,6 +116,12 @@ def main() -> None:
     add("6 hosts, 8 fams, 3 rounds", event(small_h, small_f, 3))
     add("6 hosts, 10 practice fams, 3 rounds", event(practice_h[:6], practice_f, 3))
     add("10 hosts, 6 fams, 3 rounds", event(practice_h, practice_f[:6], 3))
+    extra_h = practice_h + [{"table_label": "Real Estate", "tags": "real estate; finance"},
+                            {"table_label": "Film & TV", "tags": "film; television; writing"}]
+    add("12 hosts, 10 fams, 2 rounds", event(extra_h, practice_f, 2))
+    add("8 hosts, 10 fams, 3 rounds", event(practice_h[:8], practice_f, 3))
+    add("12 hosts, 3 fams, 2 rounds", event(extra_h, practice_f[:3], 2))
+    add("12 hosts, 10 fams, one weak round", event(extra_h, practice_f, 2, one_weak_round=True))
     add("only in rounds 1", event(small_h, small_f, 3, rules=[{"rule": "only in rounds", "host_table": "Medicine", "fam": "", "rounds": "1"}]))
     add("only in rounds 1 and 2", event(small_h, small_f, 3, rules=[{"rule": "only in rounds", "host_table": "Medicine", "fam": "", "rounds": "1, 2"}]))
     add("must and never rules", event(practice_h, practice_f, 2, rules=[
@@ -152,6 +178,7 @@ def main() -> None:
         "column_report": [],
         "group_student_rows": [],
         "fairness": [],
+        "host_warnings": [],
         "fingerprint": [],
         "before_the_night": [],
     }
@@ -199,6 +226,14 @@ def main() -> None:
             for r, score in zip((1, 2), scores)] + [Assignment(1, "h1", "f3", 10), Assignment(2, "h1", "f0", 0)]
     messages["fairness"].append({"fams": [[f.group_id, f.name] for f in fams], "real": [[a.round_number, a.host_id, a.group_id, a.score] for a in real],
                                  "rounds": 2, "out": fairness_warnings(fams, real, 2, {}, {"h1": "Pharmacy"})})
+    real = [Assignment(1, "h1", "f0", 20), Assignment(2, "h1", "f1", 0)]
+    messages["fairness"].append({"fams": [[f.group_id, f.name] for f in fams], "real": [[a.round_number, a.host_id, a.group_id, a.score] for a in real],
+                                 "rounds": 2, "out": fairness_warnings(fams, real, 2, {}, {"h1": "Pharmacy"})})
+    hosts = [Host.make(f"h{i}", name, name, ["x"]) for i, name in enumerate(["Pharmacy", "Law", "Film & TV"], start=1)]
+    for away in ({}, {"h3": [1, 2]}, {"h3": [2]}):
+        messages["host_warnings"].append({"hosts": [[h.host_id, h.name] for h in hosts], "real": [[1, "h1", "f0", 5], [2, "h2", "f0", 5]],
+                                          "rounds": 2, "host_away": away,
+                                          "out": host_warnings(hosts, [Assignment(1, "h1", "f0", 5), Assignment(2, "h2", "f0", 5)], 2, away)})
 
     # Printouts for fixed plans, byte for byte.
     printouts = []

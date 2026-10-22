@@ -595,7 +595,7 @@ def results(problems: list[str]) -> None:
                    + (" or have no host." if plan.open_slots() else "."))
         fairness = [w for w in plan.warnings if w.startswith("Fairness check")]
         if fairness:
-            with st.expander(f"Fairness: {len(fairness)} fam{'s' if len(fairness) != 1 else ''} need{'s' if len(fairness) == 1 else ''} attention"):
+            with st.expander(f"Fairness: {len(fairness)} thing{'s' if len(fairness) != 1 else ''} to look at"):
                 for w in fairness:
                     st.write(w.removeprefix("Fairness check: "))
         notes = [w for w in plan.warnings if not w.startswith("Fairness check")]

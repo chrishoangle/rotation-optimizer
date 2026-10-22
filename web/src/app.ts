@@ -18,6 +18,7 @@ import {
   EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
   reprintList, slotText, weakCount,
 } from "./planning";
+import { parsePasted } from "./paste";
 import { csvRecords, sha256Hex } from "./py";
 import {
   CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
@@ -474,6 +475,17 @@ function tableEditor(name: "hosts" | "fams" | "rules", cols: Column[]): HTMLElem
           spellcheck: col.key === "tags" || col.key === "interests" ? "true" : "false" }) as HTMLInputElement;
         input.addEventListener("input", () => { ensure()[col.key] = input.value; changed(); });
         if (col.key.endsWith("label")) input.addEventListener("change", renderRuleOptions);
+        if (name !== "rules") {
+          input.addEventListener("paste", (e) => {
+            const text = (e as ClipboardEvent).clipboardData?.getData("text/plain") ?? "";
+            const grid = parsePasted(text);
+            if (!grid) return; // one plain value: let the browser paste it into this cell
+            e.preventDefault();
+            const at = [...body.rows].indexOf(tr);
+            note("checks", "ok", pasteRows(name, grid, at, cIdx, blankRow));
+            refresh({ tables: true });
+          });
+        }
       }
       input.addEventListener("keydown", (e) => {
         const k = e as KeyboardEvent;
@@ -505,6 +517,29 @@ function tableEditor(name: "hosts" | "fams" | "rules", cols: Column[]): HTMLElem
     h("colgroup", {}, cols.map((c) => h("col", { style: `width:${c.width}` })), h("col", { style: "width:2.2rem" })),
     h("thead", {}, h("tr", {}, cols.map((c) => h("th", { title: c.help ?? "" }, c.label)), h("th", {}, h("span", { className: "visually-hidden" }, "Delete")))),
     body));
+}
+
+/** Write pasted cells into a table from the given row and column, adding rows as needed. */
+function pasteRows(name: "hosts" | "fams", grid: string[][], startRow: number, startCol: number, blankRow: () => CleanRow): string {
+  const cols = (name === "hosts" ? HOST_TABLE : FAM_TABLE).map((c) => c.key);
+  const list = name === "hosts" ? ev.hosts : ev.fams;
+  // A header row from the sheet places each column by its name, in any order.
+  const mapping = matchColumns(grid[0], name);
+  const required = name === "hosts" ? "table_label" : "fam_label";
+  const byHeader = required in mapping && Object.keys(mapping).length >= 2;
+  const body = byHeader ? grid.slice(1) : grid;
+  const place = (cells: string[]): [string, string][] => byHeader
+    ? Object.entries(mapping).map(([ours, theirs]) => [ours, cells[grid[0].indexOf(theirs)] ?? ""])
+    : cells.map((v, k) => [cols[startCol + k], v] as [string, string]).filter(([key]) => key !== undefined);
+  const first = byHeader ? Math.min(startRow, list.length) : startRow;
+  body.forEach((cells, k) => {
+    const at = first + k;
+    while (list.length <= at) list.push(blankRow());
+    for (const [key, v] of place(cells)) list[at][key] = v;
+  });
+  const what = name === "hosts" ? "host table" : "fam";
+  const n = body.length;
+  return `Pasted ${n} ${what}${n !== 1 ? "s" : ""}` + (byHeader ? ", matching columns by the header row." : ".");
 }
 
 function fillOptions(sel: HTMLSelectElement, kind: "rule" | "host" | "fam", value: string): void {
@@ -677,7 +712,7 @@ function renderSchedule(): void {
         metric("Proven best possible", provenOptimal(p) ? "Yes" : "Not proven", "Yes means no other schedule with these tables and rules scores higher."),
         metric("Weak pairings", String(weakCount(p)), "Pairings where the host and fam share no tags, plus rounds where a fam has no host.")),
       h("p", { className: "help" }, `In a good plan most pairings share at least one tag. Here ${weakCount(p)} of ${pairings} share none` + (openSlots(p).length ? " or have no host." : ".")),
-      fairness.length ? h("details", {}, h("summary", {}, `Fairness: ${fairness.length} fam${fairness.length !== 1 ? "s" : ""} need${fairness.length === 1 ? "s" : ""} attention`),
+      fairness.length ? h("details", {}, h("summary", {}, `Fairness: ${fairness.length} thing${fairness.length !== 1 ? "s" : ""} to look at`),
         fairness.map((w) => h("p", {}, w.replace(/^Fairness check: /, "")))) : null,
       h("details", { open: unmatched > 0.3 }, h("summary", {}, "Notes on tags"),
         unmatched > 0.3 ? h("p", {}, `${Math.round(unmatched * 100)}% of the tags match nothing on the other side. A tag only counts when the host and the fam use the same words, for example computer science in both.`) : null,
@@ -902,10 +937,10 @@ function renderShell(): void {
       h("div", { id: "upload-hosts" }),
       h("div", { id: "upload-fams" }),
       h("h2", {}, "1. Host tables"),
-      h("p", { className: "help" }, "One row per host table. Tags are keywords separated by commas or semicolons. Blank tags are fine while a host has not replied. Type in the empty last row to add a host table; press Enter to move down."),
+      h("p", { className: "help" }, "One row per host table. Tags are keywords separated by commas or semicolons. Blank tags are fine while a host has not replied. Type in the empty last row to add a host table; press Enter to move down. You can also copy rows from Google Sheets or Excel and paste them into a cell."),
       h("div", { id: "hosts-table" }),
       h("h2", {}, "2. Fams"),
-      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page."),
+      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. You can paste rows copied from a spreadsheet."),
       h("div", { id: "fams-table" }),
       h("h2", {}, "3. Pairing rules (optional)"),
       h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. Write rounds as 1 or 1, 2."),

@@ -8,8 +8,8 @@ import { beforeTheNight, checkInputs, fingerprint, loadEvent, nearMisses, solveE
 import {
   hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, seatingChartHtml, tableTentsHtml,
 } from "../src/export";
-import { makeGroup } from "../src/models";
-import { describeReprint, fairnessWarnings, openSlots, planChanges, provenOptimal, reprintList, slotText, zeroSlots } from "../src/planning";
+import { makeGroup, makeHost } from "../src/models";
+import { EventPlan, describeReprint, fairnessWarnings, hostWarnings, openSlots, planChanges, provenOptimal, reprintList, slotText, zeroSlots } from "../src/planning";
 import { InfeasibleProblemError } from "../src/planning";
 import { SheetError, columnReport, groupStudentRows, matchColumns, parseRounds } from "../src/sheets";
 import type { HighsLike } from "../src/solver";
@@ -17,6 +17,24 @@ import type { HighsLike } from "../src/solver";
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/parity.json", import.meta.url), "utf8"));
 let highs: HighsLike;
 beforeAll(async () => { highs = (await highsLoader()) as unknown as HighsLike; });
+
+/** The even-spread penalty the planner minimizes, measured as in export_parity_cases.py. */
+function spreadPenalty(p: EventPlan): number {
+  const every = Array.from({ length: p.rounds }, (_, k) => k + 1);
+  const sides: [Set<number>, Set<number>][] = [
+    ...p.hosts.map((h): [Set<number>, Set<number>] => [new Set([...(p.hostAway[h.hostId] ?? []), ...(p.hostLimits[h.hostId] ?? [])]),
+      new Set(p.assignments.filter((a) => a.hostId === h.hostId).map((a) => a.round))]),
+    ...p.fams.map((f): [Set<number>, Set<number>] => [new Set(p.famAway[f.groupId] ?? []),
+      new Set(p.assignments.filter((a) => a.groupId === f.groupId).map((a) => a.round))]),
+  ];
+  let total = 0;
+  for (const [away, met] of sides) {
+    const avail = every.filter((r) => !away.has(r));
+    const empty = avail.filter((r) => !met.has(r)).length;
+    for (let k = 1; k < avail.length; k++) total += Math.max(0, empty - k);
+  }
+  return total;
+}
 
 describe("scheduling matches Python", () => {
   for (const c of fixture.solve) {
@@ -27,7 +45,7 @@ describe("scheduling matches Python", () => {
       try {
         const plan = solveEvent(highs, s, c.keep_printed);
         got = {
-          total: plan.totalScore, proven: provenOptimal(plan), kept: plan.keptSlots,
+          total: plan.totalScore, proven: provenOptimal(plan), kept: plan.keptSlots, spread_penalty: spreadPenalty(plan),
           weak: zeroSlots(plan).length + openSlots(plan).length,
           warnings_no_fairness: plan.warnings.filter((w) => !w.startsWith("Fairness")),
         };
@@ -82,6 +100,13 @@ describe("messages and helpers match Python", () => {
       const fams = c.fams.map(([id, name]: [string, string]) => makeGroup(id, name, ["x"]));
       const real = c.real.map(([r, h, g, s]: [number, string, string, number]) => ({ round: r, hostId: h, groupId: g, score: s }));
       expect(fairnessWarnings(fams, real, c.rounds, {}, { h1: "Pharmacy" })).toEqual(c.out);
+    }
+  });
+  it("host tables without a fam", () => {
+    for (const c of m.host_warnings) {
+      const hosts = c.hosts.map(([id, name]: [string, string]) => makeHost(id, name, name, ["x"]));
+      const real = c.real.map(([r, h, g, sc]: [number, string, string, number]) => ({ round: r, hostId: h, groupId: g, score: sc }));
+      expect(hostWarnings(hosts, real, c.rounds, c.host_away)).toEqual(c.out);
     }
   });
   it("before the night", () => {
