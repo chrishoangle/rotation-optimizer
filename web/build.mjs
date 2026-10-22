@@ -15,7 +15,7 @@ await build({
   minify: true,
   sourcemap: false,
   outfile: new URL("app.js", out).pathname,
-  loader: { ".csv": "text" },
+  loader: { ".csv": "text", ".txt": "text" },
   platform: "browser",
   external: ["node:*"], // highs loads these only when it runs under Node
   define: { __VERSION__: JSON.stringify(pkg.version), __RELEASE_DATE__: JSON.stringify(process.env.RELEASE_DATE ?? "2026-10-22") },

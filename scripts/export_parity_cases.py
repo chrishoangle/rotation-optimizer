@@ -228,6 +228,9 @@ def main() -> None:
         (["Timestamp", "Email address", "Your name", "Fam", "Table number", "Intended major(s)"], "fams"),
         (["Table number", "Fam name", "Size", "Interests", "Students"], "fams"),
         (["group", "count", "majors", "names"], "fams"),
+        # The Google Forms the app's script makes (web/src/forms.ts).
+        (["Timestamp", "Your name", "Host table name (your field, for example Pharmacy)", "Which fields can you talk about?"], "hosts"),
+        (["Timestamp", "Your name", "Which fam are you in?", "Your intended major and fields of interest"], "fams"),
     ]:
         messages["match_columns"].append({"columns": columns, "kind": kind, "mapping": match_columns(columns, kind)})
         problems, notices, mapping = column_report(columns, kind)

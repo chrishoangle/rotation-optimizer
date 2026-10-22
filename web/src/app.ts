@@ -19,6 +19,7 @@ import {
   reprintList, slotText, weakCount,
 } from "./planning";
 import { explainPairing, sharedPairings } from "./explain";
+import { FIELDS, formsScript } from "./forms";
 import { changeSlipsHtml, movesBetween } from "./moves";
 import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
 import { parsePasted } from "./paste";
@@ -269,6 +270,18 @@ function renderSidebar(): void {
       "Fill in a template in Google Sheets or Excel, save it as CSV (in Google Sheets: File, Download, Comma-separated values), and upload it here. " +
       "A Google Forms export works too: you pick which column holds what. Tags and interests are keywords separated by commas or semicolons. " +
       "Fams can be one row per fam, or one row per student with the fam name on each row."),
+    h("details", { className: "forms" }, h("summary", {}, "Collect sign-ups with Google Forms"),
+      h("p", { className: "help" }, "Two ready-made forms, one for alumni and one for students, with the same list of fields to tick, so the answers match exactly. Their answers upload here with no column matching."),
+      h("ol", { className: "help steps" },
+        h("li", {}, "Click Copy the script."),
+        h("li", {}, "Go to script.google.com, click New project, delete what is there, paste, and click Run. Allow access when Google asks."),
+        h("li", {}, "The two form links appear in the Execution log. Send them out."),
+        h("li", {}, "When answers are in, open each form, Responses, the three dots, Download responses (.csv), and upload the file below.")),
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: copyFormsScript }, "Copy the script"),
+        h("button", { className: "button", onclick: () => download("make_forms.gs", formsScript(ev.title), "text/plain") }, "Download it")),
+      noteEl("forms"),
+      h("p", { className: "help" }, `The fields: ${FIELDS.join(", ")}. Edit the list in the script before you run it if your event needs others.`)),
     h("div", { className: "row" },
       h("button", { className: "button", onclick: () => download("hosts_template.csv", templateCsv("hosts"), "text/csv") }, "Hosts template"),
       h("button", { className: "button", onclick: () => download("fams_template.csv", templateCsv("fams"), "text/csv") }, "Fams template")),
@@ -294,6 +307,19 @@ function offlineText(): string {
   return navigator.serviceWorker?.controller
     ? "This page is saved on this device, so it opens and plans with no internet."
     : "After this page finishes loading once, it is saved on this device and works with no internet.";
+}
+
+async function copyFormsScript(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(formsScript(ev.title));
+    note("forms", "ok", "Copied. Now paste it at script.google.com.");
+  } catch {
+    download("make_forms.gs", formsScript(ev.title), "text/plain");
+    note("forms", "info", "Copying is blocked here, so the script was downloaded instead. Open it and copy everything.");
+  }
+  renderSidebar();
+  const d = document.querySelector<HTMLDetailsElement>("details.forms");
+  if (d) d.open = true;
 }
 
 function notesField(): HTMLElement {
