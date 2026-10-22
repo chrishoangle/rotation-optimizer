@@ -51,6 +51,7 @@ class GuestGroup:
     name: str
     interests: frozenset[str]
     size: int = 0
+    table_number: int | None = None  # the physical table in the room, if known
 
     @classmethod
     def make(
@@ -59,12 +60,14 @@ class GuestGroup:
         name: str,
         interests: Iterable[str],
         size: int = 0,
+        table_number: int | None = None,
     ) -> "GuestGroup":
         return cls(
             group_id=group_id,
             name=name,
             interests=frozenset(i.strip().lower() for i in interests if i.strip()),
             size=size,
+            table_number=table_number,
         )
 
 

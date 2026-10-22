@@ -160,7 +160,7 @@ def test_exports_cover_every_slot():
     rows = schedule_rows(plan)
     assert len(rows) == 10 * 2
     assert sum(1 for r in rows if r["host_table"].startswith("Open table")) == 4
-    assert schedule_csv(plan).splitlines()[0] == "round,fam,host_table,score"
+    assert schedule_csv(plan).splitlines()[0] == "round,table,fam,host_table,score"
     page = seating_chart_html(plan, title="Test dinner")
     assert "Round 1" in page and "Round 2" in page and "Test dinner" in page
     assert "\u2014" not in page and "\u2013" not in page

@@ -12,6 +12,8 @@ fams.csv columns:
     fam_label     required, for example "Bio & Chem"
     interests     required, keywords separated by semicolons
     size          optional, number of guests at the table
+    table_number  optional, the physical table in the room; blank rows get
+                  the next number not already used, counting from 1
     fam_id        optional, generated from the row number when blank
 
 Problems are collected and raised together as one SheetError, so a
@@ -121,10 +123,35 @@ def load_fams(source: str | Path | TextIO) -> list[GuestGroup]:
         if label and label.lower() in labels:
             problems.append(f"fams row {i}: fam_label {label} is used more than once. Labels must be unique.")
         labels.add(label.lower())
-        fams.append(GuestGroup.make(fam_id, label, interests, size=size))
+        number = None
+        cell = row.get("table_number", "")
+        if cell:
+            try:
+                number = int(cell)
+                if number < 1:
+                    raise ValueError
+            except ValueError:
+                problems.append(f"fams row {i} ({label or fam_id}): table_number {cell!r} is not a whole number from 1 up.")
+                number = None
+        fams.append(GuestGroup.make(fam_id, label, interests, size=size, table_number=number))
+    used: dict[int, str] = {}
+    for f in fams:
+        if f.table_number is not None:
+            if f.table_number in used:
+                problems.append(f"fams: table_number {f.table_number} is used by both {used[f.table_number]} and {f.name}.")
+            used[f.table_number] = f.name
     if problems:
         raise SheetError(problems)
-    return fams
+    next_number = 1
+    numbered = []
+    for f in fams:
+        if f.table_number is None:
+            while next_number in used:
+                next_number += 1
+            used[next_number] = f.name
+            f = GuestGroup.make(f.group_id, f.name, f.interests, size=f.size, table_number=next_number)
+        numbered.append(f)
+    return numbered
 
 
 def host_id_by_label(hosts: list[Host], label: str) -> str:

@@ -28,7 +28,7 @@ from .planning import (
     reprint_list,
     vocabulary_warnings,
 )
-from .export import schedule_csv, schedule_rows, seating_chart_html
+from .export import host_cards_html, schedule_csv, schedule_rows, seating_chart_html, table_tents_html
 
 __all__ = [
     "Assignment",
@@ -47,6 +47,8 @@ __all__ = [
     "load_hosts",
     "plan_event",
     "schedule_csv",
+    "host_cards_html",
+    "table_tents_html",
     "schedule_rows",
     "seating_chart_html",
     "vocabulary_warnings",
