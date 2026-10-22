@@ -1,0 +1,11 @@
+fam_id,fam_label,size,interests
+fam_01,Public Affairs & Communications,6,communications; digital media; humanities; math economics; policy; political science; public affairs
+fam_02,Cog Sci & Pre-Health,6,biochemistry; cognitive science; healthcare; mathematics; nursing; pre-med
+fam_03,Humanities & Social Sciences,6,higher education; history; humanities; philosophy; political science; public service; sociology
+fam_04,Engineering + Pre-Med,7,aerospace; computer engineering; electrical engineering; engineering; healthcare; mechanical engineering; pre-med
+fam_05,"Linguistics, CS & Applied Math",7,applied mathematics; computer engineering; computer science; engineering; linguistics; physics
+fam_06,Sociology & Public Service,7,advocacy; humanities; nonprofit; policy; political science; public service; sociology
+fam_07,"Psychology, Data Theory & Math",7,allied health; data theory; mathematics; mentorship; pre-med; psychology
+fam_08,Economics & Business Econ,7,business economics; consulting; data science; economics; entrepreneurship; small-business; stats
+fam_09,Engineering & Psych,7,applied mathematics; chemical engineering; electrical engineering; engineering; mechanical engineering; physics; psychology
+fam_10,Bio & Chem,7,allied health; biochemistry; biology; chemistry; healthcare; pre-med; psychology

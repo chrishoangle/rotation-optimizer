@@ -1,0 +1,11 @@
+host_id,table_label,tags
+h01,Physician (MD),endocrinology; healthcare; internal medicine; medicine; pre-med; residency
+h02,Pharmacy,healthcare; pharmacy; pharmacy ownership; pharmd; small-business
+h03,Therapy & Rehab,allied health; healthcare; occupational therapy; physical therapy; physician assistant
+h04,Aerospace & Defense,aerospace; defense; engineering; industry; mechanical engineering
+h05,Nonprofit & Social Impact,advocacy; consulting; education reform; nonprofit; public service
+h06,Physics & Engineering,applied physics; engineering; mentorship; physics; test engineering
+h07,Pre-Med Mentorship,application process; gap years; healthcare; med school; mentorship; pre-med
+h08,Semiconductor & Chip Engineering,chip; computer engineering; electrical engineering; engineering; hardware; semiconductor
+h09,Academic Mentorship,academic advising; higher education; mentorship; student success
+h10,Admissions & Higher Ed,admissions; consulting; higher education; humanities; mentorship; student affairs

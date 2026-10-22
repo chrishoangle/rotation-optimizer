@@ -34,3 +34,5 @@ tests/private/
 # Web-ready copies are resized and stripped of metadata, so they are allowed
 !docs/images/*.jpg
 !docs/images/tables/*.jpg
+# Public templates hold the example dinner at the theme level, no names
+!templates/*.csv
