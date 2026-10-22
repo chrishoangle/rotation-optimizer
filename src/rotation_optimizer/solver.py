@@ -156,7 +156,7 @@ def solve(
 
     return Schedule(
         assignments=assignments,
-        total_score=int(solver.ObjectiveValue()),
-        objective_bound=int(solver.BestObjectiveBound()),
+        total_score=round(solver.ObjectiveValue()),
+        objective_bound=round(solver.BestObjectiveBound()),
         solver_runtime_s=elapsed,
     )
