@@ -5,10 +5,13 @@ reads these too.
 
 ## One sentence this project serves
 
-Given a networking event with H hosts, G stationary guest groups, and R
-rounds, this tool finds the rotation schedule that maximizes career-interest
-alignment under the no-repeat constraint, with proven optimality in under
-one second on realistic problem sizes.
+Given a networking event where host tables rotate between seated guest
+groups, this tool helps a coordinator plan the best-matched rotation under
+the no-repeat rule and their own pairing rules, re-plan after a cancellation,
+and print everything the night needs.
+
+Optimality and runtime claims live in `docs/algorithm.md`, each with the
+problem size it was measured on.
 
 Everything committed to this repo serves that sentence. A section, test, or
 feature that does not should be flagged in review.
