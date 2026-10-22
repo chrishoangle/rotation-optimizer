@@ -1,0 +1,961 @@
+// The Rotation Optimizer page. Everything runs in the browser: the tables,
+// the solver, and the printouts. The event is saved in this browser as you
+// work, and the event file is the copy to keep.
+
+import highsLoader from "highs";
+import practiceFams from "../../templates/practice_fams.csv";
+import practiceHosts from "../../templates/practice_hosts.csv";
+import { download, h, openPage, readFile, replace, rich } from "./dom";
+import {
+  EventState, FAM_COLUMNS, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
+  handoffEvent, hasStarted, isCurrent, loadEvent, maxRounds, nearMisses, newEvent, normalizeState, normalizeTable,
+  removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
+} from "./event";
+import {
+  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, scheduleRows, seatingChartHtml, tableTentsHtml,
+} from "./export";
+import {
+  EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
+  reprintList, slotText, weakCount,
+} from "./planning";
+import { csvRecords, sha256Hex } from "./py";
+import {
+  CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
+  matchColumns, renameColumns, templateCsv,
+} from "./sheets";
+import type { HighsLike } from "./solver";
+import { zipFiles } from "./zip";
+
+declare const __VERSION__: string;
+declare const __RELEASE_DATE__: string;
+
+const STORE_KEY = "rotation-optimizer:event";
+const SCORE_LINE = "How scores work: a pairing scores from 0 to 100, the share of all the tags the host and fam list that they have in common. Fam size does not count. The best schedule has the highest total.";
+
+// ----------------------------------------------------------------------
+// State.
+// ----------------------------------------------------------------------
+
+interface Pending { kind: Kind; name: string; rows: Record<string, string>[]; columns: string[]; mapping: Record<string, string> }
+
+interface Ui {
+  savedHash: string;
+  savedAt: string;
+  notes: Record<string, [string, string]>; // slot: [kind, text]
+  pending: Partial<Record<Kind, Pending>>;
+  undo: { kind: Kind; rows: CleanRow[]; name: string } | null;
+  confirmStart: "example" | "blank" | null;
+  confirmCancel: { kind: "host" | "fam"; id: string; name: string; first: number } | null;
+  solveError: { fp: string; text: string; where: "tables" | "night" } | null;
+  tab: number;
+  unfinish: number | null;
+  restored: string;
+  solving: boolean;
+}
+
+let ev: EventState;
+let highs: HighsLike | null = null;
+const ui: Ui = {
+  savedHash: "", savedAt: "", notes: {}, pending: {}, undo: null, confirmStart: null, confirmCancel: null,
+  solveError: null, tab: 1, unfinish: null, restored: "", solving: false,
+};
+
+function practiceEvent(): EventState {
+  const rows = (text: string, kind: Kind) => {
+    const { rows: r, columns } = csvRecords(text);
+    return renameColumns(r, matchColumns(columns, kind));
+  };
+  const s = newEvent({ title: "Example dinner", hosts: rows(practiceHosts, "hosts"), fams: rows(practiceFams, "fams") });
+  normalizeState(s);
+  return s;
+}
+
+const fileHash = (s: EventState) => sha256Hex(saveEvent({ ...s, title: s.title }));
+
+function now(): string {
+  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+let storeTimer = 0;
+function store(): void {
+  clearTimeout(storeTimer);
+  storeTimer = 0;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ event: saveEvent(ev), savedHash: ui.savedHash, savedAt: ui.savedAt, at: now() }));
+  } catch { /* private window or storage full: the event file is still the copy to keep */ }
+}
+function persist(): void {
+  clearTimeout(storeTimer);
+  storeTimer = window.setTimeout(store, 250);
+}
+// Write any change still waiting before the page goes away.
+window.addEventListener("pagehide", () => { if (storeTimer) store(); });
+
+/** Re-render without moving the page: the window keeps its scroll position. */
+function steady(render: () => void): void {
+  const y = window.scrollY;
+  const main = document.getElementById("main");
+  if (main) main.style.minHeight = `${main.offsetHeight}px`;
+  render();
+  if (main) main.style.minHeight = "";
+  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+}
+
+function note(slot: string, kind: "ok" | "info" | "warn" | "error", text: string): void {
+  ui.notes = { [slot]: [kind, text] };
+}
+
+function noteEl(slot: string): HTMLElement | null {
+  const n = ui.notes[slot];
+  return n ? h("div", { className: `msg ${n[0]}`, role: n[0] === "error" ? "alert" : "status" }, n[1]) : null;
+}
+
+/** Re-render everything except the table editors, so typing is never interrupted. */
+function refresh(opts: { tables?: boolean; scrollTo?: string } = {}): void {
+  persist();
+  steady(() => {
+    renderTopNote();
+    renderSidebar();
+    if (opts.tables) renderTables();
+    renderUploads();
+    renderChecks();
+    renderSchedule();
+    renderChecklist();
+    renderNight();
+  });
+  if (opts.scrollTo) {
+    const target = document.getElementById(opts.scrollTo);
+    if (target) setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  }
+  ui.notes = {};
+}
+
+function startOver(state: EventState, message: string): void {
+  ev = state;
+  ui.savedHash = fileHash(ev);
+  ui.savedAt = "";
+  ui.pending = {};
+  ui.undo = null;
+  ui.confirmStart = null;
+  ui.confirmCancel = null;
+  ui.solveError = null;
+  ui.tab = 1;
+  ui.restored = "";
+  note("top", "ok", message);
+  refresh({ tables: true, scrollTo: "top" });
+}
+
+// ----------------------------------------------------------------------
+// Sidebar.
+// ----------------------------------------------------------------------
+
+function field(label: string, input: HTMLElement, help?: string): HTMLElement {
+  return h("label", { className: "field" }, h("span", { className: "label" }, label), input, help ? h("span", { className: "help" }, help) : null);
+}
+
+function renderSidebar(): void {
+  const side = document.getElementById("sidebar")!;
+  const saved = fileHash(ev) === ui.savedHash;
+  const top = ev.hosts.length || ev.fams.length ? maxRounds(ev) : null;
+  const title = h("input", { type: "text", value: ev.title, "aria-label": "Event name" }) as HTMLInputElement;
+  title.addEventListener("input", () => { ev.title = title.value; persist(); renderSaveStatus(); });
+  const rounds = h("input", { type: "number", min: 1, step: 1, value: ev.rounds, "aria-label": "Rounds" }) as HTMLInputElement;
+  rounds.addEventListener("change", () => {
+    let n = Math.max(1, Math.floor(Number(rounds.value) || 1));
+    if (top !== null && n > top) {
+      n = top;
+      ev.rounds = n;
+      note("rounds", "warn", roundsLimitText(ev) + ` Rounds is set to ${top}.`);
+    } else ev.rounds = n;
+    ev.finished = Math.min(ev.finished, ev.rounds - 1);
+    refresh({ tables: true });
+  });
+  const weak = h("input", { type: "checkbox", checked: ev.oneWeakRound }) as HTMLInputElement;
+  weak.addEventListener("change", () => { ev.oneWeakRound = weak.checked; refresh(); });
+  const start = h("input", { type: "text", value: ev.startTime, placeholder: "6:30 PM", "aria-label": "Doors open at" }) as HTMLInputElement;
+  start.addEventListener("input", () => { ev.startTime = start.value; persist(); });
+  const minutes = h("input", { type: "number", min: 5, max: 120, step: 5, value: ev.roundMinutes, "aria-label": "Minutes per round" }) as HTMLInputElement;
+  minutes.addEventListener("change", () => { ev.roundMinutes = Math.min(120, Math.max(5, Number(minutes.value) || 20)); persist(); });
+
+  const openFile = h("input", { type: "file", accept: ".json,application/json", className: "visually-hidden", id: "open-event" }) as HTMLInputElement;
+  openFile.addEventListener("change", async () => {
+    const f = openFile.files?.[0];
+    openFile.value = "";
+    if (!f) return;
+    try {
+      const state = loadEvent(await readFile(f));
+      startOver(state, `Opened ${f.name}.`);
+    } catch (err) {
+      note("file", "error", err instanceof SheetError ? err.problems[0] : "That file could not be opened.");
+      renderSidebar();
+    }
+  });
+  const uploads = (["hosts", "fams"] as Kind[]).map((kind) => {
+    const input = h("input", { type: "file", accept: ".csv,text/csv", className: "visually-hidden", id: `up-${kind}` }) as HTMLInputElement;
+    input.addEventListener("change", async () => {
+      const f = input.files?.[0];
+      input.value = "";
+      if (!f) return;
+      const { rows, columns } = csvRecords(await readFile(f));
+      ui.pending[kind] = { kind, name: f.name, rows, columns, mapping: matchColumns(columns, kind) };
+      refresh({ scrollTo: `upload-${kind}` });
+    });
+    return h("div", {},
+      input,
+      h("label", { htmlFor: `up-${kind}`, for: `up-${kind}`, className: "button wide" }, kind === "hosts" ? "Upload host tables" : "Upload fams"),
+      ui.pending[kind] ? h("p", { className: "help warn-text" }, "Waiting for you to confirm on the page.") : null);
+  });
+
+  replace(side,
+    h("h2", {}, "Event"),
+    field("Event name", title),
+    field("Rounds", rounds, "How many times the hosts move. Each fam meets a different host every round."),
+    noteEl("rounds"),
+    h("label", { className: "check" }, weak, " No fam gets more than one weak round"),
+    h("p", { className: "help" }, "A weak round is a host who shares none of the fam's interests, or no host at all."),
+    h("details", {}, h("summary", {}, "Times for the run sheet"),
+      field("Doors open at", start, "Leave blank to write the times on the run sheet by hand."),
+      field("Minutes per round", minutes)),
+
+    h("h2", {}, "Save your work"),
+    h("button", { className: "button wide primary", onclick: saveFile }, "Save event file (keep this to continue later)"),
+    h("p", { className: "help", id: "save-status" }),
+    openFile,
+    h("label", { for: "open-event", className: "button wide" }, "Open a saved event file"),
+    noteEl("file"),
+    h("button", { className: "button wide", onclick: handOff }, "Hand off to next year"),
+    h("p", { className: "help" }, "A folder for next year's coordinator: the event file without student names, cancellations, or schedules, plus a note on how to open it."),
+
+    h("h2", {}, "Start"),
+    h("button", { className: "button wide", onclick: () => askStart("example") }, "Load the example dinner"),
+    h("button", { className: "button wide", onclick: () => askStart("blank") }, "Start a blank event"),
+    ui.confirmStart ? h("div", { className: "msg warn" },
+      "You have unsaved changes. Replace anyway?",
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: () => replaceEvent(ui.confirmStart!) }, "Replace"),
+        h("button", { className: "button", onclick: () => { ui.confirmStart = null; renderSidebar(); } }, "Keep mine"))) : null,
+    h("button", { className: "button wide", onclick: () => download("example.rotation.json", saveEvent(practiceEvent()), "application/json") }, "Download the example event"),
+
+    h("h2", {}, "Start from a spreadsheet"),
+    h("p", { className: "help" },
+      "Fill in a template in Google Sheets or Excel, save it as CSV (in Google Sheets: File, Download, Comma-separated values), and upload it here. " +
+      "A Google Forms export works too: you pick which column holds what. Tags and interests are keywords separated by commas or semicolons. " +
+      "Fams can be one row per fam, or one row per student with the fam name on each row."),
+    h("div", { className: "row" },
+      h("button", { className: "button", onclick: () => download("hosts_template.csv", templateCsv("hosts"), "text/csv") }, "Hosts template"),
+      h("button", { className: "button", onclick: () => download("fams_template.csv", templateCsv("fams"), "text/csv") }, "Fams template")),
+    uploads,
+  );
+  renderSaveStatus(saved);
+}
+
+function renderSaveStatus(saved = fileHash(ev) === ui.savedHash): void {
+  const el = document.getElementById("save-status");
+  if (!el) return;
+  replace(el, saved
+    ? ui.savedAt ? `Saved at ${ui.savedAt}.` : "No changes since this event was opened."
+    : h("span", {}, h("span", { className: "warn-text" }, "Not saved to a file yet. "), "Your work is kept in this browser, but save the event file to keep a copy you can move or share."));
+}
+
+function saveFile(): void {
+  download(fileName("event file", "rotation.json"), saveEvent(ev), "application/json");
+  ui.savedHash = fileHash(ev);
+  ui.savedAt = now();
+  persist();
+  renderSaveStatus();
+  renderChecklist();
+}
+
+function handOff(): void {
+  const base = cleanName(ev.title || "Event");
+  const readme = `${base}: hand-off for next year's coordinator
+
+What this is
+This folder holds the event file for ${base}, made with Rotation Optimizer, a free
+tool that plans which alumni host table visits which fam in each round of a
+rotation dinner, prints the seating chart, host cards, table tents, and a run
+sheet, and re-plans when someone cancels.
+
+How to open it
+1. Go to https://chrishoangle.github.io/rotation-optimizer/app/
+2. In the sidebar, under Save your work, click Open a saved event file.
+3. Choose "${base} handoff.rotation.json" from this folder.
+4. Read the Start here guide at the top of the page.
+
+What was kept
+The host tables, alum names, and tags; the fams, table numbers, sizes, and
+interests; the pairing rules; and the settings.
+
+What was removed
+Student names, the night's cancellations, finished rounds, and every schedule.
+Update the tables for your year, then click Find the best schedule.
+`;
+  const zip = zipFiles([
+    { name: `${base} handoff/README.txt`, text: readme },
+    { name: `${base} handoff/${base} handoff.rotation.json`, text: saveEvent(handoffEvent(ev)) },
+  ]);
+  download(`${base} handoff.zip`, zip, "application/zip");
+}
+
+const cleanName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Event";
+
+function fileName(what: string, ext: string): string {
+  const stamp = now().replace(":", ".").replace(/\s/g, "").toLowerCase();
+  return `${cleanName(ev.title)} ${what} ${stamp}.${ext}`;
+}
+
+function askStart(kind: "example" | "blank"): void {
+  if (fileHash(ev) === ui.savedHash) replaceEvent(kind);
+  else { ui.confirmStart = kind; renderSidebar(); }
+}
+
+function replaceEvent(kind: "example" | "blank"): void {
+  if (kind === "example") startOver(practiceEvent(), "Loaded the example dinner: 10 host tables and 10 fams. Click Find the best schedule.");
+  else startOver(newEvent({ title: "New event" }), "Started a blank event. Add host tables and fams below, or upload them.");
+}
+
+// ----------------------------------------------------------------------
+// Upload previews.
+// ----------------------------------------------------------------------
+
+const NOT_IN_FILE = "(not in this file)";
+
+function prepared(p: Pending): [Record<string, string>[], string[], string[]] {
+  const [problems, notices, mapping] = columnReport(p.columns, p.kind, p.mapping);
+  let rows = renameColumns(p.rows, mapping).filter((r) => Object.values(r).some((v) => (v || "").trim()));
+  let skipped: number;
+  [rows, skipped] = dropExampleRows(rows);
+  if (skipped) notices.push(`Skipped ${skipped} example row${skipped > 1 ? "s" : ""} from the template.`);
+  if (p.kind === "fams") {
+    let grouped: number;
+    [rows, grouped] = groupStudentRows(rows);
+    if (grouped) notices.push(`Each row looked like one student, so ${grouped} students were grouped into ${rows.length} fams by fam name. Size is the number of responses; edit it in the fams table if some students did not fill in the form.`);
+  }
+  return [rows, problems, notices];
+}
+
+function renderUploads(): void {
+  for (const kind of ["hosts", "fams"] as Kind[]) {
+    const box = document.getElementById(`upload-${kind}`)!;
+    const p = ui.pending[kind];
+    const noun = kind === "hosts" ? "host tables" : "fams";
+    if (!p) {
+      replace(box, noteEl(`upload-${kind}`),
+        ui.undo && ui.undo.kind === kind ? h("button", { className: "button", onclick: () => undoUpload(kind) }, "Undo upload") : null);
+      continue;
+    }
+    const [rows, problems, notices] = prepared(p);
+    const current = (kind === "hosts" ? ev.hosts : ev.fams).length;
+    const selects = FILE_COLUMNS[kind].map((ours) => {
+      const sel = h("select", { "aria-label": FRIENDLY[ours] }, [NOT_IN_FILE, ...p.columns].map((c) =>
+        h("option", { value: c, selected: (p.mapping[ours] ?? NOT_IN_FILE) === c }, c))) as HTMLSelectElement;
+      sel.addEventListener("change", () => {
+        if (sel.value === NOT_IN_FILE) delete p.mapping[ours];
+        else p.mapping[ours] = sel.value;
+        renderUploads();
+      });
+      return field(FRIENDLY[ours], sel);
+    });
+    replace(box, h("div", { className: "panel" },
+      h("p", {}, h("strong", {}, `Uploaded ${noun}: ${p.name}`), `, ${p.rows.length} rows. Check which column holds what.`),
+      h("p", { className: "help" }, "Columns you do not choose are left out, so a form's email or phone column is never kept."),
+      h("div", { className: "mapping" }, selects),
+      problems.map((x) => h("div", { className: "msg error" }, x)),
+      notices.map((x) => h("div", { className: "msg info" }, x)),
+      rows.length && !problems.length ? previewTable(rows.slice(0, 5)) : null,
+      h("div", { className: "row" },
+        h("button", { className: "button primary", disabled: !!problems.length || !rows.length, onclick: () => confirmUpload(kind, rows) },
+          `Replace ${current} ${noun} with these ${rows.length}`),
+        h("button", { className: "button", onclick: () => { delete ui.pending[kind]; refresh(); } }, "Cancel")),
+    ));
+  }
+}
+
+function previewTable(rows: Record<string, string>[]): HTMLElement {
+  const cols = Object.keys(rows[0]);
+  return h("div", { className: "scroll" }, h("table", { className: "plain" },
+    h("thead", {}, h("tr", {}, cols.map((c) => h("th", {}, FRIENDLY[c] ?? c)))),
+    h("tbody", {}, rows.map((r) => h("tr", {}, cols.map((c) => h("td", {}, r[c])))))));
+}
+
+function confirmUpload(kind: Kind, rows: Record<string, string>[]): void {
+  const p = ui.pending[kind]!;
+  ui.undo = { kind, rows: kind === "hosts" ? ev.hosts : ev.fams, name: p.name };
+  if (kind === "hosts") ev.hosts = normalizeTable(rows, HOST_COLUMNS, "host_id", "h");
+  else ev.fams = normalizeTable(rows, FAM_COLUMNS, "fam_id", "fam_");
+  delete ui.pending[kind];
+  note(`upload-${kind}`, "ok", `Replaced the ${kind === "hosts" ? "host tables" : "fams"} with ${rows.length} rows from ${p.name}.`);
+  refresh({ tables: true, scrollTo: `upload-${kind}` });
+}
+
+function undoUpload(kind: Kind): void {
+  if (!ui.undo) return;
+  if (kind === "hosts") ev.hosts = ui.undo.rows; else ev.fams = ui.undo.rows;
+  ui.undo = null;
+  note(`upload-${kind}`, "ok", "Upload undone. Your previous table is back.");
+  refresh({ tables: true });
+}
+
+// ----------------------------------------------------------------------
+// Table editors: plain inputs, saved as you type.
+// ----------------------------------------------------------------------
+
+interface Column { key: string; label: string; width: string; help?: string; kind?: "rule" | "host" | "fam" }
+
+const HOST_TABLE: Column[] = [
+  { key: "table_label", label: "Host table name", width: "26%" },
+  { key: "host_name", label: "Alum's name", width: "20%", help: "Optional. Printed on host cards only." },
+  { key: "tags", label: "Tags", width: "54%" },
+];
+const FAM_TABLE: Column[] = [
+  { key: "table_number", label: "Table #", width: "9%", help: "The number on the table in the room." },
+  { key: "fam_label", label: "Fam name", width: "24%" },
+  { key: "size", label: "Size", width: "7%", help: "How many students sit at this fam." },
+  { key: "interests", label: "Interests", width: "30%" },
+  { key: "students", label: "Students", width: "30%" },
+];
+const RULE_TABLE: Column[] = [
+  { key: "rule", label: "Rule", width: "24%", kind: "rule" },
+  { key: "host_table", label: "Host table", width: "30%", kind: "host" },
+  { key: "fam", label: "Fam", width: "30%", kind: "fam" },
+  { key: "rounds", label: "Rounds", width: "16%", help: "For example 1, or 1, 2" },
+];
+
+function nextId(rows: CleanRow[], col: string, prefix: string): string {
+  const used = new Set(rows.map((r) => r[col]));
+  let n = 1;
+  while (used.has(`${prefix}${String(n).padStart(2, "0")}`)) n++;
+  return `${prefix}${String(n).padStart(2, "0")}`;
+}
+
+function tableEditor(name: "hosts" | "fams" | "rules", cols: Column[]): HTMLElement {
+  const rows = () => (name === "hosts" ? ev.hosts : name === "fams" ? ev.fams : ev.rules);
+  const blankRow = (): CleanRow => {
+    const r: CleanRow = Object.fromEntries((name === "hosts" ? HOST_COLUMNS : name === "fams" ? FAM_COLUMNS : RULE_COLUMNS).map((c) => [c, ""]));
+    if (name === "hosts") r.host_id = nextId(ev.hosts, "host_id", "h");
+    if (name === "fams") r.fam_id = nextId(ev.fams, "fam_id", "fam_");
+    return r;
+  };
+  const body = h("tbody") as HTMLTableSectionElement;
+  const changed = () => {
+    if (name !== "rules") renderRuleOptions();
+    refresh();
+  };
+  const showDelete = () => {
+    [...body.rows].forEach((tr, i) => {
+      const b = tr.querySelector("button.icon") as HTMLButtonElement | null;
+      if (b) b.hidden = i >= rows().length;
+    });
+  };
+  // row is null for the empty last row; typing there turns it into a real row.
+  const rowFor = (start: CleanRow | null): HTMLTableRowElement => {
+    let row = start;
+    const tr = h("tr", { className: row ? "" : "new" }) as HTMLTableRowElement;
+    const ensure = (): CleanRow => {
+      if (!row) {
+        row = blankRow();
+        rows().push(row);
+        tr.classList.remove("new");
+        body.appendChild(rowFor(null));
+        showDelete();
+      }
+      return row;
+    };
+    cols.forEach((col, cIdx) => {
+      const value = row ? row[col.key] ?? "" : "";
+      const label = `${col.label}, row ${body.rows.length + 1}`;
+      let input: HTMLInputElement | HTMLSelectElement;
+      if (col.kind) {
+        input = h("select", { "aria-label": label, "data-col": col.key, "data-kind": col.kind }) as HTMLSelectElement;
+        fillOptions(input, col.kind, value);
+        input.addEventListener("change", () => { ensure()[col.key] = input.value; changed(); });
+      } else {
+        input = h("input", { type: "text", value, "aria-label": label, "data-col": col.key,
+          spellcheck: col.key === "tags" || col.key === "interests" ? "true" : "false" }) as HTMLInputElement;
+        input.addEventListener("input", () => { ensure()[col.key] = input.value; changed(); });
+        if (col.key.endsWith("label")) input.addEventListener("change", renderRuleOptions);
+      }
+      input.addEventListener("keydown", (e) => {
+        const k = e as KeyboardEvent;
+        if (k.key !== "Enter" || k.shiftKey || input instanceof HTMLSelectElement) return;
+        k.preventDefault();
+        const i = [...body.rows].indexOf(tr);
+        const next = body.rows[i + 1]?.cells[cIdx]?.querySelector("input,select") as HTMLElement | null;
+        next?.focus();
+        if (next instanceof HTMLInputElement) next.select();
+      });
+      tr.appendChild(h("td", {}, input));
+    });
+    const del = h("button", { className: "icon", title: "Delete this row", "aria-label": "Delete this row" }, "×") as HTMLButtonElement;
+    del.addEventListener("click", () => {
+      const i = [...body.rows].indexOf(tr);
+      if (i < 0 || i >= rows().length) return;
+      rows().splice(i, 1);
+      tr.remove();
+      showDelete();
+      changed();
+    });
+    tr.appendChild(h("td", { className: "del" }, del));
+    return tr;
+  };
+  rows().forEach((r) => body.appendChild(rowFor(r)));
+  body.appendChild(rowFor(null));
+  showDelete();
+  return h("div", { className: "scroll" }, h("table", { className: "editor", "data-table": name },
+    h("colgroup", {}, cols.map((c) => h("col", { style: `width:${c.width}` })), h("col", { style: "width:2.2rem" })),
+    h("thead", {}, h("tr", {}, cols.map((c) => h("th", { title: c.help ?? "" }, c.label)), h("th", {}, h("span", { className: "visually-hidden" }, "Delete")))),
+    body));
+}
+
+function fillOptions(sel: HTMLSelectElement, kind: "rule" | "host" | "fam", value: string): void {
+  const opts = kind === "rule" ? Object.keys(RULE_KINDS)
+    : kind === "host" ? ev.hosts.map((r) => r.table_label).filter((x) => x)
+    : ev.fams.map((r) => r.fam_label).filter((x) => x);
+  const all = value && !opts.includes(value) ? [...opts, value] : opts;
+  replace(sel, h("option", { value: "" }, "Choose…"), all.map((o) => h("option", { value: o, selected: o === value }, o)));
+}
+
+function renderRuleOptions(): void {
+  document.querySelectorAll<HTMLSelectElement>('table[data-table="rules"] select').forEach((sel) => {
+    fillOptions(sel, sel.dataset.kind as "rule" | "host" | "fam", sel.value);
+  });
+}
+
+function renderTables(): void {
+  replace(document.getElementById("hosts-table")!, tableEditor("hosts", HOST_TABLE));
+  replace(document.getElementById("fams-table")!, tableEditor("fams", FAM_TABLE));
+  replace(document.getElementById("rules-table")!, tableEditor("rules", RULE_TABLE));
+}
+
+// ----------------------------------------------------------------------
+// Checks and solving.
+// ----------------------------------------------------------------------
+
+function blank(): boolean {
+  return !ev.hosts.some((r) => Object.entries(r).some(([k, v]) => k !== "host_id" && v.trim()))
+    && !ev.fams.some((r) => Object.entries(r).some(([k, v]) => k !== "fam_id" && v.trim()));
+}
+
+function currentProblems(): string[] {
+  const inputs = checkInputs(ev);
+  const problems = [...inputs.problems];
+  const err = ui.solveError;
+  if (err && err.fp === fingerprint(ev)) { if (err.where === "tables") problems.push(err.text); }
+  else ui.solveError = null;
+  return problems;
+}
+
+function renderChecks(): void {
+  const box = document.getElementById("checks")!;
+  if (blank()) {
+    replace(box, noteEl("checks"), h("div", { className: "msg info" }, "Add host tables and fams above, or upload them from the sidebar, then click Find the best schedule."));
+    return;
+  }
+  const inputs = checkInputs(ev);
+  const problems = currentProblems();
+  const misses = nearMisses(ev.hosts, ev.fams);
+  const gone = ev.finished > 0 ? removedRows(ev) : [];
+  replace(box,
+    noteEl("checks"),
+    problems.length ? h("div", { className: "msg error", role: "alert" }, h("strong", {}, "Please fix these first:"), h("ul", {}, problems.map((p) => h("li", {}, p)))) : null,
+    inputs.warnings.map((w) => h("div", { className: "msg warn" }, w)),
+    misses.map((m) => h("div", { className: "msg info row spread" },
+      `Did you mean the same thing by ${m.spellings.join(" / ")}? Only exact matches add to a score.`,
+      h("button", { className: "button", onclick: () => fixSpelling(m) }, `Use '${m.suggestion}' everywhere`))),
+    gone.length ? h("div", { className: "msg error row spread" },
+      `You removed ${gone.join(", ")}, but rounds have already happened, so the schedule would no longer match what happened. Restore the rows, then use Cancel a host or Cancel a fam below.`,
+      h("button", { className: "button", onclick: restoreRows }, "Restore removed rows")) : null,
+  );
+  const findBtn = document.getElementById("find") as HTMLButtonElement;
+  findBtn.textContent = ev.plan ? "Re-plan with these tables" : "Find the best schedule";
+  findBtn.disabled = ui.solving;
+}
+
+function fixSpelling(m: NearMiss): void {
+  applySpelling(ev, m);
+  refresh({ tables: true });
+}
+
+function restoreRows(): void {
+  const back = restoreRemovedRows(ev);
+  note("checks", "ok", `Restored ${back.join(", ")} in ` + (back.length === 1 ? "its original place." : "their original places."));
+  refresh({ tables: true });
+}
+
+function getHighs(): Promise<HighsLike> {
+  if (highs) return Promise.resolve(highs);
+  return highsLoader({ locateFile: (f: string) => new URL(f, document.baseURI).href }).then((x) => (highs = x as unknown as HighsLike));
+}
+
+async function solve(keepPrinted: boolean, where: "tables" | "night"): Promise<boolean> {
+  ui.solving = true;
+  const status = document.getElementById(where === "tables" ? "find-status" : "replan-status");
+  if (status) replace(status, h("span", { className: "spinner", "aria-hidden": "true" }), " Finding the best schedule…");
+  await new Promise((r) => setTimeout(r, 30)); // let the page show the message first
+  try {
+    const solver = await getHighs();
+    solveEvent(solver, ev, keepPrinted);
+    ui.solveError = null;
+    return true;
+  } catch (err) {
+    const text = err instanceof SheetError ? err.problems.join("; ") : err instanceof InfeasibleProblemError ? err.message : `Something went wrong: ${(err as Error).message}`;
+    ui.solveError = { fp: fingerprint(ev), text, where };
+    return false;
+  } finally {
+    ui.solving = false;
+    if (status) replace(status);
+  }
+}
+
+async function findSchedule(): Promise<void> {
+  if (checkInputs(ev).problems.length || (ev.finished > 0 && removedRows(ev).length)) {
+    refresh({ scrollTo: "checks" });
+    return;
+  }
+  const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
+  if (ok) note("schedule", "ok", "Schedule updated.");
+  refresh({ tables: true, scrollTo: ok ? "schedule" : "checks" });
+}
+
+// ----------------------------------------------------------------------
+// Schedule and printouts.
+// ----------------------------------------------------------------------
+
+function unmatchedShare(p: EventPlan): number {
+  const ht = new Set(p.hosts.flatMap((x) => x.tags));
+  const ft = new Set(p.fams.flatMap((x) => x.interests));
+  const every = new Set([...ht, ...ft]);
+  const both = [...every].filter((t) => ht.has(t) && ft.has(t)).length;
+  return every.size ? (every.size - both) / every.size : 0;
+}
+
+function dataTable(rows: Record<string, unknown>[], names: Record<string, string>): HTMLElement {
+  if (!rows.length) return h("p", {}, "Nothing to show.");
+  const cols = Object.keys(rows[0]);
+  return h("div", { className: "scroll" }, h("table", { className: "plain" },
+    h("thead", {}, h("tr", {}, cols.map((c) => h("th", {}, names[c] ?? c[0].toUpperCase() + c.slice(1))))),
+    h("tbody", {}, rows.map((r) => h("tr", {}, cols.map((c) => h("td", {}, String(r[c] ?? ""))))))));
+}
+
+const NAMES: Record<string, string> = { table: "Table", fam: "Fam", host_table: "Host table", score: "Score", host_name: "Alum" };
+
+function renderSchedule(): void {
+  const box = document.getElementById("schedule-body")!;
+  const p = ev.plan;
+  if (!p) { replace(box, noteEl("schedule"), h("div", { className: "msg info" }, "Click Find the best schedule above.")); return; }
+  const problems = currentProblems();
+  const current = isCurrent(ev) && !problems.length && !(ev.finished > 0 && removedRows(ev).length);
+  const fairness = p.warnings.filter((w) => w.startsWith("Fairness check"));
+  const notes = p.warnings.filter((w) => !w.startsWith("Fairness check"));
+  const unmatched = unmatchedShare(p);
+  const pairings = p.assignments.length + openSlots(p).length;
+  const rows = scheduleRows(p);
+  ui.tab = Math.min(ui.tab, p.rounds + 1);
+  const tabs = h("div", { className: "tabs", role: "tablist" },
+    [...Array.from({ length: p.rounds }, (_, i) => `Round ${i + 1}`), "Host view"].map((label, i) =>
+      h("button", { role: "tab", "aria-selected": ui.tab === i + 1 ? "true" : "false", className: "tab", onclick: () => { ui.tab = i + 1; steady(renderSchedule); } }, label)));
+  const tabBody = ui.tab <= p.rounds
+    ? dataTable(rows.filter((r) => r.round === ui.tab).map(({ round: _r, ...rest }) => rest), NAMES)
+    : dataTable(hostViewRows(p), NAMES);
+  const printouts: [string, string, () => string, string][] = [
+    ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title), "One page per round for the room, then a find-your-table page."],
+    ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title), "Half a page per host: where to go each round and what to talk about."],
+    ["Table tents", "table tents", () => tableTentsHtml(p), "A big table number to fold and stand on each fam's table."],
+    ["Run sheet", "run sheet", () => runSheetHtml(p, ev.title, ev.startTime, ev.roundMinutes), "For you and the MC: a timeline for the night and check-in lists."],
+  ];
+  replace(box,
+    noteEl("schedule"),
+    current ? null : h("div", { className: "msg warn" },
+      "Out of date: the tables, rules, settings, or cancellations changed since this schedule was made. " +
+      (problems.length ? "Fix the problems above, then re-plan." : "Click Re-plan with these tables above, or Re-plan below.") +
+      " Printouts are hidden until the schedule is up to date."),
+    h("div", { className: current ? "" : "stale", id: current ? "" : "schedule-stale" },
+      current ? null : h("p", {}, h("strong", {}, "Not current. "), "This is the old schedule, shown for reference only."),
+      h("p", {}, "Planned for ", h("strong", {}, `${p.rounds} round${p.rounds !== 1 ? "s" : ""}`), `, ${p.fams.length} fams and ${p.hosts.length} host tables.`),
+      h("div", { className: "metrics" },
+        metric("Total match score", String(p.totalScore), "The sum of every pairing's score. Higher is better."),
+        metric("Proven best possible", provenOptimal(p) ? "Yes" : "Not proven", "Yes means no other schedule with these tables and rules scores higher."),
+        metric("Weak pairings", String(weakCount(p)), "Pairings where the host and fam share no tags, plus rounds where a fam has no host.")),
+      h("p", { className: "help" }, `In a good plan most pairings share at least one tag. Here ${weakCount(p)} of ${pairings} share none` + (openSlots(p).length ? " or have no host." : ".")),
+      fairness.length ? h("details", {}, h("summary", {}, `Fairness: ${fairness.length} fam${fairness.length !== 1 ? "s" : ""} need${fairness.length === 1 ? "s" : ""} attention`),
+        fairness.map((w) => h("p", {}, w.replace(/^Fairness check: /, "")))) : null,
+      h("details", { open: unmatched > 0.3 }, h("summary", {}, "Notes on tags"),
+        unmatched > 0.3 ? h("p", {}, `${Math.round(unmatched * 100)}% of the tags match nothing on the other side. A tag only counts when the host and the fam use the same words, for example computer science in both.`) : null,
+        notes.length ? notes.map((w) => h("p", {}, w)) : h("p", {}, "Every tag is used on both sides.")),
+      tabs, tabBody),
+    current ? [
+      h("h3", {}, "Print these four for the night"),
+      h("div", { className: "cards" }, printouts.map(([label, file, make, help]) => h("div", { className: "card" },
+        h("strong", {}, label), h("p", { className: "help" }, help),
+        h("div", { className: "row" },
+          h("button", { className: "button primary", onclick: () => openPage(make()) }, "Open to print"),
+          h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download"))))),
+      h("p", { className: "help" }, "Open a page, then print it from your browser on US Letter. Or download the page and print it later."),
+      h("button", { className: "button link", onclick: () => download(fileName("schedule", "csv"), scheduleCsv(p), "text/csv") }, "Download the schedule as a spreadsheet"),
+      h("div", { id: "printed" }, noteEl("printed"),
+        h("div", { className: "row" },
+          h("button", { className: "button", onclick: markPrinted }, "Mark as printed"),
+          h("span", { className: "help" }, ev.printed && ev.printedAt ? `Printed at ${ev.printedAt}. Changes below are listed against that version.`
+            : ev.printed ? "Printed version marked. Changes below are listed against it." : "Not marked as printed yet. Click Mark as printed after you print."))),
+    ] : null,
+  );
+}
+
+function metric(label: string, value: string, help: string): HTMLElement {
+  return h("div", { className: "metric", title: help }, h("span", { className: "help" }, label), h("span", { className: "value" }, value));
+}
+
+function markPrinted(): void {
+  ev.printed = ev.plan;
+  ev.printedAt = now();
+  note("printed", "ok", "Marked as printed. Later changes will be listed against this version.");
+  refresh();
+}
+
+function renderChecklist(): void {
+  const box = document.getElementById("checklist")!;
+  if (blank()) { replace(box); return; }
+  const items = beforeTheNight(ev, fileHash(ev) === ui.savedHash);
+  const left = items.filter((i) => i.status === "todo").length;
+  const label = { done: "Done", todo: "To do", optional: "Optional" } as const;
+  replace(box, h("details", { open: !!ev.plan && left > 0 },
+    h("summary", {}, "Before the night: " + (left ? `${left} thing${left !== 1 ? "s" : ""} left to do` : "all done")),
+    h("ul", { className: "checklist" }, items.map((i) => h("li", { className: i.status }, h("span", { className: "tag" }, label[i.status]), " ", i.text)))));
+}
+
+// ----------------------------------------------------------------------
+// Changes on the night.
+// ----------------------------------------------------------------------
+
+function renderNight(): void {
+  const box = document.getElementById("night")!;
+  const p = ev.plan;
+  if (!p) { replace(box); return; }
+  const problems = currentProblems();
+  const low = Math.max(0, ...p.lockedRounds);
+  const finished = h("input", { type: "number", min: 0, max: p.rounds - 1, step: 1, value: Math.min(ev.finished, p.rounds - 1), "aria-label": "Rounds already finished" }) as HTMLInputElement;
+  finished.addEventListener("change", () => {
+    const v = Math.min(p.rounds - 1, Math.max(0, Math.floor(Number(finished.value) || 0)));
+    if (v < low) { ui.unfinish = v; steady(renderNight); return; }
+    ui.unfinish = null;
+    ev.finished = v;
+    refresh();
+  });
+  const wantLower = ui.unfinish;
+  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
+  const cancelRow = (kind: "host" | "fam") => {
+    const names = kind === "host" ? p.hosts.map((x) => [x.name, x.hostId]) : p.fams.map((x) => [x.name, x.groupId]);
+    const who = h("select", { "aria-label": `Cancel a ${kind}` }, names.map(([n, id]) => h("option", { value: id }, n))) as HTMLSelectElement;
+    const from = h("select", { "aria-label": `${kind === "host" ? "Host" : "Fam"} misses from round` }, openRounds.map((r) => h("option", { value: r }, String(r)))) as HTMLSelectElement;
+    return h("div", { className: "cancel-row" },
+      field(`Cancel a ${kind}`, who), field("from round", from),
+      h("button", { className: "button big", onclick: () => {
+        ui.confirmCancel = { kind, id: who.value, name: who.selectedOptions[0].textContent ?? "", first: Number(from.value) };
+        steady(renderNight);
+      } }, `Cancel ${kind}`));
+  };
+  const cc = ui.confirmCancel;
+  const cancelled = [
+    ...Object.entries(ev.cancelHosts).map(([id, r]) => ["host", id, r, p.hosts.find((x) => x.hostId === id)?.name ?? id] as const),
+    ...Object.entries(ev.cancelFams).map(([id, r]) => ["fam", id, r, p.fams.find((x) => x.groupId === id)?.name ?? id] as const),
+  ];
+  const err = ui.solveError && ui.solveError.fp === fingerprint(ev) && ui.solveError.where === "night" ? ui.solveError.text : "";
+  const modeKeep = h("input", { type: "radio", name: "mode", value: "keep", checked: true }) as HTMLInputElement;
+  const modeFresh = h("input", { type: "radio", name: "mode", value: "fresh" }) as HTMLInputElement;
+  replace(box,
+    h("h2", { id: "night-title" }, "5. Changes on the night"),
+    h("p", { className: "help" }, "In this order: set the rounds that already happened, cancel anyone who can't come, then click Re-plan. Finished rounds never change. Then reprint only the pages listed under Reprint."),
+    field("Rounds already finished", finished),
+    wantLower !== null ? h("div", { className: "msg warn" },
+      `Round ${low} already happened, and you re-planned after it, so it is kept as it was. Un-finishing it lets round ${low} change again, so printed host cards for that round may no longer match.`,
+      h("div", { className: "row" },
+        h("button", { className: "button", onclick: () => {
+          p.lockedRounds = p.lockedRounds.filter((r) => r <= wantLower);
+          ev.finished = wantLower;
+          ui.unfinish = null;
+          note("night", "ok", `Round ${low} is no longer finished.`);
+          refresh();
+        } }, `Un-finish round ${low}`),
+        h("button", { className: "button", onclick: () => { ui.unfinish = null; steady(renderNight); } }, "Keep it finished")))
+      : low ? h("p", { className: "help" }, low > 1 ? `Rounds 1 to ${low} already happened and are kept as they were. To change them, lower this number.`
+        : "Round 1 already happened and is kept as it was. To change it again, lower this number.") : null,
+    noteEl("night"),
+    openRounds.length ? [h("h3", {}, "Someone can't come"), cancelRow("host"), cancelRow("fam")] : null,
+    cc ? h("div", { className: "panel confirm" },
+      h("p", {}, "Cancel ", h("strong", {}, cc.name), ` from round ${cc.first}` + (cc.first < p.rounds ? " on?" : "?")),
+      h("div", { className: "row" },
+        h("button", { className: "button primary big", onclick: () => {
+          (cc.kind === "host" ? ev.cancelHosts : ev.cancelFams)[cc.id] = cc.first;
+          ui.confirmCancel = null;
+          note("cancellations", "info", `${cc.name} is cancelled from round ${cc.first}. Click Re-plan to update the schedule.`);
+          refresh();
+        } }, `Yes, cancel ${cc.name}`),
+        h("button", { className: "button big", onclick: () => { ui.confirmCancel = null; steady(renderNight); } }, "No, keep"))) : null,
+    noteEl("cancellations"),
+    cancelled.length ? [h("h3", {}, "Cancellations"), h("ul", { className: "cancellations" }, cancelled.map(([kind, id, r, name]) => {
+      const applied = ((kind === "host" ? p.hostAway : p.famAway)[id] ?? []).includes(r);
+      return h("li", {}, `${name}: cancelled from round ${r}` + (applied ? "" : " (waiting for Re-plan)"),
+        r > ev.finished ? h("button", { className: "button small", onclick: () => {
+          delete (kind === "host" ? ev.cancelHosts : ev.cancelFams)[id];
+          refresh();
+        } }, "Undo") : null);
+    }))] : null,
+    h("fieldset", { className: "mode" }, h("legend", {}, "How to re-plan"),
+      h("label", {}, modeKeep, " Keep the printed schedule where possible"),
+      h("label", {}, modeFresh, " Re-plan from scratch (nothing printed yet)")),
+    h("button", { className: "button primary big wide", disabled: !!problems.length || ui.solving, onclick: async () => {
+      const ok = await solve(modeKeep.checked, "night");
+      if (ok) note("changes", "ok", "Schedule updated.");
+      refresh({ tables: true, scrollTo: ok ? "changes" : "night-error" });
+    } }, "Re-plan"),
+    h("p", { id: "replan-status", className: "help" }),
+    h("div", { id: "night-error" }, err ? h("div", { className: "msg error", role: "alert" }, err) : null),
+    changesSincePrinted(),
+  );
+}
+
+function changesSincePrinted(): HTMLElement {
+  const p = ev.plan!;
+  const printed = ev.printed;
+  const box = h("div", { id: "changes" }, noteEl("changes"), h("h3", {}, "What changed since the printed version"));
+  if (!printed) {
+    box.appendChild(h("p", { className: "help" }, "Nothing is marked as printed yet. Click Mark as printed after you print, and changes will be listed here."));
+    return box;
+  }
+  const tables = Object.fromEntries(p.fams.map((f) => [f.groupId, f.tableNumber]));
+  const changes = planChanges(printed, p);
+  box.appendChild(changes.length ? dataTable(changes.map((c) => ({
+    Round: c.round, Table: tables[c.famId] ?? "", Fam: famName(p, c.famId),
+    Printed: slotText(printed, c.round, c.famId), Now: slotText(p, c.round, c.famId),
+  })), {}) : h("p", {}, "Nothing changed."));
+  const out = reprintList(printed, p);
+  box.appendChild(h("p", {}, h("strong", {}, "Reprint: "), describeReprint(out, p).join("; ") || "nothing."));
+  if (isCurrent(ev)) {
+    const stamp = now();
+    const buttons: HTMLElement[] = [];
+    if (out.hostIds.length) buttons.push(reprintButton("Reprint host cards", "host cards reprint", () => hostCardsHtml(p, out.hostIds, ev.title, stamp)));
+    if (out.seatingChart) buttons.push(reprintButton("Reprint seating chart pages", "seating chart reprint", () => seatingChartHtml(p, ev.title, out.seatingRounds, out.finderPage, stamp)));
+    if (out.famIds.length) buttons.push(reprintButton("Reprint table tents", "table tents reprint", () => tableTentsHtml(p, out.famIds, stamp)));
+    if (buttons.length) {
+      box.appendChild(h("div", { className: "cards" }, buttons));
+      box.appendChild(h("p", { className: "help" }, "Reprinted pages say Updated with the time, so nobody uses an old copy."));
+    }
+  }
+  return box;
+}
+
+function reprintButton(label: string, file: string, make: () => string): HTMLElement {
+  return h("div", { className: "card" }, h("strong", {}, label),
+    h("div", { className: "row" },
+      h("button", { className: "button primary", onclick: () => openPage(make()) }, "Open to print"),
+      h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download")));
+}
+
+// ----------------------------------------------------------------------
+// Page.
+// ----------------------------------------------------------------------
+
+const START_HERE = [
+  "**1. Your tables.** The page opens with an example dinner so you can try everything first. For your own event, click **Start a blank event** in the sidebar, or fill in the **Hosts template** and **Fams template** and upload them. A Google Forms export works too.",
+  "**2. Pairing rules (optional).** Add a rule when a host must meet a fam, must never meet one, or only comes for some rounds.",
+  "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
+  "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
+  "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
+  "**6. On the night.** If someone cancels: set **Rounds already finished**, click **Cancel host** or **Cancel fam**, then **Re-plan**. Reprint only the pages listed under **Reprint**.",
+  "**7. Next year.** Click **Hand off to next year** for a copy without student names or the night's changes.",
+];
+
+const GLOSSARY: [string, string][] = [
+  ["Host table", "one alum (or a pair) who hosts a topic, such as Pharmacy. Host tables move each round."],
+  ["Alum", "the person hosting a host table. Their name is printed on host cards only."],
+  ["Fam", "a group of admitted students seated at one numbered table all night."],
+  ["Round", "one block of conversation. Between rounds every host moves to a new fam."],
+  ["Tags and interests", "keywords for a host's topics and a fam's interests. Each tag they share raises the score."],
+  ["Score", "how well a host matches a fam, from 0 (nothing shared) to 100 (the same keywords). The tool finds the schedule with the highest total score."],
+  ["Weak round", "a round where a fam's host shares none of its interests, or no host comes to the fam."],
+  ["Open table", "a fam with no host for a round, when there are more fams than host tables."],
+  ["No table this round", "a host with no fam for a round, when there are more host tables than fams."],
+  ["Pairing rule", "must meet, never meet, or only in rounds. Rules always hold; the score decides the rest."],
+  ["Finished round", "a round that already happened. Re-planning never changes it."],
+  ["Printed version", "the schedule you marked as printed. Changes are listed against it, so you reprint only what changed."],
+  ["Event file", "the file Save event file downloads. It holds everything, and it is the copy to keep."],
+];
+
+function releaseDate(): string {
+  const d = new Date(__RELEASE_DATE__ + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function renderShell(): void {
+  const app = document.getElementById("app")!;
+  const find = h("button", { id: "find", className: "button primary big", onclick: findSchedule }, "Find the best schedule");
+  replace(app,
+    h("aside", { id: "sidebar", "aria-label": "Event, saving, and spreadsheets" }),
+    h("main", { id: "main" },
+      h("div", { id: "top" }),
+      h("h1", {}, "Rotation Optimizer"),
+      h("p", { className: "lead" }, "Plan which host table visits which fam in each round of a rotation dinner. Fams stay seated; hosts move, and no fam meets the same host twice. The tool matches hosts to fams by shared interests, prints what you need for the night, and re-plans when someone cancels."),
+      h("div", { id: "top-note" }),
+      h("details", { open: !ev.plan, className: "guide" }, h("summary", {}, "Start here: how to plan a dinner in 7 steps"), START_HERE.map((p) => h("p", {}, rich(p)))),
+      h("details", { className: "guide" }, h("summary", {}, "Words used here"),
+        h("dl", {}, GLOSSARY.map(([t, d]) => [h("dt", {}, t), h("dd", {}, d)]))),
+      h("div", { id: "upload-hosts" }),
+      h("div", { id: "upload-fams" }),
+      h("h2", {}, "1. Host tables"),
+      h("p", { className: "help" }, "One row per host table. Tags are keywords separated by commas or semicolons. Blank tags are fine while a host has not replied. Type in the empty last row to add a host table; press Enter to move down."),
+      h("div", { id: "hosts-table" }),
+      h("h2", {}, "2. Fams"),
+      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page."),
+      h("div", { id: "fams-table" }),
+      h("h2", {}, "3. Pairing rules (optional)"),
+      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. Write rounds as 1 or 1, 2."),
+      h("div", { id: "rules-table" }),
+      h("p", { className: "help" }, "Your changes are checked as you type and kept in this browser."),
+      h("div", { className: "row" }, find, h("span", { id: "find-status", className: "help" })),
+      h("div", { id: "checks" }),
+      h("section", { id: "schedule" }, h("h2", {}, "4. Schedule"), h("p", { className: "help" }, SCORE_LINE), h("div", { id: "schedule-body" })),
+      h("div", { id: "checklist" }),
+      h("section", { id: "night" }),
+      h("footer", {},
+        `Rotation Optimizer ${__VERSION__}, updated ${releaseDate()}. Everything runs in your browser: your event is saved on this computer as you work and is never sent anywhere. `,
+        h("a", { href: "../" }, "About the project"), " · ",
+        h("a", { href: "https://github.com/chrishoangle/rotation-optimizer" }, "Source code")),
+    ),
+  );
+}
+
+function renderTopNote(): void {
+  const el = document.getElementById("top-note");
+  if (!el) return;
+  replace(el, ui.restored ? h("div", { className: "msg info row spread" }, ui.restored,
+    h("button", { className: "button", onclick: () => { ui.restored = ""; renderTopNote(); } }, "OK")) : null, noteEl("top"));
+}
+
+function boot(): void {
+  let restored = false;
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      ev = loadEvent(saved.event);
+      ui.savedHash = saved.savedHash ?? "";
+      ui.savedAt = saved.savedAt ?? "";
+      ui.restored = `Welcome back. Your event "${ev.title}" was restored from this browser${saved.at ? ` (last change at ${saved.at})` : ""}.`;
+      restored = true;
+    }
+  } catch { /* nothing saved, or storage is blocked */ }
+  if (!restored) {
+    ev = practiceEvent();
+    ui.savedHash = fileHash(ev);
+  }
+  renderShell();
+  renderTopNote();
+  renderTables();
+  refresh();
+  getHighs().catch(() => {
+    note("checks", "error", "The schedule solver could not load. Check your internet connection and reload the page.");
+    renderChecks();
+  });
+}
+
+boot();

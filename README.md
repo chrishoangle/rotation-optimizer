@@ -64,8 +64,12 @@ python -m pytest tests/ -v
 
 ## Plan your own event
 
-Open the app at https://rotation-optimizer.streamlit.app. It starts with a
-practice dinner and a seven step guide. No install and no code are needed.
+Open the planner at https://chrishoangle.github.io/rotation-optimizer/app/.
+It starts with a practice dinner and a seven step guide. No install and no
+code are needed, and nothing leaves the browser: the solver runs in the page
+(HiGHS compiled to WebAssembly), and the event is saved on that computer as
+you work. The same app also runs in Python with Streamlit at
+https://rotation-optimizer.streamlit.app; event files work in both.
 The practice dinner, in `templates/practice_hosts.csv` and
 `templates/practice_fams.csv`, has the same tables as the example below with
 tags reworded so hosts and fams use the same words, which is how tags should
@@ -99,7 +103,17 @@ fams get an open table for a round. With more hosts than fams, some hosts
 have no table for a round. A table hosted by two people is entered as one
 host.
 
-To run the app on your own computer:
+The web app lives in [`web/`](web/) and is a TypeScript port of this
+package. Its tests check it against output written by the Python package
+(`scripts/export_parity_cases.py`): the same best score for each of 36
+scheduling cases, the same messages, and the same printouts byte for byte.
+To build it into `docs/app/`:
+
+```bash
+cd web && npm ci && npm test && npm run build
+```
+
+To run the Streamlit app on your own computer:
 
 ```bash
 pip install -e ".[app]"

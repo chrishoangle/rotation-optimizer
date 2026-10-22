@@ -1,0 +1,21 @@
+{
+  "name": "rotation-optimizer-web",
+  "private": true,
+  "version": "0.4.0",
+  "description": "Rotation Optimizer as a static web app. The solver runs in the browser.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "highs": "1.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "esbuild": "0.25.10",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
