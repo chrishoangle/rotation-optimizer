@@ -120,8 +120,8 @@ def test_sheet_errors_are_collected():
     with pytest.raises(SheetError) as err:
         load_hosts(bad)
     assert err.value.problems == [
-        "host 2: the table name is empty.",
-        "host 2 has the same row ID (h1) as an earlier row. Delete the copy, or clear the ID in one of them.",
+        "Row 2 of the host tables has no table name. Add one, or delete the row.",
+        "The host table in row 2 has the same row ID (h1) as an earlier row. Delete the copy, or clear the ID in one of them.",
     ]
 
 
@@ -181,4 +181,4 @@ def test_cli_reports_sheet_problems(tmp_path, capsys):
     bad.write_text("table_label,tags\n,medicine\n")
     code = cli_main(["--hosts", str(bad), "--fams", str(FAMS_CSV), "--rounds", "2"])
     assert code == 2
-    assert "host 1: the table name is empty." in capsys.readouterr().err
+    assert "Row 1 of the host tables has no table name. Add one, or delete the row." in capsys.readouterr().err

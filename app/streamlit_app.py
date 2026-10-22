@@ -20,7 +20,9 @@ import datetime as dt
 import hashlib
 import io
 import json
+import re
 import sys
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -86,7 +88,15 @@ from rotation_optimizer.sheets import (  # noqa: E402
 
 TEMPLATES = ROOT / "templates"
 FIXES_JS = (Path(__file__).with_name("browser_fixes.js")).read_text()
-EDITOR_HEIGHT = 300  # fixed height so the page, not the table, scrolls
+ROW_PX = 35  # height of one table row, including the header row
+
+
+def _height(rows: list) -> int:
+    """Room for every row and a few new ones, from 8 to 20 rows; the page scrolls, not the table.
+
+    The table cannot grow while you type in it, so it starts with spare rows.
+    """
+    return (max(8, min(len(rows) + 3, 20)) + 1) * ROW_PX + 3
 COLUMN_NAMES = {"table": "Table", "fam": "Fam", "host_table": "Host table", "score": "Score", "host_name": "Alum"}
 SCORE_LINE = (
     "How scores work: a pairing scores from 0 to 100, the share of all the tags the host and fam list that they "
@@ -110,12 +120,17 @@ def _csv_records(source) -> tuple[list[dict], list[str]]:
 
 
 def _template_rows(kind: str) -> list[dict]:
-    rows, columns = _csv_records(TEMPLATES / f"{kind}.csv")
+    rows, columns = _csv_records(TEMPLATES / f"practice_{kind}.csv")
     return rename_columns(rows, match_columns(columns, kind))
 
 
 def example_event() -> EventState:
-    """The example dinner from templates/, with no schedule yet."""
+    """The practice dinner from templates/practice_*.csv, with no schedule yet.
+
+    It has the same tables as the real example in templates/hosts.csv and
+    fams.csv, with tags reworded so both sides use the same words, which is
+    how a coordinator should write them.
+    """
     state = EventState(title="Example dinner", hosts=_template_rows("hosts"), fams=_template_rows("fams"))
     normalize_state(state)
     return state
@@ -127,6 +142,45 @@ def _hash(state: EventState) -> str:
 
 def _frame(rows: list[dict], columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame([{c: r.get(c, "") for c in columns} for r in rows], columns=columns, dtype="object")
+
+
+def _file_name(what: str, ext: str) -> str:
+    """A download name a coordinator can find later, such as "Spring Dinner seating chart 7.42pm.html"."""
+    stamp = _now_text().replace(":", ".").replace(" ", "").lower()
+    name = re.sub(r'[\\/:*?"<>|]+', " ", event.title or "Event").strip() or "Event"
+    return f"{name} {what} {stamp}.{ext}"
+
+
+def _handoff_zip(state: EventState) -> bytes:
+    """The hand-off: the event file plus a plain-language note for next year's coordinator."""
+    base = re.sub(r'[\\/:*?"<>|]+', " ", state.title or "Event").strip() or "Event"
+    readme = f"""{base}: hand-off for next year's coordinator
+
+What this is
+This folder holds the event file for {base}, made with Rotation Optimizer, a free
+tool that plans which alumni host table visits which fam in each round of a
+rotation dinner, prints the seating chart, host cards, table tents, and a run
+sheet, and re-plans when someone cancels on the night.
+
+How to open it
+1. Go to https://rotation-optimizer.streamlit.app
+2. In the sidebar, under Save your work, click Open a saved event file.
+3. Choose "{base} handoff.rotation.json" from this folder.
+4. Read the Start here guide at the top of the page.
+
+What was kept
+The host tables, alum names, and tags; the fams, table numbers, sizes, and
+interests; the pairing rules; and the settings.
+
+What was removed
+Student names, the night's cancellations, finished rounds, and every schedule.
+Update the tables for your year, then click Apply and find the best schedule.
+"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{base} handoff/README.txt", readme)
+        z.writestr(f"{base} handoff/{base} handoff.rotation.json", save_event(handoff_event(state)))
+    return buf.getvalue()
 
 
 def _reset_editors() -> None:
@@ -182,32 +236,40 @@ def _mark_saved() -> None:
 def _start_over(state: EventState, message: str) -> None:
     ss["event"] = state
     ss["saved_hash"] = _hash(state)
-    for k in ("saved_at", "rounds_msg", "pending_upload", "undo_upload", "solve_error", "confirm_start"):
+    for k in ("saved_at", "rounds_msg", "pending_uploads", "undo_upload", "solve_error", "confirm_start", "confirm_cancel"):
         ss.pop(k, None)
     ss["rounds_v"] = ss.get("rounds_v", 0) + 1
+    ss["files_v"] = ss.get("files_v", 0) + 1  # clears the file names shown under the upload boxes
     _reset_editors()
     _scroll("ro-top", message)
     st.rerun()
+
+
+def _replace_event(kind: str) -> None:
+    if kind == "example":
+        _start_over(example_event(), "Loaded the example dinner: 10 host tables and 10 fams. Click Apply and find the best schedule.")
+    _start_over(EventState(title="New event", hosts=[], fams=[]), "Started a blank event. Add host tables and fams below, or upload them.")
 
 
 def sidebar() -> None:
     with st.sidebar:
         st.header("Event")
         event.title = st.text_input("Event name", event.title)
-        top = max_rounds(event)
+        top = max_rounds(event) if (event.hosts or event.fams) else None  # no limit until there are tables
         rounds = st.number_input("Rounds", min_value=1, value=event.rounds, step=1, key=f"rounds_{ss.get('rounds_v', 0)}",
                                  help="How many times the hosts move. Each fam meets a different host every round.")
-        if int(rounds) > top:
+        if top is not None and int(rounds) > top:
             event.rounds = top
             ss["rounds_v"] = ss.get("rounds_v", 0) + 1
-            ss["rounds_msg"] = rounds_limit_text(event) + f" Rounds is set to {top}."
+            ss["rounds_msg"] = (top, rounds_limit_text(event) + f" Rounds is set to {top}.")
             st.rerun()
         elif int(rounds) != event.rounds:
             event.rounds = int(rounds)
             ss.pop("rounds_msg", None)
             event.finished = min(event.finished, event.rounds - 1)
-        if ss.get("rounds_msg"):
-            st.warning(ss["rounds_msg"])
+        msg = ss.get("rounds_msg")
+        if msg and msg[0] == event.rounds == top:  # only while it still describes the tables
+            st.warning(msg[1])
         event.one_weak_round = st.checkbox(
             "No fam gets more than one weak round",
             value=event.one_weak_round,
@@ -222,7 +284,7 @@ def sidebar() -> None:
         st.header("Save your work")
         st.download_button(
             "Save event file (keep this to continue later)", save_event(event),
-            file_name=f"{event.title or 'event'}.rotation.json", mime="application/json", width="stretch",
+            file_name=_file_name("event file", "rotation.json"), mime="application/json", width="stretch",
             on_click=_mark_saved, key="save_event",
             help="Downloads one file with your tables, rules, cancellations, and schedules. Open it later to pick up where you left off.",
         )
@@ -230,7 +292,9 @@ def sidebar() -> None:
             st.caption(f"Saved at {ss['saved_at']}." if ss.get("saved_at") else "No changes since this event was opened.")
         else:
             st.caption(":orange[Unsaved changes.] Save the event file to keep them. Leaving or refreshing the page loses them.")
-        loaded = st.file_uploader("Open a saved event file", type="json", key="load_event")
+        loaded = st.file_uploader("Open a saved event file", type="json", key=f"load_event_{ss.get('files_v', 0)}",
+                                  help="The file Save event file downloaded, ending in .rotation.json.")
+        st.caption("Event file (.json)")
         if loaded is not None and ss.get("loaded_file") != loaded.file_id:
             ss["loaded_file"] = loaded.file_id
             try:
@@ -240,11 +304,11 @@ def sidebar() -> None:
             else:
                 _start_over(state, f"Opened {loaded.name}.")
         st.download_button(
-            "Hand off to next year", save_event(handoff_event(event)),
-            file_name=f"{event.title or 'event'} handoff.rotation.json", mime="application/json", width="stretch",
-            key="handoff",
-            help="An event file for next year's coordinator: the same host tables, fams, tags, and rules, "
-                 "without student names, cancellations, or schedules.",
+            "Hand off to next year", _handoff_zip(event),
+            file_name=f"{re.sub(r'[^A-Za-z0-9 ]+', ' ', event.title or 'Event').strip()} handoff.zip",
+            mime="application/zip", width="stretch", key="handoff",
+            help="A folder for next year's coordinator: the event file with the same host tables, fams, tags, and rules, "
+                 "without student names, cancellations, or schedules, plus a note on how to open it.",
         )
 
         st.header("Start")
@@ -252,15 +316,14 @@ def sidebar() -> None:
             ss["confirm_start"] = "example"
         if st.button("Start a blank event", key="start_blank", width="stretch"):
             ss["confirm_start"] = "blank"
-        if ss.get("confirm_start"):
-            kind = ss["confirm_start"]
-            st.warning("This replaces the event on the page." + ("" if _hash(event) == ss.get("saved_hash") else " Your unsaved changes will be lost."))
+        kind = ss.get("confirm_start")
+        if kind and _hash(event) == ss.get("saved_hash"):
+            _replace_event(kind)  # nothing would be lost, so no question
+        if kind:
+            st.warning("You have unsaved changes. Replace anyway?")
             c1, c2 = st.columns(2)
             if c1.button("Replace", key="confirm_start_btn", type="primary", width="stretch"):
-                if kind == "example":
-                    _start_over(example_event(), "Loaded the example dinner: 10 host tables and 10 fams. Click Apply and find the best schedule.")
-                else:
-                    _start_over(EventState(title="New event", hosts=[], fams=[]), "Started a blank event. Add host tables and fams, or upload them.")
+                _replace_event(kind)
             if c2.button("Keep mine", key="cancel_start_btn", width="stretch"):
                 ss.pop("confirm_start")
                 st.rerun()
@@ -270,7 +333,8 @@ def sidebar() -> None:
 
         st.header("Start from a spreadsheet")
         st.caption(
-            "Fill in a template in Google Sheets or Excel, then export it as CSV and upload it here. "
+            "Fill in a template in Google Sheets or Excel, save it as CSV (in Google Sheets: File, Download, "
+            "Comma-separated values), and upload it here. "
             "A Google Forms export works too: you pick which column holds what. "
             "Tags and interests are keywords separated by commas or semicolons. "
             "Fams can be one row per fam, or one row per student with the fam name on each row."
@@ -278,15 +342,20 @@ def sidebar() -> None:
         c1, c2 = st.columns(2)
         c1.download_button("Hosts template", template_csv("hosts"), file_name="hosts_template.csv", mime="text/csv", width="stretch")
         c2.download_button("Fams template", template_csv("fams"), file_name="fams_template.csv", mime="text/csv", width="stretch")
-        for label, key, kind in [("Upload host tables (CSV)", "up_hosts", "hosts"), ("Upload fams (CSV)", "up_fams", "fams")]:
-            up = st.file_uploader(label, type="csv", key=key)
+        for label, key, kind in [("Upload host tables", "up_hosts", "hosts"), ("Upload fams", "up_fams", "fams")]:
+            up = st.file_uploader(label, type="csv", key=f"{key}_{ss.get('files_v', 0)}",
+                                  help="In Google Sheets: File, Download, Comma-separated values. In Excel: Save As, CSV.")
+            st.caption("Spreadsheet saved as CSV")
             if up is not None and ss.get(f"{key}_id") != up.file_id:
                 ss[f"{key}_id"] = up.file_id
                 rows, columns = _csv_records(up)
-                ss["pending_upload"] = {"kind": kind, "name": up.name, "rows": rows, "columns": columns,
-                                        "mapping": match_columns(columns, kind), "id": up.file_id}
-                _scroll("ro-upload")
+                ss.setdefault("pending_uploads", {})[kind] = {
+                    "kind": kind, "name": up.name, "rows": rows, "columns": columns,
+                    "mapping": match_columns(columns, kind), "id": up.file_id}
+                _scroll(f"ro-upload-{kind}")
                 st.rerun()
+            if kind in ss.get("pending_uploads", {}):
+                st.caption(":orange[Waiting for you to confirm on the page.]")
 
 
 # ----------------------------------------------------------------------
@@ -308,19 +377,20 @@ def prepared_upload(pending: dict) -> tuple[list[dict], list[str], list[str]]:
     if kind == "fams":
         rows, grouped = group_student_rows(rows)
         if grouped:
-            notices.append(f"Each row looked like one student, so {grouped} students were grouped into {len(rows)} fams by fam name.")
+            notices.append(f"Each row looked like one student, so {grouped} students were grouped into {len(rows)} fams by fam name. "
+                           "Size is the number of responses; edit it in the fams table if some students did not fill in the form.")
     return rows, problems, notices
 
 
-def upload_preview() -> None:
-    _anchor("ro-upload")
-    pending = ss.get("pending_upload")
+def upload_preview(kind: str) -> None:
+    """The preview for one pending upload, shown right above the table it replaces."""
+    _anchor(f"ro-upload-{kind}")
+    pending = ss.get("pending_uploads", {}).get(kind)
+    noun = "host tables" if kind == "hosts" else "fams"
     if pending:
-        kind = pending["kind"]
-        noun = "host tables" if kind == "hosts" else "fams"
         current = len(event.hosts if kind == "hosts" else event.fams)
         with st.container(border=True):
-            st.markdown(f"**{pending['name']}**: {len(pending['rows'])} rows. Check which column holds what.")
+            st.markdown(f"**Uploaded {noun}: {pending['name']}**, {len(pending['rows'])} rows. Check which column holds what.")
             st.caption("Columns you do not choose are left out, so a form's email or phone column is never kept.")
             options = [NOT_IN_FILE] + pending["columns"]
             cols = st.columns(len(FILE_COLUMNS_OF[kind]))
@@ -340,29 +410,27 @@ def upload_preview() -> None:
             if rows and not problems:
                 st.dataframe(pd.DataFrame(rows[:5]).rename(columns=FRIENDLY), hide_index=True, width="stretch")
             c1, c2 = st.columns(2)
-            if c1.button(f"Replace {current} {noun} with these {len(rows)}", key="confirm_upload", type="primary",
+            if c1.button(f"Replace {current} {noun} with these {len(rows)}", key=f"confirm_upload_{kind}", type="primary",
                          disabled=bool(problems) or not rows, width="stretch"):
                 ss["undo_upload"] = {"kind": kind, "rows": list(event.hosts if kind == "hosts" else event.fams), "name": pending["name"]}
                 if kind == "hosts":
                     event.hosts = normalize_table(rows, HOST_COLUMNS, "host_id", "h")
                 else:
                     event.fams = normalize_table(rows, FAM_COLUMNS, "fam_id", "fam_")
-                ss.pop("pending_upload")
+                ss["pending_uploads"].pop(kind)
                 _reset_editors()
-                _scroll("ro-upload", f"Replaced the {noun} with {len(rows)} rows from {pending['name']}.")
+                _scroll(f"ro-upload-{kind}", f"Replaced the {noun} with {len(rows)} rows from {pending['name']}.")
                 st.rerun()
-            if c2.button("Cancel", key="cancel_upload", width="stretch"):
-                ss.pop("pending_upload")
+            if c2.button("Cancel", key=f"cancel_upload_{kind}", width="stretch"):
+                ss["pending_uploads"].pop(kind)
                 st.rerun()
     undo = ss.get("undo_upload")
-    if undo and not pending:
-        c1, c2 = st.columns([4, 1])
-        c1.caption(f"The {'host tables were' if undo['kind'] == 'hosts' else 'fams were'} replaced from {undo['name']}.")
-        if c2.button("Undo upload", key="undo_upload_btn", width="stretch"):
+    if undo and undo["kind"] == kind and not pending:
+        if st.button("Undo upload", key="undo_upload_btn"):
             setattr(event, undo["kind"], undo["rows"])
             ss.pop("undo_upload")
             _reset_editors()
-            _scroll("ro-upload", "Upload undone. Your previous table is back.")
+            _scroll(f"ro-upload-{kind}", "Upload undone. Your previous table is back.")
             st.rerun()
 
 
@@ -379,7 +447,8 @@ def tables() -> None:
         st.subheader("1. Host tables")
         st.caption("One row per host table. Tags are keywords separated by commas or semicolons. Blank tags are fine while a host has not replied. Double-click a cell to edit it; the last row adds a new one.")
         hosts_df = st.data_editor(
-            _frame(event.hosts, HOST_COLUMNS), num_rows="dynamic", width="stretch", height=EDITOR_HEIGHT, key=f"hosts_{v}",
+            _frame(event.hosts, HOST_COLUMNS), num_rows="dynamic", width="stretch", height=_height(event.hosts), key=f"hosts_{v}",
+            placeholder="",
             column_order=["table_label", "host_name", "tags"],
             column_config={
                 "table_label": st.column_config.TextColumn("Host table name", width="medium", default=""),
@@ -390,12 +459,14 @@ def tables() -> None:
         st.subheader("2. Fams")
         st.caption("One row per fam. Table number is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page.")
         fams_df = st.data_editor(
-            _frame(event.fams, FAM_COLUMNS), num_rows="dynamic", width="stretch", height=EDITOR_HEIGHT, key=f"fams_{v}",
+            _frame(event.fams, FAM_COLUMNS), num_rows="dynamic", width="stretch", height=_height(event.fams), key=f"fams_{v}",
+            placeholder="",
             column_order=["table_number", "fam_label", "size", "interests", "students"],
             column_config={
-                "table_number": st.column_config.TextColumn("Table number", width="small", default=""),
+                "table_number": st.column_config.TextColumn("Table #", width="small", default="",
+                                                            help="The number on the table in the room."),
                 "fam_label": st.column_config.TextColumn("Fam name", width="medium", default=""),
-                "size": st.column_config.TextColumn("Size", width="small", default=""),
+                "size": st.column_config.TextColumn("Size", width="small", default="", help="How many students sit at this fam."),
                 "interests": st.column_config.TextColumn("Interests", width="medium", default=""),
                 "students": st.column_config.TextColumn("Students", width="medium", default=""),
             },
@@ -408,7 +479,7 @@ def tables() -> None:
             "Write rounds as 1 or 1, 2."
         )
         rules_df = st.data_editor(
-            _frame(event.rules, RULE_COLUMNS), num_rows="dynamic", width="stretch", key=f"rules_{v}",
+            _frame(event.rules, RULE_COLUMNS), num_rows="dynamic", width="stretch", key=f"rules_{v}", placeholder="Choose…",
             column_config={
                 "rule": st.column_config.SelectboxColumn("Rule", options=list(RULE_KINDS), default=None, width="medium"),
                 "host_table": st.column_config.SelectboxColumn("Host table", options=host_labels, width="medium"),
@@ -416,7 +487,7 @@ def tables() -> None:
                 "rounds": st.column_config.TextColumn("Rounds", default="", width="small", help="For example 1, or 1, 2"),
             },
         )
-        st.caption("Your edits count once you click a button below.")
+        st.caption("Your edits count, and are checked, when you click a button below.")
         c1, c2 = st.columns(2)
         apply = c1.form_submit_button("Apply changes", width="stretch")
         solve = c2.form_submit_button(
@@ -437,6 +508,9 @@ def checks() -> list[str]:
     _anchor("ro-checks")
     inputs = check_inputs(event)
     problems = list(inputs.problems)
+    if not event.hosts and not event.fams:
+        st.info("Add host tables and fams above, or upload them from the sidebar, then click Apply changes.")
+        return [p for p in problems if not p.startswith("Add at least one")] or ["no tables yet"]
     solve_error = ss.get("solve_error")
     if solve_error and solve_error[0] == fingerprint(event):
         if ss.get("solve_error_where") == "tables":
@@ -506,19 +580,32 @@ def results(problems: list[str]) -> None:
             + ("Fix the problems above, then click Re-plan." if problems else "Click Apply and re-plan above, or Re-plan below.")
             + " Downloads are hidden until the schedule is up to date."
         )
-    with st.container(border=not current):
+    with st.container(border=not current, key="schedule_current" if current else "schedule_stale"):
+        if not current:
+            st.markdown("**Not current.** This is the old schedule, shown for reference only.")
+        st.markdown(f"Planned for **{plan.rounds} round{'s' if plan.rounds != 1 else ''}**, "
+                    f"{len(plan.fams)} fams and {len(plan.hosts)} host tables.")
         c1, c2, c3 = st.columns(3)
         c1.metric("Total match score", plan.total_score, help="The sum of every pairing's score. Higher is better.")
         c2.metric("Proven best possible", "Yes" if plan.proven_optimal else "Not proven",
                   help="Yes means no other schedule with these tables and rules scores higher.")
-        c3.metric("Weak pairings", len(plan.zero_slots()), help="Pairings where the host and fam share no tags, plus open tables.")
-        for w in plan.warnings:
-            if w.startswith("Fairness check"):
-                st.warning(w)
-        with st.expander("Notes on tags"):
-            for w in plan.warnings:
-                if not w.startswith("Fairness check"):
-                    st.write(w)
+        c3.metric("Weak pairings", plan.weak_count(), help="Pairings where the host and fam share no tags, plus rounds where a fam has no host.")
+        pairings = len(plan.assignments) + len(plan.open_slots())
+        st.caption(f"In a good plan most pairings share at least one tag. Here {plan.weak_count()} of {pairings} share none"
+                   + (" or have no host." if plan.open_slots() else "."))
+        fairness = [w for w in plan.warnings if w.startswith("Fairness check")]
+        if fairness:
+            with st.expander(f"Fairness: {len(fairness)} fam{'s' if len(fairness) != 1 else ''} need{'s' if len(fairness) == 1 else ''} attention"):
+                for w in fairness:
+                    st.write(w.removeprefix("Fairness check: "))
+        notes = [w for w in plan.warnings if not w.startswith("Fairness check")]
+        unmatched = _unmatched_share(plan)
+        with st.expander("Notes on tags", expanded=unmatched > 0.3):
+            if unmatched > 0.3:
+                st.write(f"{round(unmatched * 100)}% of the tags match nothing on the other side. A tag only counts when the "
+                         "host and the fam use the same words, for example computer science in both.")
+            for w in notes:
+                st.write(w)
         rows = pd.DataFrame(schedule_rows(plan))
         tabs = st.tabs([f"Round {r}" for r in range(1, plan.rounds + 1)] + ["Host view"])
         for r, tab in enumerate(tabs[:-1], start=1):
@@ -529,28 +616,38 @@ def results(problems: list[str]) -> None:
         return
     st.markdown("**Print these four for the night**")
     d = st.columns(4)
-    d[0].download_button("Seating chart", seating_chart_html(plan, title=event.title), file_name="seating_chart.html",
+    d[0].download_button("Seating chart", seating_chart_html(plan, title=event.title), file_name=_file_name("seating chart", "html"),
                          mime="text/html", width="stretch", help="One page per round for the room, then a find-your-table page.")
-    d[1].download_button("Host cards", host_cards_html(plan, title=event.title), file_name="host_cards.html",
+    d[1].download_button("Host cards", host_cards_html(plan, title=event.title), file_name=_file_name("host cards", "html"),
                          mime="text/html", width="stretch", help="Half a page per host: where to go each round and what to talk about.")
-    d[2].download_button("Table tents", table_tents_html(plan), file_name="table_tents.html", mime="text/html",
+    d[2].download_button("Table tents", table_tents_html(plan), file_name=_file_name("table tents", "html"), mime="text/html",
                          width="stretch", help="A big table number to fold and stand on each fam's table.")
     d[3].download_button("Run sheet", run_sheet_html(plan, title=event.title, start_time=event.start_time,
                                                      round_minutes=event.round_minutes),
-                         file_name="run_sheet.html", mime="text/html", width="stretch",
+                         file_name=_file_name("run sheet", "html"), mime="text/html", width="stretch",
                          help="For you and the MC: a timeline for the night and check-in lists.")
-    st.download_button("Schedule as a spreadsheet (CSV)", schedule_csv(plan), file_name="schedule.csv", mime="text/csv",
+    st.download_button("Schedule as a spreadsheet", schedule_csv(plan), file_name=_file_name("schedule", "csv"), mime="text/csv",
                        help="Every round and table, to open in Google Sheets or Excel. Not needed for printing.")
     _anchor("ro-printed")
     c1, c2 = st.columns([1, 3])
     if c1.button("Mark as printed", key="mark_printed"):
         event.printed = event.plan
+        event.printed_at = _now_text()
         _scroll("ro-printed", "Marked as printed. Later changes will be listed against this version.")
         st.rerun()
     c2.caption(
-        "Printed version: " + ("set. Changes below are listed against it." if event.printed else "none yet. Click Mark as printed after you print.")
+        (f"Printed at {event.printed_at}. Changes below are listed against that version." if event.printed and event.printed_at
+         else "Printed version marked. Changes below are listed against it." if event.printed
+         else "Not marked as printed yet. Click Mark as printed after you print.")
         + " Open each downloaded page in your browser and print it on US Letter."
     )
+
+
+def _unmatched_share(plan) -> float:
+    host_tags = set().union(*(h.tags for h in plan.hosts)) if plan.hosts else set()
+    fam_tags = set().union(*(f.interests for f in plan.fams)) if plan.fams else set()
+    every = host_tags | fam_tags
+    return len(every - (host_tags & fam_tags)) / len(every) if every else 0.0
 
 
 def checklist() -> None:
@@ -585,8 +682,8 @@ def night(problems: list[str]) -> None:
     if finished < low:
         with st.container(border=True):
             st.warning(
-                f"Round {low} is locked because you re-planned after it finished. Un-finishing it lets the solver change "
-                f"round {low} again, so printed host cards for that round may no longer match."
+                f"Round {low} already happened, and you re-planned after it, so it is kept as it was. Un-finishing it lets "
+                f"round {low} change again, so printed host cards for that round may no longer match."
             )
             if st.button(f"Un-finish round {low}", key="unfinish"):
                 plan.locked_rounds = [r for r in plan.locked_rounds if r <= finished]
@@ -594,8 +691,8 @@ def night(problems: list[str]) -> None:
                 _scroll("ro-night", f"Round {low} is no longer finished.")
                 st.rerun()
     elif low:
-        st.caption(f"Rounds 1 to {low} are locked because you re-planned after they finished." if low > 1 else
-                   "Round 1 is locked because you re-planned after it finished. To change it again, lower this number.")
+        st.caption(f"Rounds 1 to {low} already happened and are kept as they were. To change them, lower this number." if low > 1 else
+                   "Round 1 already happened and is kept as it was. To change it again, lower this number.")
     event.finished = max(int(finished), low)
     _anchor("ro-night")
     open_rounds = list(range(event.finished + 1, plan.rounds + 1))
@@ -608,9 +705,23 @@ def night(problems: list[str]) -> None:
             who = c1.selectbox(f"Cancel a {kind}", list(names), key=f"cancel_{kind}_name")
             first = c2.selectbox("from round", open_rounds, key=f"cancel_{kind}_round_{event.finished}")
             if c3.button(f"Cancel {kind}", key=f"cancel_{kind}_btn", width="stretch"):
-                store[names[who]] = int(first)
-                _scroll("ro-cancellations", f"{who} is cancelled from round {first}. Click Re-plan to update the schedule.", "info")
-                st.rerun()
+                ss["confirm_cancel"] = (kind, names[who], who, int(first))
+        # The question goes below both rows, so the Cancel buttons never move.
+        pending = ss.get("confirm_cancel")
+        if pending:
+            kind, ident, name, first_round = pending
+            store = event.cancel_hosts if kind == "host" else event.cancel_fams
+            with st.container(border=True):
+                st.markdown(f"Cancel **{name}** from round {first_round}" + (" on?" if first_round < plan.rounds else "?"))
+                y, n_, _gap = st.columns([2, 1, 2])
+                if y.button(f"Yes, cancel {name}", key="confirm_cancel_yes", type="primary", width="stretch"):
+                    store[ident] = first_round
+                    ss.pop("confirm_cancel")
+                    ss["notes"] = {"ro-cancellations": ("info", f"{name} is cancelled from round {first_round}. Click Re-plan to update the schedule.")}
+                    st.rerun()
+                if n_.button("No, keep", key="confirm_cancel_no", width="stretch"):
+                    ss.pop("confirm_cancel")
+                    st.rerun()
     _anchor("ro-cancellations")
     cancelled = [("host", h, r, plan.host_name(h) if any(x.host_id == h for x in plan.hosts) else h) for h, r in event.cancel_hosts.items()]
     cancelled += [("fam", f, r, plan.fam_name(f) if any(x.group_id == f for x in plan.fams) else f) for f, r in event.cancel_fams.items()]
@@ -622,7 +733,6 @@ def night(problems: list[str]) -> None:
         c1.write(f"{name}: cancelled from round {r}" + ("" if applied else " (waiting for Re-plan)"))
         if r > event.finished and c2.button("Undo", key=f"undo_{kind}_{ident}"):
             (event.cancel_hosts if kind == "host" else event.cancel_fams).pop(ident, None)
-            _scroll("ro-cancellations")
             st.rerun()
     mode = st.radio(
         "How to re-plan",
@@ -666,17 +776,20 @@ def changes_since_printed() -> None:
     st.markdown("**Reprint:** " + ("; ".join(out.describe(plan)) or "nothing."))
     if not is_current(event):
         return
+    now = _now_text()
     c1, c2, c3 = st.columns(3)
     if out.host_ids:
-        c1.download_button("Reprint host cards", host_cards_html(plan, host_ids=out.host_ids, title=event.title),
-                           file_name="host_cards_reprint.html", mime="text/html", key="reprint_cards")
+        c1.download_button("Reprint host cards", host_cards_html(plan, host_ids=out.host_ids, title=event.title, updated=now),
+                           file_name=_file_name("host cards reprint", "html"), mime="text/html", key="reprint_cards")
     if out.seating_chart:
         c2.download_button("Reprint seating chart pages",
-                           seating_chart_html(plan, title=event.title, rounds=out.seating_rounds or [], finder=out.finder_page),
-                           file_name="seating_chart_reprint.html", mime="text/html", key="reprint_chart")
+                           seating_chart_html(plan, title=event.title, rounds=out.seating_rounds or [], finder=out.finder_page,
+                                              updated=now),
+                           file_name=_file_name("seating chart reprint", "html"), mime="text/html", key="reprint_chart")
     if out.fam_ids:
-        c3.download_button("Reprint table tents", table_tents_html(plan, fam_ids=out.fam_ids),
-                           file_name="table_tents_reprint.html", mime="text/html", key="reprint_tents")
+        c3.download_button("Reprint table tents", table_tents_html(plan, fam_ids=out.fam_ids, updated=now),
+                           file_name=_file_name("table tents reprint", "html"), mime="text/html", key="reprint_tents")
+    st.caption("Reprinted pages say Updated with the time, so nobody uses an old copy.")
 
 
 # ----------------------------------------------------------------------
@@ -729,6 +842,14 @@ GLOSSARY = """
 """
 
 
+STYLES = """
+<style>
+.st-key-schedule_stale { opacity: 0.5; }
+[data-testid="stFileUploaderDropzoneInstructions"] span { display: none; }
+</style>
+"""
+
+
 def guide() -> None:
     with st.expander("Start here: how to plan a dinner in 7 steps", expanded=event.plan is None):
         st.markdown(START_HERE)
@@ -750,12 +871,14 @@ def main() -> None:
         "and no fam meets the same host twice. The tool matches hosts to fams by shared interests, prints what "
         "you need for the night, and re-plans when someone cancels."
     )
+    st.markdown(STYLES, unsafe_allow_html=True)
     guide()
     key = f"finished_{ss['editor_version']}"
     if key in ss and event.plan is not None:
         event.finished = max(int(ss[key]), max(event.plan.locked_rounds or [0]))
     sidebar()
-    upload_preview()
+    upload_preview("hosts")
+    upload_preview("fams")
     tables()
     if ss.pop("want_solve", False):
         blocked = check_inputs(event).problems or (event.finished > 0 and removed_rows(event))

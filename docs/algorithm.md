@@ -152,8 +152,15 @@ The table below comes from
 [`benchmarks/rounds_sweep.py`](../benchmarks/rounds_sweep.py) on the STEW
 example with $H = G = 10$, a 10 s time limit, Python 3.10.12, and OR-Tools
 9.15.6755, run in a 4 vCPU aarch64 Linux VM on an Apple Silicon MacBook Pro.
-The sweep uses OR-Tools' default parallel search. Scores matched across
-two runs. The reported bound at $R = 4$ and $R = 10$ varied between runs,
+The sweep uses OR-Tools' default parallel search, which runs one worker per
+core. Scores matched across two runs.
+
+On a machine with few cores that default can be slow to prove optimality.
+On a 2 vCPU x86_64 Linux container (Python 3.13.16, OR-Tools 9.15.6755), the
+default search had not proven the $H = G = 10$, $R = 3$ example optimal at the
+30 s limit, while 8 workers proved it in 0.12 s. `solve()` now uses 8 workers
+unless `num_workers` is given, so the hosted app, which runs on a small
+machine, gets the faster proof. The reported bound at $R = 4$ and $R = 10$ varied between runs,
 which is expected when the solver stops at the time limit.
 
 | R  | Score | Bound | Proven optimal | Runtime (s) |

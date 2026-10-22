@@ -172,8 +172,12 @@ def test_other_infeasibility_names_rule_types(toy):
     # Each pair below is allowed on its own, but A, B, and C cannot all
     # meet X in two rounds.
     rules = [Rule("must", h, "X") for h in "ABC"]
-    with pytest.raises(RuleConflictError, match="No schedule can satisfy all of these at once: 3 pairing rule"):
+    with pytest.raises(RuleConflictError) as err:
         plan_event(hosts, fams, 2, rules=rules)
+    assert str(err.value) == (
+        "These cannot all hold at once: Host A must meet Fam X; Host B must meet Fam X; Host C must meet Fam X. "
+        "Change a round, or delete one of them."
+    )
 
 
 # ----------------------------------------------------------------------
@@ -376,9 +380,9 @@ def test_parse_rule_rows_reports_every_problem():
             2,
         )
     assert err.value.problems == [
-        "rule 1: choose a host table from the list.",
-        "rule 2: round 5 is outside 1 to 2.",
-        "rule 3: only in rounds needs at least one round.",
+        "Pairing rule 1: choose a host table from the list.",
+        "Pairing rule 2: there is no round 5, the event has 2 rounds.",
+        "Pairing rule 3: only in rounds needs at least one round.",
     ]
 
 

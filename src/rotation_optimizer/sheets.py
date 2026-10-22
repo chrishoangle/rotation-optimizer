@@ -24,7 +24,8 @@ fams columns:
 
 Rows that are blank in every cell are ignored. Empty spreadsheet cells
 (None or NaN) count as blank. Problems are collected and reported together,
-numbered the way a coordinator sees the rows: "host 3 (Pharmacy)".
+named the way a coordinator knows them: "Pharmacy", or "Row 3 of the
+host tables" for a row with no name yet.
 """
 
 from __future__ import annotations
@@ -109,7 +110,10 @@ def split_tags(text: str) -> list[str]:
 
 
 def _who(kind: str, i: int, label: str) -> str:
-    return f"{kind} {i} ({label})" if label else f"{kind} {i}"
+    """How a message names a row: its name, or its place when it has no name yet."""
+    if label:
+        return label
+    return f"The {'host table' if kind == 'host' else 'fam'} in row {i}"
 
 
 def hosts_from_rows(rows: Iterable[dict]) -> tuple[list[Host], list[str], list[str]]:
@@ -134,9 +138,9 @@ def hosts_from_rows(rows: Iterable[dict]) -> tuple[list[Host], list[str], list[s
             used_ids.add(host_id)
         tags = split_tags(row.get("tags", ""))
         if not label:
-            problems.append(f"{who}: the table name is empty.")
+            problems.append(f"Row {i} of the host tables has no table name. Add one, or delete the row.")
         elif label.lower() in labels:
-            problems.append(f"host {labels[label.lower()]} and host {i} are both named {label}. Each table needs its own name.")
+            problems.append(f"Two host tables are named {label}. Each table needs its own name.")
         else:
             labels[label.lower()] = i
         if host_id in seen_ids:
@@ -197,9 +201,9 @@ def fams_from_rows(rows: Iterable[dict]) -> tuple[list[GuestGroup], list[str], l
             else:
                 numbers[number] = who
         if not label:
-            problems.append(f"{who}: the fam name is empty.")
+            problems.append(f"Row {i} of the fams has no fam name. Add one, or delete the row.")
         elif label.lower() in labels:
-            problems.append(f"fam {labels[label.lower()]} and fam {i} are both named {label}. Each fam needs its own name.")
+            problems.append(f"Two fams are named {label}. Each fam needs its own name.")
         else:
             labels[label.lower()] = i
         if fam_id in seen_ids:
@@ -312,7 +316,7 @@ def parse_rounds(text: str, rounds: int) -> tuple[int, ...]:
             raise ValueError(f"{text!r} is not a list of round numbers like 1, 2")
         n = int(value)
         if not 1 <= n <= rounds:
-            raise ValueError(f"round {n} is outside 1 to {rounds}")
+            raise ValueError(f"there is no round {n}, the event has {rounds} round{'s' if rounds != 1 else ''}")
         out.append(n)
     return tuple(sorted(set(out)))
 
@@ -334,28 +338,28 @@ def parse_rule_rows(rows: Iterable[dict], hosts: list[Host], fams: list[GuestGro
     for i, row in enumerate(clean_rows(rows), start=1):
         kind = RULE_KINDS.get(row.get("rule", "").lower())
         if kind is None:
-            problems.append(f"rule {i}: choose must meet, never meet, or only in rounds.")
+            problems.append(f"Pairing rule {i}: choose must meet, never meet, or only in rounds.")
             continue
         try:
             h = host_id_by_label(hosts, row.get("host_table", ""))
         except SheetError:
-            problems.append(f"rule {i}: choose a host table from the list.")
+            problems.append(f"Pairing rule {i}: choose a host table from the list.")
             continue
         try:
             rs = parse_rounds(row.get("rounds", ""), rounds)
         except ValueError as err:
-            problems.append(f"rule {i}: {err}.")
+            problems.append(f"Pairing rule {i}: {err}.")
             continue
         if kind == "only":
             if not rs:
-                problems.append(f"rule {i}: only in rounds needs at least one round.")
+                problems.append(f"Pairing rule {i}: only in rounds needs at least one round.")
                 continue
             host_away[h] = sorted(set(range(1, rounds + 1)) - set(rs))
             continue
         try:
             f = fam_id_by_label(fams, row.get("fam", ""))
         except SheetError:
-            problems.append(f"rule {i}: choose a fam from the list.")
+            problems.append(f"Pairing rule {i}: choose a fam from the list.")
             continue
         rules.append(Rule(kind, h, f, rs))
     if problems:
@@ -533,13 +537,20 @@ def drop_example_rows(rows: list[dict]) -> tuple[list[dict], int]:
 def group_student_rows(rows: list[dict]) -> tuple[list[dict], int]:
     """Turn one row per student into one row per fam, when fam names repeat.
 
+    A file counts as one row per student when at least half the rows have a
+    single student name. Otherwise repeated fam names are left alone, so they
+    are reported as duplicates instead of merged.
+
     Rows with the same fam name become one fam: the students are joined,
     the interests are combined without repeats, and the size is the number
     of students when no size is given. Returns (rows, students grouped);
     rows come back unchanged, with 0, when no fam name repeats.
     """
     names = [cell(r.get("fam_label", "")).lower() for r in rows if cell(r.get("fam_label", ""))]
-    if len(names) == len(set(names)):
+    students = [cell(r.get("students", "")) for r in rows]
+    one_each = sum(1 for x in students if x) >= len(rows) / 2 and not any(";" in x for x in students)
+    if len(names) == len(set(names)) or not one_each:
+        # Not one row per student: leave repeated fam names for the duplicate check.
         return rows, 0
     fams: dict[str, dict] = {}
     count = 0

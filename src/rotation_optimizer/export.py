@@ -14,6 +14,8 @@ from __future__ import annotations
 import csv
 import html
 import io
+import math
+import re
 
 from .planning import FAM_ABSENT, NO_HOST, EventPlan
 
@@ -23,6 +25,30 @@ _BASE_CSS = """
 body { font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1c1c1e; margin: 0; }
 @media screen { body { margin: 24px; } }
 """
+
+
+_STAMP_CSS = ".stamp { display: inline-block; font-size: 12px; font-weight: 700; color: #8a1c1c; border: 1.5px solid #8a1c1c; border-radius: 4px; padding: 1px 6px; margin: 0 0 6px; }"
+
+
+def _tag_words(tag: str) -> str:
+    """A tag as words on paper: small-business becomes small business, while pre-med stays."""
+    return re.sub(r"(?<=[a-z]{4})-(?=[a-z]{4})", " ", tag)
+
+
+def _stamp(updated: str) -> str:
+    """The mark on a reprinted page, so nobody uses the old copy."""
+    return f'<div class="stamp">Updated {html.escape(updated)}. Replaces the earlier copy.</div>' if updated else ""
+
+
+def _counts(plan: EventPlan) -> str:
+    """How many fams, host tables, and rounds, counting cancellations."""
+    def part(n: int, noun: str, gone: dict) -> str:
+        text = f"{n} {noun}{'s' if n != 1 else ''}"
+        if gone:
+            text += f" ({len(gone)} cancelled from round {min(min(rs) for rs in gone.values())})"
+        return text
+    return (part(len(plan.fams), "fam", plan.fam_away) + ", " + part(len(plan.hosts), "host table", plan.host_away)
+            + f", {plan.rounds} round{'s' if plan.rounds != 1 else ''}.")
 
 
 def _table_numbers(plan: EventPlan) -> dict[str, int]:
@@ -73,16 +99,19 @@ def availability_text(plan: EventPlan, host_id: str) -> str:
 
 
 def seating_chart_html(
-    plan: EventPlan, title: str = "Rotation schedule", rounds: list[int] | None = None, finder: bool = True
+    plan: EventPlan, title: str = "Rotation schedule", rounds: list[int] | None = None, finder: bool = True,
+    updated: str = "",
 ) -> str:
     """One section per round, then a find-your-table page. Each starts on a new printed page.
 
     rounds and finder limit the output to some pages, for reprinting after a re-plan.
+    updated, such as "7:42 PM", marks every page as a replacement.
     """
     e = html.escape
     rows = schedule_rows(plan)
     hosts = {h.host_id: h.name for h in plan.hosts}
     sections = []
+    stamp = _stamp(updated)
     for r in (rounds or range(1, plan.rounds + 1)):
         cards = "".join(
             f'<div class="card"><div class="num">Table {row["table"]}</div><div class="fam">{e(row["fam"])}</div>'
@@ -102,12 +131,11 @@ def seating_chart_html(
             notes += f'<p class="note">Not hosting this round: {e("; ".join(limited))}</p>'
         if away:
             notes += f'<p class="note">Cancelled: {e(", ".join(away))}</p>'
-        sections.append(f'<section><h2>Round {r}</h2><div class="grid">{cards}</div>{notes}</section>')
+        sections.append(f'<section><h2>Round {r}</h2>{stamp}<div class="grid">{cards}</div>{notes}</section>')
     names = find_your_table_rows(plan) if finder else []
     if names:
         items = "".join(f'<tr><td>{e(name)}</td><td class="tn">Table {num}</td><td>{e(fam)}</td></tr>' for name, num, fam in names)
-        sections.append(f'<section><h2>Find your table</h2><table class="finder">{items}</table></section>')
-    status = "proven best possible" if plan.proven_optimal else "best found, not proven optimal"
+        sections.append(f'<section><h2>Find your table</h2>{stamp}<table class="finder">{items}</table></section>')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)}</title>
@@ -122,16 +150,21 @@ h1 {{ font-size: 22px; margin: 0 0 4px; }} h2 {{ font-size: 20px; margin: 18px 0
 section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }}
 .finder {{ border-collapse: collapse; width: 100%; columns: 2; }} .finder td {{ border-bottom: 1px solid #e3e0d9; padding: 4px 6px; font-size: 13px; }}
 .finder td.tn {{ font-weight: 700; white-space: nowrap; }}
+{_STAMP_CSS}
 </style></head><body>
 <h1>{e(title)}</h1>
-<p class="meta">{len(plan.fams)} fams, {len(plan.hosts)} host tables, {plan.rounds} rounds. Total match score {plan.total_score} ({status}).</p>
+<p class="meta">{_counts(plan)}</p>
 {''.join(sections)}
 </body></html>
 """
 
 
-def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: str = "Host cards") -> str:
+def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: str = "Host cards", updated: str = "") -> str:
     """One half-page card per host: table number, fam, and talking points for every round.
+
+    Cards grow to fit and never clip. Two short cards share a page; a card
+    too long for half a page gets a page of its own, and so does the card
+    after it, so the halves still line up for cutting.
 
     host_ids limits the output to those hosts, for reprinting after a re-plan.
     """
@@ -151,9 +184,9 @@ def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: s
                 other = sorted(f.interests - h.tags)
                 pts = ""
                 if shared:
-                    pts += f'<div class="pts"><b>You share:</b> {e(", ".join(shared))}</div>'
+                    pts += f'<div class="pts"><b>You share:</b> {e(", ".join(map(_tag_words, shared)))}</div>'
                 if other:
-                    pts += f'<div class="pts">{"Also interested in" if shared else "Interested in"}: {e(", ".join(other))}</div>'
+                    pts += f'<div class="pts">{"Also interested in" if shared else "Interested in"}: {e(", ".join(map(_tag_words, other)))}</div>'
                 lines.append(
                     f'<tr><td class="r">Round {r}</td><td class="t">Table {tables[f_id]}</td>'
                     f'<td><div class="fam">{e(f.name)}</div>{pts}</td></tr>'
@@ -166,7 +199,7 @@ def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: s
                 lines.append(f'<tr><td class="r">Round {r}</td><td class="t"></td><td><div class="fam">No table this round</div>'
                              '<div class="pts">More hosts than fams this round. Please wait near the front for the next round.</div></td></tr>')
         cards.append(
-            f'<article class="hc"><div class="head"><span class="lbl">Host table</span><h2>{e(h.name)}</h2>'
+            f'<article class="hc{" full" if _card_inches(h, lines) > 4.9 else ""}"><div class="head">{_stamp(updated)}<span class="lbl">Host table</span><h2>{e(h.name)}</h2>'
             + (f'<div class="person">{e(h.person)}</div>' if h.person else "")
             + "</div>"
             f'<table>{"".join(lines)}</table><p class="foot">{e(title)}. Move when the MC calls the round.</p></article>'
@@ -175,9 +208,9 @@ def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: s
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)}</title>
 <style>{_BASE_CSS}
-.hc {{ height: 4.9in; border: 1px dashed #9a978f; padding: 0.3in 0.35in; display: flex; flex-direction: column; break-inside: avoid; overflow: hidden; }}
+.hc {{ min-height: 4.9in; border: 1px dashed #9a978f; padding: 0.3in 0.35in; display: flex; flex-direction: column; break-inside: avoid; }}
 .hc + .hc {{ margin-top: 0.1in; }}
-.hc:nth-of-type(2n+1) {{ break-before: page; }} .hc:first-of-type {{ break-before: auto; }}
+.hc.full {{ min-height: 0; }} .hc.full + .hc {{ break-before: page; }}
 .lbl {{ font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #5c5c63; }}
 h2 {{ font-size: 26px; margin: 2px 0 2px; }}
 .person {{ font-size: 15px; color: #3a3a3f; margin-bottom: 6px; }} .head {{ margin-bottom: 8px; }}
@@ -186,13 +219,26 @@ td {{ border-top: 1px solid #d6d3cc; padding: 9px 6px; vertical-align: top; }}
 td.r {{ width: 1.0in; font-weight: 600; }} td.t {{ width: 1.1in; font-size: 22px; font-weight: 800; }}
 .fam {{ font-weight: 700; font-size: 16px; }} .pts {{ font-size: 12.5px; color: #3a3a3f; margin-top: 2px; }}
 .foot {{ margin-top: auto; font-size: 11px; color: #5c5c63; }}
+{_STAMP_CSS}
 </style></head><body>
 {''.join(cards) or '<p>No host cards to print.</p>'}
 </body></html>
 """
 
 
-def table_tents_html(plan: EventPlan, fam_ids: list[str] | None = None) -> str:
+def _card_inches(host, rows: list[str]) -> float:
+    """A rough height for a host card on US Letter, to decide whether it fits half a page."""
+    text_lines = 0
+    for row in rows:
+        plain = re.sub(r"<[^>]+>", "\n", row)
+        parts = [p for p in plain.split("\n") if p.strip()]
+        # About 70 characters fit on a line beside the round and table columns.
+        text_lines += sum(max(1, math.ceil(len(p) / 70)) for p in parts[2:]) if len(parts) > 2 else 1
+    rows_height = 0.33 * len(rows) + 0.19 * max(0, text_lines - len(rows))
+    return 0.6 + 0.75 + (0.25 if host.person else 0) + rows_height + 0.3
+
+
+def table_tents_html(plan: EventPlan, fam_ids: list[str] | None = None, updated: str = "") -> str:
     """One tent per table. Fold along the dashed line; both faces read upright from their side."""
     e = html.escape
     tables = _table_numbers(plan)
@@ -203,7 +249,7 @@ def table_tents_html(plan: EventPlan, fam_ids: list[str] | None = None) -> str:
     tents = []
     for f in wanted:
         face = f'<div class="face"><div class="n">{tables[f.group_id]}</div><div class="nm">{e(f.name)}</div></div>'
-        tents.append(f'<article class="tent"><div class="flip">{face}</div><div class="fold"></div>{face}</article>')
+        tents.append(f'<article class="tent">{_stamp(updated)}<div class="flip">{face}</div><div class="fold"></div>{face}</article>')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Table tents</title>
@@ -216,6 +262,7 @@ def table_tents_html(plan: EventPlan, fam_ids: list[str] | None = None) -> str:
 .fold {{ border-top: 1px dashed #9a978f; }}
 .n {{ font-size: 220px; font-weight: 800; line-height: 1; }}
 .nm {{ font-size: 30px; font-weight: 600; margin-top: 8px; padding: 0 0.3in; }}
+{_STAMP_CSS}
 </style></head><body>
 {''.join(tents) or '<p>No table tents to print.</p>'}
 </body></html>

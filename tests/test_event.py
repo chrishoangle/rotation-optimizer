@@ -88,9 +88,9 @@ def test_all_problems_reported_at_once(state):
     state.rules = [{"rule": "must meet", "host_table": "Astronaut", "fam": "Bio & Chem", "rounds": ""}]
     problems = check_inputs(state).problems
     assert problems == [
-        "host 3: the table name is empty.",
-        "fam 1 (Public Affairs & Communications): the size 'six' is not a whole number.",
-        "rule 1: choose a host table from the list.",
+        "Row 3 of the host tables has no table name. Add one, or delete the row.",
+        "Public Affairs & Communications: the size 'six' is not a whole number.",
+        "Pairing rule 1: choose a host table from the list.",
     ]
 
 
@@ -99,8 +99,8 @@ def test_blank_tags_are_a_warning_not_a_blocker(state):
     state.fams[3]["interests"] = ""
     inputs = check_inputs(state)
     assert inputs.problems == []
-    assert "host 2 (Pharmacy) has no tags yet, so it scores 0 with every fam. You can still plan." in inputs.warnings
-    assert any(w.startswith("fam 4 (Engineering + Pre-Med) has no interests yet") for w in inputs.warnings)
+    assert "Pharmacy has no tags yet, so it scores 0 with every fam. You can still plan." in inputs.warnings
+    assert any(w.startswith("Engineering + Pre-Med has no interests yet") for w in inputs.warnings)
     solve_event(state)
 
 
@@ -125,7 +125,7 @@ def test_parse_rounds_accepts_common_forms(text, expected):
     assert parse_rounds(text, 2) == expected
 
 
-@pytest.mark.parametrize("text, message", [("3", "round 3 is outside 1 to 2"), ("1.5", "is not a list of round numbers"), ("first", "is not a list of round numbers")])
+@pytest.mark.parametrize("text, message", [("3", "there is no round 3, the event has 2 rounds"), ("1.5", "is not a list of round numbers"), ("first", "is not a list of round numbers")])
 def test_parse_rounds_rejects_clearly(text, message):
     with pytest.raises(ValueError, match=message):
         parse_rounds(text, 2)
@@ -211,7 +211,7 @@ def test_fairness_flags_two_weak_rounds():
     out = fairness_warnings(fams, real, 2, {}, {"h2": "Pharmacy"})
     assert out == [
         "Fairness check: Public Affairs gets no host or a 0-score host in 2 rounds (round 1: Pharmacy, "
-        "no shared interests; round 2: open table). Consider a must meet rule for this fam."
+        "no shared interests; round 2: no host). Consider a must meet rule for this fam."
     ]
     assert fairness_warnings(fams, real, 2, {"f1": [2]}, {"h2": "Pharmacy"}) == []
 
@@ -490,3 +490,54 @@ def test_before_the_night_checklist_follows_the_event(state):
     items = before_the_night(state, saved=True)
     assert "Add tags for 1 host table: Physician (MD)." in todo(items)
     assert "Find the best schedule (or re-plan): the schedule is missing or out of date." in todo(items)
+
+
+def test_checklist_reads_the_printed_version_after_save_and_reopen(state):
+    from rotation_optimizer.event import before_the_night
+
+    solve_event(state)
+    state.printed = state.plan
+    state.printed_at = "7:12 PM"
+    again = load_event(save_event(state))
+    assert again.printed_at == "7:12 PM"
+    texts = {i.text: i.status for i in before_the_night(again, saved=True)}
+    assert texts["The printed version is marked."] == "done"
+
+
+def test_open_tables_count_as_weak_and_are_named():
+    fams = [GuestGroup.make(f"f{i}", name, ["x"]) for i, name in enumerate(["Bio", "Chem", "Physics", "Violet Fam"])]
+    real = [Assignment(r, "h1", f"f{i}", score) for i, scores in enumerate([(20, 20), (19, 19), (25, 15)])
+            for r, score in zip((1, 2), scores)] + [Assignment(1, "h1", "f3", 10)]
+    out = fairness_warnings(fams, real, 2, {}, {"h1": "Pharmacy"})
+    assert out == [
+        "Fairness check: Violet Fam scores 10 in total, far below the typical fam (40). It had no host in round 2. "
+        "Consider a must meet rule for this fam, or turn on \"No fam gets more than one weak round\"."
+    ]
+
+
+def test_weak_count_includes_open_tables():
+    from rotation_optimizer.event import EventState
+
+    s = EventState(hosts=[{"table_label": "Law", "tags": "law"}],
+                   fams=[{"fam_label": "A", "interests": "law"}, {"fam_label": "B", "interests": "art"}], rounds=1)
+    normalize_state(s)
+    plan = solve_event(s)
+    assert len(plan.open_slots()) == 1 and plan.weak_count() == 1
+
+
+def test_duplicate_fam_names_without_students_are_not_merged():
+    from rotation_optimizer.sheets import fams_from_rows, group_student_rows
+
+    rows = [{"fam_label": "Red", "interests": "law"}, {"fam_label": "Red", "interests": "art"},
+            {"fam_label": "Blue", "interests": "math"}]
+    out, grouped = group_student_rows(rows)
+    assert (out, grouped) == (rows, 0)
+    problems = fams_from_rows(out)[1]
+    assert "Two fams are named Red. Each fam needs its own name." in problems
+
+
+def test_near_misses_include_short_forms():
+    hosts = [{"table_label": "A", "tags": "math; econ"}]
+    fams = [{"fam_label": "X", "interests": "mathematics; economics; computer science"}]
+    found = {m.spellings for m in near_misses(hosts, fams)}
+    assert found == {("math", "mathematics"), ("econ", "economics")}

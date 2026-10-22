@@ -56,6 +56,7 @@ class EventState:
     plan_tables: dict | None = None  # the host and fam rows the plan was made from
     start_time: str = ""  # for the run sheet, for example "6:30 PM"; blank leaves times to fill in
     round_minutes: int = 20  # for the run sheet
+    printed_at: str = ""  # when Mark as printed was clicked, for example "7:12 PM"
 
 
 @dataclass
@@ -277,6 +278,14 @@ def near_misses(host_rows: Iterable[dict], fam_rows: Iterable[dict]) -> list[Nea
     groups: dict[str, set[str]] = {}
     for t in set(host_count) | set(fam_count):
         groups.setdefault(tag_key(t), set()).add(t)
+    # A short single word that starts a longer one, such as math and
+    # mathematics or econ and economics, is probably the same thing.
+    for short in sorted(groups, key=len):
+        if len(short) < 4 or short not in groups or any(" " in t for t in groups[short]):
+            continue
+        longer = [k for k in groups if k != short and k.startswith(short) and not any(" " in t for t in groups[k])]
+        if len(longer) == 1:
+            groups[longer[0]] |= groups.pop(short)
     out = []
     for key, spellings in sorted(groups.items()):
         if len(spellings) < 2:
@@ -286,7 +295,7 @@ def near_misses(host_rows: Iterable[dict], fam_rows: Iterable[dict]) -> list[Nea
         if not on_hosts or not on_fams:
             continue
         total = host_count + fam_count
-        best = sorted(spellings, key=lambda s: (-total[s], s))[0]
+        best = sorted(spellings, key=lambda s: (-total[s], s.endswith("s") and s[:-1] in spellings, -len(s), s))[0]
         out.append(NearMiss(tuple(sorted(spellings)), best))
     return out
 
@@ -387,6 +396,7 @@ def save_event(state: EventState) -> str:
             "plan_tables": state.plan_tables,
             "start_time": state.start_time,
             "round_minutes": state.round_minutes,
+            "printed_at": state.printed_at,
         },
         indent=2,
     )
@@ -419,6 +429,7 @@ def load_event(text: str | bytes) -> EventState:
             plan_tables=d.get("plan_tables"),
             start_time=str(d.get("start_time", "")),
             round_minutes=int(d.get("round_minutes", 20)),
+            printed_at=str(d.get("printed_at", "")),
         )
     except (KeyError, TypeError, ValueError):
         raise SheetError(["That saved event is incomplete or damaged, so it cannot be loaded."]) from None
@@ -442,6 +453,12 @@ def handoff_event(state: EventState) -> EventState:
         start_time=state.start_time,
         round_minutes=state.round_minutes,
     )
+
+
+def is_printed(state: EventState) -> bool:
+    """True when the current schedule is the one marked as printed, including after a save and reopen."""
+    return (state.printed is not None and state.plan is not None and state.printed.rounds == state.plan.rounds
+            and state.printed.slots() == state.plan.slots())
 
 
 @dataclass
@@ -480,10 +497,10 @@ def before_the_night(state: EventState, saved: bool) -> list[CheckItem]:
         add(not unfair, "Every fam gets a fair share of matching hosts.",
             f"Look at the {len(unfair)} fairness check{'s' if len(unfair) != 1 else ''} under the schedule.", optional=True)
     add(bool(hosts) and all(h.person for h in hosts), "Every host table has an alum's name for the host cards.",
-        "Optional: add alum names so host cards say who hosts each table.", optional=True)
+        "Add alum names so host cards say who hosts each table.", optional=True)
     add(bool(fams) and all(f.members for f in fams), "Every fam has student names for the find-your-table page.",
-        "Optional: add student names to print a find-your-table page.", optional=True)
-    add(state.printed is not None and state.printed is state.plan, "The printed version is marked.",
+        "Add student names to print a find-your-table page.", optional=True)
+    add(is_printed(state), "The printed version is marked.",
         "Print the four documents, then click Mark as printed.")
     add(saved, "The event file is saved with every change.",
         "Click Save event file in the sidebar and keep the file for the night.")

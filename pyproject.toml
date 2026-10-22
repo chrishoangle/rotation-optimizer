@@ -1,6 +1,6 @@
 [project]
 name = "rotation-optimizer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Constraint-solver for rotation scheduling at networking events."
 requires-python = ">=3.10"
 dependencies = [

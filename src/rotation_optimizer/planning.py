@@ -90,6 +90,14 @@ class EventPlan:
     def zero_slots(self) -> list[Assignment]:
         return [a for a in self.assignments if a.score == 0]
 
+    def open_slots(self) -> list[tuple[int, str]]:
+        """(round, fam id) for each round a fam that is there has no host."""
+        return sorted((r, f) for f, rs in self.free_rounds.items() for r in rs if r not in self.fam_away.get(f, []))
+
+    def weak_count(self) -> int:
+        """Pairings that share no tags, plus rounds where a fam has no host."""
+        return len(self.zero_slots()) + len(self.open_slots())
+
     def host_name(self, host_id: str) -> str:
         return next(h.name for h in self.hosts if h.host_id == host_id)
 
@@ -256,6 +264,7 @@ def plan_event(
     keep: Iterable[tuple[int, str, str]] = (),
     host_limits: Mapping[str, Iterable[int]] | None = None,
     weak_limit: int | None = None,
+    _diagnose: bool = True,
 ) -> EventPlan:
     """Pad, solve, and strip placeholders.
 
@@ -272,7 +281,7 @@ def plan_event(
     When scores tie, a real host at a real fam is preferred over an open
     table or a break, so no available host sits out while a fam has no host.
 
-    Uses OR-Tools' default parallel search. When several schedules are
+    Uses a parallel search with 8 workers (see solver.DEFAULT_WORKERS). When several schedules are
     equally good, which one is returned can change between runs. Pass
     num_workers=1 for a repeatable schedule, at the cost of slower proofs.
     """
@@ -294,7 +303,7 @@ def plan_event(
     for r, h, f in locked:
         if r in host_away.get(h, []) or r in fam_away.get(f, []):
             raise RuleConflictError(
-                f"Round {r} is locked with {next(x.name for x in hosts if x.host_id == h)} at "
+                f"Round {r} already happened with {next(x.name for x in hosts if x.host_id == h)} at "
                 f"{next(x.name for x in fams if x.group_id == f)}, but one of them is cancelled from round {r}. "
                 "A finished round cannot change."
             )
@@ -346,28 +355,22 @@ def plan_event(
             forbidden_pairs=forbidden_pairs,
             fixed_slots=locked,
             forbidden_slots=sorted(forbidden_slots),
-            prefer_slots=[s for s in keep if s[0] not in {r for r, _, _ in locked}],
-            tiebreak_pairs=[(h, f) for h in host_ids for f in fam_ids],
+            prefer_slots=[s for s in keep if s[0] not in {r for r, _, _ in locked} and s[0] <= rounds
+                          and s[1] in host_ids and s[2] in fam_ids],
+            # Only needed when placeholders exist; with none, every pair is real and
+            # the extra term only slows the proof (3 rounds went from 0.05 s to 30 s).
+            tiebreak_pairs=[(h, f) for h in host_ids for f in fam_ids] if n > min(len(hosts), len(fams)) else [],
             weak_limit=weak_limit,
             weak_groups=sorted(fam_ids) if weak_limit is not None else (),
+            repeat_ok=[h.host_id for h in padded_hosts[len(hosts):]] + [f.group_id for f in padded_fams[len(fams):]],
         )
     except InfeasibleProblemError as err:
         if "no schedule satisfies every rule" not in str(err):
             raise
-        in_use = []
-        if rules:
-            in_use.append(f"{len(rules)} pairing rule(s)")
-        if cancelled_only or fam_away:
-            in_use.append("cancellations")
-        if host_limits:
-            in_use.append("only-in-rounds rules")
-        if weak_limit is not None:
-            in_use.append(f"the limit of {weak_limit} weak round per fam")
-        if locked:
-            in_use.append("locked rounds")
+        if not _diagnose:
+            raise RuleConflictError("No schedule satisfies every rule.") from err
         raise RuleConflictError(
-            "No schedule can satisfy all of these at once: " + ", ".join(in_use) + ". "
-            "Try removing pairing rules one at a time to find the one that conflicts."
+            _explain_conflict(hosts, fams, rounds, rules, cancelled_only, fam_away, locked, host_limits, weak_limit)
         ) from err
 
     real: list[Assignment] = []
@@ -411,6 +414,80 @@ def plan_event(
     )
 
 
+def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, host_limits, weak_limit) -> str:
+    """Find the few rules, cancellations, or settings that cannot hold together, and name them.
+
+    Starts from everything in force and drops each item in turn; an item
+    stays only if the rest can be met without it. What remains is a
+    smallest set that conflicts, each item said the way a coordinator set it.
+    """
+    hname = {h.host_id: h.name for h in hosts}
+    fname = {f.group_id: f.name for f in fams}
+    all_rounds = set(range(1, rounds + 1))
+    items: list[tuple[str, str]] = []  # (kind, key)
+    words: dict[tuple[str, str], str] = {}
+    for i, rule in enumerate(rules):
+        key = ("rule", str(i))
+        items.append(key)
+        when = f" in {_round_text(rule.rounds)}" if rule.rounds else ""
+        verb = "must meet" if rule.kind == "must" else "never meets"
+        words[key] = f"{hname[rule.host_id]} {verb} {fname[rule.fam_id]}{when}"
+    for h, rs in host_limits.items():
+        key = ("limit", h)
+        items.append(key)
+        words[key] = f"{hname[h]} only comes for {_round_text(sorted(all_rounds - set(rs)))}"
+    for h, rs in host_away.items():
+        key = ("host_away", h)
+        items.append(key)
+        words[key] = f"{hname[h]} is cancelled from round {min(rs)}"
+    for f, rs in fam_away.items():
+        key = ("fam_away", f)
+        items.append(key)
+        words[key] = f"{fname[f]} is cancelled from round {min(rs)}"
+    if weak_limit is not None:
+        items.append(("weak", ""))
+        words[("weak", "")] = "the setting No fam gets more than one weak round"
+    if locked:
+        items.append(("locked", ""))
+        done = sorted({r for r, _, _ in locked})
+        words[("locked", "")] = f"{_round_text(done).capitalize()} already happened"
+
+    def feasible(keep: list[tuple[str, str]]) -> bool:
+        k = set(keep)
+        try:
+            plan_event(
+                hosts, fams, rounds, time_limit_s=10,
+                rules=[r for i, r in enumerate(rules) if ("rule", str(i)) in k],
+                host_away={h: rs for h, rs in host_away.items() if ("host_away", h) in k},
+                fam_away={f: rs for f, rs in fam_away.items() if ("fam_away", f) in k},
+                host_limits={h: rs for h, rs in host_limits.items() if ("limit", h) in k},
+                locked=locked if ("locked", "") in k else (),
+                weak_limit=weak_limit if ("weak", "") in k else None,
+                _diagnose=False,
+            )
+            return True
+        except (InfeasibleProblemError, RuleConflictError):
+            return False
+
+    core = list(items)
+    for item in items:
+        trial = [x for x in core if x != item]
+        if not feasible(trial):
+            core = trial
+    if not core:
+        return "No schedule fits these tables and rounds. Lower the number of rounds, or add host tables or fams."
+    named = [words[x] for x in core]
+    if len(named) == 1:
+        return f"{named[0][0].upper() + named[0][1:]} cannot be met with these tables and rounds. Change it or delete it."
+    return ("These cannot all hold at once: " + "; ".join(named) + ". Change a round, or delete one of them.")
+
+
+def _rounds_words(rounds: list[int]) -> str:
+    if len(rounds) == 1:
+        return f"round {rounds[0]}"
+    return "rounds " + ", ".join(map(str, rounds[:-1])) + f" and {rounds[-1]}"
+
+
 def fairness_warnings(
     fams: list[GuestGroup],
     real: list[Assignment],
@@ -431,7 +508,7 @@ def fairness_warnings(
                 continue
             a = by_slot.get((r, f.group_id))
             if a is None:
-                weak.append(f"round {r}: open table")
+                weak.append(f"round {r}: no host")
             elif a.score == 0:
                 weak.append(f"round {r}: {host_names[a.host_id]}, no shared interests")
         if len(weak) > 1:
@@ -447,9 +524,13 @@ def fairness_warnings(
         if f.name in flagged or median == 0:
             continue
         if totals[f.group_id] < 0.4 * median:
+            hosted = {a.round_number for a in real if a.group_id == f.group_id}
+            away = set(fam_away.get(f.group_id, []))
+            empty = [r for r in range(1, rounds + 1) if r not in hosted and r not in away]
+            why = (" It had no host in " + _rounds_words(empty) + "." if empty else "")
             out.append(
                 f"Fairness check: {f.name} scores {totals[f.group_id]} in total, far below the typical fam "
-                f"({median}). Consider a must meet rule for this fam, or turn on "
+                f"({median}).{why} Consider a must meet rule for this fam, or turn on "
                 "\"No fam gets more than one weak round\"."
             )
     return out
@@ -593,8 +674,8 @@ def reprint_list(printed: EventPlan, new: EventPlan) -> Reprint:
     reprint_hosts = []
     for h in host_ids:
         before, after = _card(printed, h), _card(new, h)
-        changed = [r for r in range(1, new.rounds + 1) if before.get(r) != after.get(r)]
-        present = [r for r in changed if r not in new.host_away.get(h, [])]
+        changed = [r for r in range(1, max(printed.rounds, new.rounds) + 1) if before.get(r) != after.get(r)]
+        present = [r for r in changed if r not in new.host_away.get(h, []) or r > new.rounds]
         if present and any(x.host_id == h for x in new.hosts):
             reprint_hosts.append(h)
     old_tents = {f.group_id: (f.name, f.table_number) for f in printed.fams}
@@ -609,7 +690,7 @@ def reprint_list(printed: EventPlan, new: EventPlan) -> Reprint:
     for r in range(1, new.rounds + 1):
         if notes(printed, r) != notes(new, r):
             rounds.add(r)
-    if tents or {h.host_id: h.name for h in printed.hosts} != {h.host_id: h.name for h in new.hosts}:
+    if tents or printed.rounds != new.rounds or {h.host_id: h.name for h in printed.hosts} != {h.host_id: h.name for h in new.hosts}:
         rounds |= set(range(1, new.rounds + 1))
     old_members = {f.group_id: (f.name, f.table_number, f.members) for f in printed.fams}
     finder = any(old_members.get(f.group_id) != (f.name, f.table_number, f.members) for f in new.fams if f.members)

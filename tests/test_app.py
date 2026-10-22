@@ -52,7 +52,7 @@ def _finish_round_1(at):
 
 def test_app_solves_the_template():
     at = _solved()
-    assert at.metric[0].value == "341"
+    assert at.metric[0].value == "705"  # the practice dinner in templates/practice_*.csv
     assert at.metric[1].value == "Yes"
 
 
@@ -75,7 +75,7 @@ def test_rules_survive_reruns_and_errors():
     assert at.session_state["event"].rules[0]["host_table"] == "Pharmacy"
     _edit(at, "hosts", {"edited": {"1": {"table_label": ""}}})  # a problem elsewhere
     _click(at, "Apply changes")
-    assert "host 2: the table name is empty." in _texts(at.error)
+    assert "Row 2 of the host tables has no table name. Add one, or delete the row." in _texts(at.error)
     assert at.session_state["event"].rules[0]["rounds"] == "2"
 
 
@@ -97,8 +97,8 @@ def test_all_problems_shown_at_once():
     _edit(at, "fams", {"edited": {"0": {"size": "six"}}})
     _click(at, "Apply changes")
     errors = _texts(at.error)
-    assert "host 3: the table name is empty." in errors
-    assert "fam 1 (Public Affairs & Communications): the size 'six' is not a whole number." in errors
+    assert "Row 3 of the host tables has no table name. Add one, or delete the row." in errors
+    assert "Public Affairs & Communications: the size 'six' is not a whole number." in errors
 
 
 def test_blank_tags_still_plan():
@@ -106,7 +106,7 @@ def test_blank_tags_still_plan():
     at = _app()
     _edit(at, "hosts", {"edited": {"1": {"tags": ""}}})
     _click(at, FIND)
-    assert "host 2 (Pharmacy) has no tags yet" in _texts(at.warning)
+    assert "Pharmacy has no tags yet" in _texts(at.warning)
     assert at.session_state["event"].plan is not None
 
 
@@ -161,8 +161,10 @@ def test_full_flow_survives_save_and_load():
     _finish_round_1(at)
     at.selectbox(key="cancel_host_name").select("Therapy & Rehab").run()
     _click(at, "Cancel host")
+    _click(at, "Yes, cancel Therapy & Rehab")
     at.selectbox(key="cancel_fam_name").select("Engineering & Psych").run()
     _click(at, "Cancel fam")
+    _click(at, "Yes, cancel Engineering & Psych")
     assert "Out of date" in _texts(at.warning)
     _click(at, "Re-plan")
     event = at.session_state["event"]
@@ -240,10 +242,11 @@ def test_unfinish_a_locked_round_needs_a_confirmation():
     _finish_round_1(at)
     at.selectbox(key="cancel_host_name").select("Therapy & Rehab").run()
     _click(at, "Cancel host")
+    _click(at, "Yes, cancel Therapy & Rehab")
     _click(at, "Re-plan")
     assert at.session_state["event"].plan.locked_rounds == [1]
     at.number_input(key=f"finished_{at.session_state['editor_version']}").set_value(0).run()
-    assert "Round 1 is locked because you re-planned after it finished" in _texts(at.warning)
+    assert "Round 1 already happened, and you re-planned after it, so it is kept as it was" in _texts(at.warning)
     assert at.session_state["event"].finished == 1  # not until confirmed
     _click(at, "Un-finish round 1")
     assert at.session_state["event"].plan.locked_rounds == []
@@ -266,18 +269,18 @@ def test_restore_clears_out_of_date_and_keeps_the_row_position():
 def test_upload_preview_confirm_and_undo():
     """P3.2 and P3.3: an uploaded hosts file waits for confirmation and can be undone."""
     at = _app()
-    at.session_state["pending_upload"] = {
+    at.session_state["pending_uploads"] = {"hosts": {
         "kind": "hosts", "name": "signups.csv", "id": "u1",
         "rows": [{"Timestamp": "1", "Email": "z@example.com", "Career table": "Law", "Your name": "Alum Z", "tags": "law; policy"},
                  {"Timestamp": "2", "Email": "y@example.com", "Career table": "Film", "Your name": "Alum Y", "tags": "film"}],
         "columns": ["Timestamp", "Email", "Career table", "Your name", "tags"],
         "mapping": {"host_name": "Your name", "tags": "tags"},
-    }
+    }}
     at.run()
-    assert at.button(key="confirm_upload").disabled
+    assert at.button(key="confirm_upload_hosts").disabled
     assert any("holds the host table name" in e.value for e in at.error)
     at.selectbox(key="map_u1_table_label").select("Career table").run()
-    assert not at.button(key="confirm_upload").disabled
+    assert not at.button(key="confirm_upload_hosts").disabled
     _click(at, "Replace 10 host tables with these 2")
     assert [r["table_label"] for r in at.session_state["event"].hosts] == ["Law", "Film"]
     assert at.session_state["event"].hosts[0]["host_name"] == "Alum Z"
@@ -320,8 +323,71 @@ def test_newcomer_path_has_a_guide_four_printouts_and_a_checklist():
     _click(at, "Mark as printed")
     assert next(e for e in at.expander if e.label.startswith("Before the night")).label == "Before the night: 1 thing left to do"
     _click(at, "Start a blank event")
+    assert "You have unsaved changes. Replace anyway?" in _texts(at.sidebar.warning)
     _click(at, "Replace")
     assert at.session_state["event"].hosts == [] and at.session_state["event"].plan is None
-    _click(at, "Load the example dinner")
-    _click(at, "Replace")
+    _click(at, "Load the example dinner")  # nothing unsaved, so no question
     assert len(at.session_state["event"].hosts) == 10
+
+
+# ----------------------------------------------------------------------
+# Plain words everywhere a coordinator looks.
+# ----------------------------------------------------------------------
+
+import re  # noqa: E402
+
+JARGON = [r"\bNone\b", r"\bnan\b", r"\bNaN\b", r"\bslots?\b", r"\blocked\b", r"\(s\)", r"\bJSON\b", r"\bCSV\b",
+          r"\bh\d\d\b", r"\bfam_\d\d\b", r"\bopen_\d", r"\bbreak_\d", r"padding", r"table_label", r"fam_label", r"host_id"]
+ALLOWED = ["saved as CSV", "save it as CSV", "Save As, CSV"]
+
+
+def _visible_text(at) -> list[str]:
+    """Every string the page shows: text, labels, help, options, and table cells."""
+    out = []
+
+    def walk(node):
+        for attr in ("value", "label", "body", "help", "placeholder", "options"):
+            v = getattr(node, attr, None)
+            if isinstance(v, str):
+                out.append(v)
+            elif isinstance(v, (list, tuple)):
+                out.extend(str(x) for x in v)
+            elif v is not None and hasattr(v, "to_string"):
+                internal = [c for c in ("host_id", "fam_id") if c in v.columns]
+                if internal:  # a table editor: ids are hidden and headers are relabeled on screen
+                    out.append(v.drop(columns=internal).to_string(header=False, index=False))
+                else:
+                    out.append(v.to_string(index=False))
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    walk(at._tree)
+    return out
+
+
+def _jargon(texts: list[str]) -> list[str]:
+    found = []
+    for t in texts:
+        clean = t
+        for ok in ALLOWED:
+            clean = clean.replace(ok, "")
+        found += [f"{pattern} in {t[:80]!r}" for pattern in JARGON if re.search(pattern, clean)]
+    return found
+
+
+def test_no_code_words_on_the_page_or_in_printouts():
+    at = _solved()
+    _click(at, "Mark as printed")
+    _finish_round_1(at)
+    at.selectbox(key="cancel_host_name").select("Therapy & Rehab").run()
+    _click(at, "Cancel host")
+    _click(at, "Yes, cancel Therapy & Rehab")
+    _click(at, "Re-plan")
+    texts = _visible_text(at)
+    assert any("Reprint:" in t for t in texts)
+    assert _jargon(texts) == []
+    plan = at.session_state["event"].plan
+    from rotation_optimizer import host_cards_html, run_sheet_html, seating_chart_html, table_tents_html
+
+    pages = [seating_chart_html(plan), host_cards_html(plan), table_tents_html(plan), run_sheet_html(plan)]
+    assert _jargon([re.sub(r"<[^>]+>", " ", re.sub(r"<style>.*?</style>", " ", p, flags=re.S)) for p in pages]) == []

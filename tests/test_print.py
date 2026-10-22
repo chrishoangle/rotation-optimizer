@@ -39,7 +39,7 @@ def test_bad_table_number_is_reported():
 
 
 def test_duplicate_table_numbers_rejected():
-    with pytest.raises(SheetError, match="fam 1 \\(Bio\\) and fam 2 \\(Chem\\) both use table number 3"):
+    with pytest.raises(SheetError, match="Bio and Chem both use table number 3"):
         load_fams(io.StringIO("fam_label,interests,table_number\nBio,a,3\nChem,b,3\n"))
 
 
@@ -151,3 +151,22 @@ def test_run_sheet_has_a_timeline_and_check_in_lists():
     assert not re.search(r"\bNone\b", text)
     blank = run_sheet_html(plan, "Example dinner")
     assert 'class="blank"' in blank and "PM" not in re.sub(r"<[^>]+>", " ", blank)
+
+
+def test_reprints_are_stamped_and_counts_show_cancellations():
+    plan = plan_event(load_hosts(ROOT / "templates" / "hosts.csv"), load_fams(ROOT / "templates" / "fams.csv"), 2,
+                      host_away={"h02": [2]})
+    for page in (seating_chart_html(plan, updated="7:42 PM"), host_cards_html(plan, updated="7:42 PM"),
+                 table_tents_html(plan, updated="7:42 PM")):
+        assert "Updated 7:42 PM. Replaces the earlier copy." in page
+    assert "Updated" not in seating_chart_html(plan)
+    chart = seating_chart_html(plan)
+    assert "10 fams, 10 host tables (1 cancelled from round 2), 2 rounds." in chart
+    assert "match score" not in chart.lower()
+
+
+def test_tags_read_as_words_on_host_cards():
+    from rotation_optimizer.export import _tag_words
+
+    assert _tag_words("small-business") == "small business"
+    assert _tag_words("pre-med") == "pre-med"

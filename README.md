@@ -64,8 +64,12 @@ python -m pytest tests/ -v
 
 ## Plan your own event
 
-Open the app at https://rotation-optimizer.streamlit.app. It starts with the
-example dinner and a seven step guide. No install and no code are needed.
+Open the app at https://rotation-optimizer.streamlit.app. It starts with a
+practice dinner and a seven step guide. No install and no code are needed.
+The practice dinner, in `templates/practice_hosts.csv` and
+`templates/practice_fams.csv`, has the same tables as the example below with
+tags reworded so hosts and fams use the same words, which is how tags should
+be written.
 
 1. Enter host tables and fams in the page, or fill in the hosts and fams
    templates (download them from the sidebar) and upload them as CSV. A

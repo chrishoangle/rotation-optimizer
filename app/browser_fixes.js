@@ -7,11 +7,12 @@
 // 2. When a cell editor opens a second time, focus can stay on the table.
 //    The first key then opens a fresh editor holding that key, and a one key
 //    edit is never saved. Move focus into the editor as soon as it opens.
-// 3. Pressing Enter or Tab within a few milliseconds of the last keystroke
-//    can commit the old value. Hold the key until the typing has reached
-//    the cell editor.
-// 4. Warn before leaving the page when the event has unsaved changes.
-// 5. Scroll to the part of the page an action changed.
+// 3. Warn before leaving the page when the event has unsaved changes.
+// 4. Scroll to the part of the page an action changed.
+//
+// An earlier version also held Enter and Tab for 120 ms after a keystroke.
+// That made fast typing worse: keys typed during the hold landed in the
+// previous cell. The table keeps up on its own at 15 ms per key.
 //
 // This script runs in a small frame that Streamlit replaces on reruns, and
 // the browser stops calling listeners that belong to a replaced frame. So
@@ -48,12 +49,18 @@
     d.addEventListener("wheel", remember, {capture: true, passive: true});
     d.addEventListener("scroll", () => { w.clearTimeout(timer); timer = w.setTimeout(replay, 80); }, true);
 
+    // A double-click opens the editor with its text selected, so typing
+    // replaces it. An editor opened by typing holds that first key, so the
+    // cursor goes after it instead.
+    let lastDouble = 0;
+    d.addEventListener("dblclick", (e) => { if (e.isTrusted) lastDouble = w.performance.now(); }, true);
     const focusEditor = () => {
       const portal = d.getElementById("portal");
       const el = portal && portal.querySelector("textarea, input");
       if (!el || portal.contains(d.activeElement)) return;
       el.focus();
-      if (typeof el.select === "function") el.select();
+      if (w.performance.now() - lastDouble < 600) el.select();
+      else if (typeof el.setSelectionRange === "function") el.setSelectionRange(el.value.length, el.value.length);
     };
     const watchPortal = () => {
       const portal = d.getElementById("portal");
@@ -62,23 +69,25 @@
     };
     watchPortal();
 
-    let lastInput = 0;
-    d.addEventListener("input", (e) => {
-      if (e.target && e.target.closest && e.target.closest("#portal")) lastInput = w.performance.now();
+    // The rules table is mostly dropdowns. The table opens a cell on its
+    // second click; in the rules table, one click selects the cell and then
+    // opens it as if Enter were pressed.
+    let pending = null;
+    d.addEventListener("click", (e) => {
+      if (!e.isTrusted || e.detail !== 1) return;
+      const grid = e.target.closest && e.target.closest('[class*="st-key-rules_"] [data-testid="stDataFrame"]');
+      if (!grid) return;
+      w.clearTimeout(pending);
+      pending = w.setTimeout(() => {
+        const portal = d.getElementById("portal");
+        if (portal && portal.querySelector("textarea, input, [role='option'], [role='listbox']")) return;
+        const t = d.activeElement;
+        if (!t || !grid.contains(t)) return;
+        t.dispatchEvent(new w.KeyboardEvent("keydown", {key: "Enter", code: "Enter", keyCode: 13, which: 13,
+          bubbles: true, cancelable: true, composed: true}));
+      }, 250);
     }, true);
-    d.addEventListener("keydown", (e) => {
-      const t = e.target;
-      if (!e.isTrusted || !t || !t.closest || !t.closest("#portal")) return;
-      if (e.key !== "Enter" && e.key !== "Tab") return;
-      const wait = 120 - (w.performance.now() - lastInput);
-      if (wait <= 0) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      w.setTimeout(() => {
-        t.dispatchEvent(new w.KeyboardEvent("keydown", {key: e.key, code: e.code, keyCode: e.keyCode, which: e.which,
-          shiftKey: e.shiftKey, bubbles: true, cancelable: true, composed: true}));
-      }, wait);
-    }, true);
+    d.addEventListener("dblclick", () => w.clearTimeout(pending), true);
 
     w.addEventListener("beforeunload", (e) => {
       if (!w.__roDirty) return;

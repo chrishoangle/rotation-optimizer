@@ -13,7 +13,7 @@ Public API:
     schedule_csv, seating_chart_html: files to hand out
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 RELEASE_DATE = "2026-10-22"
 
 from .models import Assignment, GuestGroup, Host, Schedule

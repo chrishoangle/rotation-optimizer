@@ -72,6 +72,9 @@ class InfeasibleProblemError(RuntimeError):
     """Raised when the constraints cannot be satisfied (e.g., R > H)."""
 
 
+DEFAULT_WORKERS = 8
+
+
 def solve(
     hosts: list[Host],
     groups: list[GuestGroup],
@@ -88,6 +91,7 @@ def solve(
     tiebreak_pairs: Iterable[tuple[str, str]] = (),
     weak_limit: int | None = None,
     weak_groups: Iterable[str] = (),
+    repeat_ok: Iterable[str] = (),
 ) -> Schedule:
     """Return the optimal (or best-found) rotation schedule.
 
@@ -114,10 +118,14 @@ def solve(
       tiebreak_pairs: (host_id, group_id) pairs preferred when scores tie.
       weak_limit, weak_groups: at most weak_limit rounds per listed group
         with a host that scores 0 with it.
+      repeat_ok: host or group ids exempt from C3. plan_event() passes its
+        placeholders ("Open table" hosts and "Break" groups), so a fam can
+        have no host in two rounds and a cancelled host can sit out two
+        rounds. Pairs of two real ids never repeat.
     An unknown id or round raises InfeasibleProblemError before solving.
 
     A problem can have several optimal schedules with the same score. With
-    OR-Tools' default parallel search, which one is returned can change from
+    the parallel search (8 workers unless num_workers is given), which one is returned can change from
     run to run. Pass num_workers=1 for a single-threaded search that returns
     the same schedule on every run with the same OR-Tools version.
 
@@ -209,8 +217,11 @@ def solve(
             model.AddExactlyOne(x[h, g, r] for h in range(H))
 
     # (C3) No (host, group) pair appears in more than one round.
+    exempt = set(repeat_ok)
     for h in range(H):
         for g in range(G):
+            if hosts[h].host_id in exempt or groups[g].group_id in exempt:
+                continue
             model.Add(sum(x[h, g, r] for r in range(rounds)) <= 1)
 
     # Optional rules (R1 to R4). They only add constraints.
@@ -254,8 +265,10 @@ def solve(
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_s
-    if num_workers is not None:
-        solver.parameters.num_workers = num_workers
+    # CP-SAT's default is one worker per core. On a 2 core machine, such as a
+    # small cloud host, that portfolio could not prove a 3 round example
+    # optimal in 30 s; 8 workers proved it in 0.12 s on the same machine.
+    solver.parameters.num_workers = num_workers if num_workers is not None else DEFAULT_WORKERS
     start = time.perf_counter()
     status = solver.Solve(model)
     elapsed = time.perf_counter() - start
