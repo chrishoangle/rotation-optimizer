@@ -36,3 +36,6 @@ tests/private/
 !docs/images/tables/*.jpg
 # Public templates hold the example dinner at the theme level, no names
 !templates/*.csv
+
+# Saved events can hold real names; keep them off the repo
+*.rotation.json

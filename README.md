@@ -64,35 +64,54 @@ python -m pytest tests/ -v
 
 ## Plan your own event
 
-Fill in two sheets, one row per host table and one row per fam. Start from
-[`templates/hosts.csv`](templates/hosts.csv) and
-[`templates/fams.csv`](templates/fams.csv), which hold the example dinner.
-Tags and interests are keywords separated by semicolons. A tag only adds to
-a score when a fam lists the exact same word, so the tool lists every tag
-that has no match on the other side.
+Open the app at https://rotation-optimizer.streamlit.app. It starts with the
+example dinner and a seven step guide. No install and no code are needed.
 
-In the browser, with no code:
+1. Enter host tables and fams in the page, or fill in the hosts and fams
+   templates (download them from the sidebar) and upload them as CSV. A
+   Google Forms export also works: you pick which column holds what, and
+   columns you do not pick, such as email, are dropped. Fams can be one row
+   per fam or one row per student.
+2. Add pairing rules if you need them: must meet, never meet, or a host who
+   comes only for some rounds.
+3. Find the schedule, then print the seating chart, host cards, table tents,
+   and run sheet (an MC timeline and check-in lists). The Before the night
+   checklist says what is left.
+4. Save the event file. The page keeps nothing after you close it.
+5. On the night, mark the rounds that already happened, cancel a host or
+   fam, and re-plan. Finished rounds never change, the re-plan keeps the
+   printed schedule wherever it can, and the app lists exactly which pages
+   to reprint.
+6. Hand off to next year downloads a copy without student names or the
+   night's changes.
+
+Tags and interests are keywords separated by commas or semicolons. A tag
+only adds to a score when a fam lists the exact same word, so the tool lists
+every tag that has no match on the other side and offers one click fixes for
+near misses such as pre-med and premed.
+
+Host and fam counts do not need to match. With more fams than hosts, some
+fams get an open table for a round. With more hosts than fams, some hosts
+have no table for a round. A table hosted by two people is entered as one
+host.
+
+To run the app on your own computer:
 
 ```bash
 pip install -e ".[app]"
 streamlit run app/streamlit_app.py
 ```
 
-From the command line:
+From the command line, with the example in
+[`templates/hosts.csv`](templates/hosts.csv) and
+[`templates/fams.csv`](templates/fams.csv):
 
 ```bash
 rotation-optimizer --hosts templates/hosts.csv --fams templates/fams.csv \
   --rounds 2 --out-csv schedule.csv --out-html seating_chart.html
 ```
 
-The seating chart is a printable page with one section per round.
-
-Host and fam counts do not need to match. With more fams than hosts, some
-fams get an open table for a round. With more hosts than fams, some hosts
-sit out a round. The tool warns when a fam gets more than one open round,
-but does not prevent it. A table hosted by two people is entered as one
-host. Requests such as "this fam must meet this host" are not supported
-yet.
+The command line tool does not take rules or cancellations yet.
 
 ## The problem
 
@@ -117,9 +136,3 @@ s(h, g) = 0 when either set is empty.
 
 The formal model, the three constraints, and the reasoning behind using
 CP-SAT are in [docs/algorithm.md](docs/algorithm.md).
-
-## The story
-
-The project started from a real event I co-coordinated. The story of that
-dinner, and of the rotation decision behind it, is in
-[CASE_STUDY.md](CASE_STUDY.md).

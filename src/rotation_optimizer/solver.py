@@ -22,6 +22,32 @@ Find an assignment x[h, g, r] ∈ {0, 1} such that:
 Maximizing:
          Σ_{h,g,r} s[h, g] * x[h, g, r]
 
+Optional rules, added on top of C1 to C3 and never replacing them:
+
+  (R1) Required pair (h, g) meets once within its allowed rounds A, which
+       default to all rounds:                    Σ_{r in A} x[h, g, r] = 1
+  (R2) Forbidden pair (h, g) never meets:         Σ_r x[h, g, r] = 0
+  (R3) Fixed slot (r, h, g) is in the schedule:   x[h, g, r] = 1
+  (R4) Forbidden slot (r, h, g) is not:           x[h, g, r] = 0
+
+Keeping an existing schedule (used when re-planning after a cancellation):
+given preferred slots P, the objective becomes
+
+         W * Σ_{(h,g,r) in P} x[h, g, r]  +  Σ_{h,g,r} s[h, g] * x[h, g, r]
+
+with W = R * G * max(s) + 1. Every kept slot is worth more than the largest
+possible total score, so the solver first keeps as many preferred slots as
+the rules allow, then maximizes score among those schedules.
+
+Tie-break (used by plan_event for padded events): given preferred pairs Q,
+for example real host and real group pairs as opposed to placeholders,
+the score term is multiplied by K = R * G + 1 and Σ_{(h,g) in Q, r} x[h,g,r]
+is added. The tie-break can never outweigh one point of score, so it only
+chooses among schedules with equal score. Match scores are unchanged.
+
+Weak-round limit (optional): for each group g in L, at most M rounds may
+pair it with a host scoring 0 with it:  Σ_{h: s[h,g]=0, r} x[h,g,r] <= M.
+
 WHY CP-SAT
 ----------
 Every variable is boolean and every coefficient is an integer, so the model
@@ -34,6 +60,7 @@ proof arrives in under one second.
 from __future__ import annotations
 
 import time
+from typing import Iterable
 
 from ortools.sat.python import cp_model
 
@@ -53,6 +80,14 @@ def solve(
     scorer: Scorer = tag_overlap_score,
     time_limit_s: float = 30.0,
     num_workers: int | None = None,
+    required_pairs: Iterable[tuple] = (),
+    forbidden_pairs: Iterable[tuple[str, str]] = (),
+    fixed_slots: Iterable[tuple[int, str, str]] = (),
+    forbidden_slots: Iterable[tuple[int, str, str]] = (),
+    prefer_slots: Iterable[tuple[int, str, str]] = (),
+    tiebreak_pairs: Iterable[tuple[str, str]] = (),
+    weak_limit: int | None = None,
+    weak_groups: Iterable[str] = (),
 ) -> Schedule:
     """Return the optimal (or best-found) rotation schedule.
 
@@ -63,6 +98,23 @@ def solve(
 
     Raises InfeasibleProblemError if preconditions fail or the solver
     cannot find any feasible assignment within time_limit_s.
+
+    Rules use ids, and rounds are 1-indexed like Assignment.round_number:
+      required_pairs: (host_id, group_id) pairs that must meet once (R1), or
+        (host_id, group_id, rounds) to require the meeting within those rounds.
+      forbidden_pairs: (host_id, group_id) pairs that must never meet (R2).
+      fixed_slots: (round, host_id, group_id) slots that must be used (R3),
+        for example a round that already happened.
+      forbidden_slots: (round, host_id, group_id) slots that must not be
+        used (R4), for example a host who has left.
+      prefer_slots: (round, host_id, group_id) slots to keep where possible.
+        Keeping them takes strict priority over score (see the module
+        docstring). The returned Schedule reports kept_slots, and
+        objective_value is the weighted objective.
+      tiebreak_pairs: (host_id, group_id) pairs preferred when scores tie.
+      weak_limit, weak_groups: at most weak_limit rounds per listed group
+        with a host that scores 0 with it.
+    An unknown id or round raises InfeasibleProblemError before solving.
 
     A problem can have several optimal schedules with the same score. With
     OR-Tools' default parallel search, which one is returned can change from
@@ -91,6 +143,51 @@ def solve(
     if rounds < 1:
         raise InfeasibleProblemError(f"rounds must be >= 1, got {rounds}")
 
+    host_index = {h.host_id: i for i, h in enumerate(hosts)}
+    group_index = {g.group_id: i for i, g in enumerate(groups)}
+
+    def _pair(item, kind):
+        h_id, g_id = item
+        if h_id not in host_index or g_id not in group_index:
+            raise InfeasibleProblemError(f"{kind} refers to unknown host or group: {h_id}, {g_id}")
+        return host_index[h_id], group_index[g_id]
+
+    def _slot(item, kind):
+        r, h_id, g_id = item
+        if not 1 <= r <= rounds:
+            raise InfeasibleProblemError(f"{kind} refers to round {r}, outside 1 to {rounds}")
+        h, g = _pair((h_id, g_id), kind)
+        return h, g, r - 1
+
+    req: dict[tuple[int, int], frozenset[int]] = {}
+    for item in required_pairs:
+        h, g = _pair(item[:2], "required pair")
+        allowed = item[2] if len(item) > 2 and item[2] else range(1, rounds + 1)
+        bad = [r for r in allowed if not 1 <= r <= rounds]
+        if bad:
+            raise InfeasibleProblemError(f"required pair refers to round {bad[0]}, outside 1 to {rounds}")
+        req[h, g] = req.get((h, g), frozenset(range(rounds))) & frozenset(r - 1 for r in allowed)
+        if not req[h, g]:
+            raise InfeasibleProblemError(
+                f"{hosts[h].host_id} and {groups[g].group_id} have required-pair rules with no round in common"
+            )
+    forb = {_pair(p, "forbidden pair") for p in forbidden_pairs}
+    fixed = {_slot(t, "fixed slot") for t in fixed_slots}
+    forb_slots = {_slot(t, "forbidden slot") for t in forbidden_slots}
+    prefer = {_slot(t, "preferred slot") for t in prefer_slots}
+    clash = set(req) & forb
+    if clash:
+        h, g = sorted(clash)[0]
+        raise InfeasibleProblemError(
+            f"{hosts[h].host_id} and {groups[g].group_id} are both required and forbidden to meet"
+        )
+    clash_slots = fixed & forb_slots
+    if clash_slots:
+        h, g, r = sorted(clash_slots)[0]
+        raise InfeasibleProblemError(
+            f"round {r + 1}: {hosts[h].host_id} at {groups[g].group_id} is both fixed and forbidden"
+        )
+
     scores = build_score_matrix(hosts, groups, scorer=scorer)
     model = cp_model.CpModel()
 
@@ -116,15 +213,44 @@ def solve(
         for g in range(G):
             model.Add(sum(x[h, g, r] for r in range(rounds)) <= 1)
 
-    # Objective: maximize total match score across all assignments.
-    model.Maximize(
-        sum(
-            scores[hosts[h].host_id, groups[g].group_id] * x[h, g, r]
-            for h in range(H)
-            for g in range(G)
-            for r in range(rounds)
-        )
+    # Optional rules (R1 to R4). They only add constraints.
+    for (h, g), allowed in req.items():
+        model.Add(sum(x[h, g, r] for r in allowed) == 1)
+    for h, g in forb:
+        for r in range(rounds):
+            model.Add(x[h, g, r] == 0)
+    for h, g, r in fixed:
+        model.Add(x[h, g, r] == 1)
+    for h, g, r in forb_slots:
+        model.Add(x[h, g, r] == 0)
+
+    # Objective: maximize total match score across all assignments, after
+    # keeping as many preferred slots as possible when any are given.
+    score_expr = sum(
+        scores[hosts[h].host_id, groups[g].group_id] * x[h, g, r]
+        for h in range(H)
+        for g in range(G)
+        for r in range(rounds)
     )
+    tie = {_pair(p, "tie-break pair") for p in tiebreak_pairs}
+    if tie:
+        k = rounds * G + 1
+        score_expr = k * score_expr + sum(x[h, g, r] for h, g in tie for r in range(rounds))
+        top = k * rounds * G * max(scores.values(), default=0) + rounds * G
+    else:
+        top = rounds * G * max(scores.values(), default=0)
+    if weak_limit is not None:
+        for g_id in weak_groups:
+            g = group_index[g_id]
+            weak = [x[h, g, r] for h in range(H) for r in range(rounds)
+                    if scores[hosts[h].host_id, groups[g].group_id] == 0]
+            if weak:
+                model.Add(sum(weak) <= weak_limit)
+    weight = top + 1
+    if prefer:
+        model.Maximize(weight * sum(x[h, g, r] for h, g, r in prefer) + score_expr)
+    else:
+        model.Maximize(score_expr)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_s
@@ -134,6 +260,12 @@ def solve(
     status = solver.Solve(model)
     elapsed = time.perf_counter() - start
 
+    if status == cp_model.INFEASIBLE:
+        has_rules = bool(req or forb or fixed or forb_slots)
+        raise InfeasibleProblemError(
+            "no schedule satisfies every rule at once"
+            + ("; check required pairs, forbidden pairs, and fixed or forbidden slots" if has_rules else "")
+        )
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise InfeasibleProblemError(
             f"solver returned status {solver.StatusName(status)} "
@@ -154,9 +286,13 @@ def solve(
                         )
                     )
 
+    total = sum(a.score for a in assignments)
+    kept = sum(1 for h, g, r in prefer if solver.Value(x[h, g, r]) == 1) if prefer else None
     return Schedule(
         assignments=assignments,
-        total_score=int(solver.ObjectiveValue()),
-        objective_bound=int(solver.BestObjectiveBound()),
+        total_score=total,
+        objective_bound=round(solver.BestObjectiveBound()),
         solver_runtime_s=elapsed,
+        objective_value=round(solver.ObjectiveValue()),
+        kept_slots=kept,
     )

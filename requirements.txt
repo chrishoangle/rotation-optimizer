@@ -1,2 +1,2 @@
 ortools>=9.8
-streamlit>=1.46
+streamlit==1.66.1

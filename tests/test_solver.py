@@ -169,3 +169,23 @@ def test_tag_overlap_empty_set_scores_0():
     h = Host.make("h", "x", "x", [])
     g = GuestGroup.make("g", "x", ["a"])
     assert tag_overlap_score(h, g) == 0
+
+
+def test_reported_score_matches_assignments():
+    """total_score equals the sum of the returned assignment scores.
+
+    CP-SAT reports the objective as a float. On this problem it returned
+    797.9999999999999 for a schedule scoring 798, and truncating it with
+    int() reported 797.
+    """
+    hosts = [
+        Host.make(f"h{i}", f"Host {i}", f"Theme {i}", [f"tag_{i}", "shared"])
+        for i in range(6)
+    ]
+    groups = [
+        GuestGroup.make(f"g{i}", f"Group {i}", [f"tag_{i}", "shared"])
+        for i in range(6)
+    ]
+    schedule = solve(hosts, groups, rounds=2)
+    assert schedule.total_score == sum(a.score for a in schedule.assignments) == 798
+    assert schedule.objective_bound == 798

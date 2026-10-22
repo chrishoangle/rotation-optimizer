@@ -55,6 +55,71 @@ schedules come in groups that differ only by round order. When comparing
 the solver's output with a hand-built schedule, compare the set of pairings
 per round, not which round each set landed in.
 
+## Coordinator rules
+
+Rules only add constraints. C1 to C3 always hold.
+
+**(R1) Required pair.** Host $h$ and group $g$ meet exactly once within an
+allowed set of rounds $A_{h,g}$, which defaults to every round:
+
+$$
+\sum_{r \in A_{h,g}} x_{h,g,r} = 1
+$$
+
+**(R2) Forbidden pair.** $x_{h,g,r} = 0$ for every round $r$.
+
+**(R3) Fixed slot.** $x_{h,g,r} = 1$ for a given round $r$. Locked rounds
+use this.
+
+**(R4) Forbidden slot.** $x_{h,g,r} = 0$ for a given round $r$. A never
+rule limited to some rounds, a cancellation, and the non-locked pairings of
+a locked round all use this.
+
+### Uneven counts and cancellations
+
+`plan_event()` pads the problem to $N$ hosts and $N$ groups with
+placeholders that score 0. An "Open table" host leaves a group without a
+host for that round, and a "Break" group gives a host a round off. Let
+$a^H_r$ and $a^G_r$ be the number of hosts and groups cancelled in round
+$r$. Then
+
+$$
+N = \max\left(H + \max_r a^G_r,\; G + \max_r a^H_r\right)
+$$
+
+which leaves enough Breaks for every absent host and enough Open tables for
+every absent group in every round. A cancelled host or group gets R4 for
+each real partner in each round it misses.
+
+### Re-planning while keeping the printed schedule
+
+After a cancellation, `replan()` locks the rounds that already happened
+(R3 for their slots, R4 for every other real pairing in those rounds) and
+re-solves the rest. By default it keeps the previous schedule wherever it
+can. Let $P$ be the previous schedule's slots in the remaining rounds and
+$W = R \cdot G \cdot \max_{h,g} s_{h,g} + 1$. The objective becomes
+
+$$
+\max \; W \sum_{(h,g,r) \in P} x_{h,g,r} \;+\; \sum_{h,g,r} s_{h,g} \, x_{h,g,r}
+$$
+
+The match score can never exceed $W - 1$, so one more kept slot always
+outweighs any score difference. The solver therefore keeps as many previous
+slots as the rules allow, then maximizes score among those schedules.
+"Proven optimal" for a re-plan means the bound equals this weighted
+objective. `replan(..., from_scratch=True)` drops the first term, for when
+nothing has been printed yet.
+
+[`benchmarks/replan_timing.py`](../benchmarks/replan_timing.py) cancels each
+of the 10 hosts in turn from round 2 of the STEW example, with round 1
+locked. On Python 3.10.12 and OR-Tools 9.15.6755 in a 4 vCPU aarch64 Linux
+VM on an Apple Silicon MacBook Pro, all 10 re-plans were proven optimal and
+each changed exactly 1 slot: the cancelled host's round 2 fam, which gets
+an open table. The median solver runtime was 0.003 s and 0.004 s across two
+runs, with a maximum of 0.005 s.
+[`tests/test_rules.py::test_replan_changes_minimum_slots`](../tests/test_rules.py)
+checks the one-slot result.
+
 ## Why CP-SAT
 
 Every variable is boolean and every coefficient is an integer, so the model

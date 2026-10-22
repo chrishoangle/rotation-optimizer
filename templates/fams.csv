@@ -1,11 +1,11 @@
-fam_id,fam_label,size,interests
-fam_01,Public Affairs & Communications,6,communications; digital media; humanities; math economics; policy; political science; public affairs
-fam_02,Cog Sci & Pre-Health,6,biochemistry; cognitive science; healthcare; mathematics; nursing; pre-med
-fam_03,Humanities & Social Sciences,6,higher education; history; humanities; philosophy; political science; public service; sociology
-fam_04,Engineering + Pre-Med,7,aerospace; computer engineering; electrical engineering; engineering; healthcare; mechanical engineering; pre-med
-fam_05,"Linguistics, CS & Applied Math",7,applied mathematics; computer engineering; computer science; engineering; linguistics; physics
-fam_06,Sociology & Public Service,7,advocacy; humanities; nonprofit; policy; political science; public service; sociology
-fam_07,"Psychology, Data Theory & Math",7,allied health; data theory; mathematics; mentorship; pre-med; psychology
-fam_08,Economics & Business Econ,7,business economics; consulting; data science; economics; entrepreneurship; small-business; stats
-fam_09,Engineering & Psych,7,applied mathematics; chemical engineering; electrical engineering; engineering; mechanical engineering; physics; psychology
-fam_10,Bio & Chem,7,allied health; biochemistry; biology; chemistry; healthcare; pre-med; psychology
+Table number,Fam name,Size,Interests,Students
+1,Public Affairs & Communications,6,communications; digital media; humanities; math economics; policy; political science; public affairs,Student 01; Student 02; Student 03; Student 04; Student 05; Student 06
+2,Cog Sci & Pre-Health,6,biochemistry; cognitive science; healthcare; mathematics; nursing; pre-med,Student 07; Student 08; Student 09; Student 10; Student 11; Student 12
+3,Humanities & Social Sciences,6,higher education; history; humanities; philosophy; political science; public service; sociology,Student 13; Student 14; Student 15; Student 16; Student 17; Student 18
+4,Engineering + Pre-Med,7,aerospace; computer engineering; electrical engineering; engineering; healthcare; mechanical engineering; pre-med,Student 19; Student 20; Student 21; Student 22; Student 23; Student 24; Student 25
+5,"Linguistics, CS & Applied Math",7,applied mathematics; computer engineering; computer science; engineering; linguistics; physics,Student 26; Student 27; Student 28; Student 29; Student 30; Student 31; Student 32
+6,Sociology & Public Service,7,advocacy; humanities; nonprofit; policy; political science; public service; sociology,Student 33; Student 34; Student 35; Student 36; Student 37; Student 38; Student 39
+7,"Psychology, Data Theory & Math",7,allied health; data theory; mathematics; mentorship; pre-med; psychology,Student 40; Student 41; Student 42; Student 43; Student 44; Student 45; Student 46
+8,Economics & Business Econ,7,business economics; consulting; data science; economics; entrepreneurship; small-business; stats,Student 47; Student 48; Student 49; Student 50; Student 51; Student 52; Student 53
+9,Engineering & Psych,7,applied mathematics; chemical engineering; electrical engineering; engineering; mechanical engineering; physics; psychology,Student 54; Student 55; Student 56; Student 57; Student 58; Student 59; Student 60
+10,Bio & Chem,7,allied health; biochemistry; biology; chemistry; healthcare; pre-med; psychology,Student 61; Student 62; Student 63; Student 64; Student 65; Student 66; Student 67

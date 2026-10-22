@@ -28,14 +28,16 @@ class Host:
     name: str
     theme: str
     tags: frozenset[str]
+    person: str = ""  # who hosts the table, for host cards; never used in scoring
 
     @classmethod
-    def make(cls, host_id: str, name: str, theme: str, tags: Iterable[str]) -> "Host":
+    def make(cls, host_id: str, name: str, theme: str, tags: Iterable[str], person: str = "") -> "Host":
         return cls(
             host_id=host_id,
             name=name,
             theme=theme,
             tags=frozenset(t.strip().lower() for t in tags if t.strip()),
+            person=person,
         )
 
 
@@ -51,6 +53,8 @@ class GuestGroup:
     name: str
     interests: frozenset[str]
     size: int = 0
+    table_number: int | None = None  # the physical table in the room, if known
+    members: tuple[str, ...] = ()  # guest names, for the find-your-table page; never used in scoring
 
     @classmethod
     def make(
@@ -59,12 +63,16 @@ class GuestGroup:
         name: str,
         interests: Iterable[str],
         size: int = 0,
+        table_number: int | None = None,
+        members: Iterable[str] = (),
     ) -> "GuestGroup":
         return cls(
             group_id=group_id,
             name=name,
             interests=frozenset(i.strip().lower() for i in interests if i.strip()),
             size=size,
+            table_number=table_number,
+            members=tuple(m.strip() for m in members if m.strip()),
         )
 
 
@@ -91,8 +99,18 @@ class Schedule:
 
     assignments: list[Assignment] = field(default_factory=list)
     total_score: int = 0
-    objective_bound: int | None = None  # equals total_score when optimality is proven
+    objective_bound: int | None = None  # equals objective_value when optimality is proven
     solver_runtime_s: float = 0.0
+    # The value of the objective the solver maximized. It equals total_score
+    # unless the solve also rewarded keeping preferred slots (see solver.py).
+    objective_value: int | None = None
+    kept_slots: int | None = None  # preferred slots kept, when any were given
+
+    @property
+    def proven_optimal(self) -> bool:
+        """True when the solver's bound equals the objective it maximized."""
+        value = self.total_score if self.objective_value is None else self.objective_value
+        return self.objective_bound is not None and self.objective_bound == value
 
     def by_round(self, round_number: int) -> list[Assignment]:
         return sorted(
