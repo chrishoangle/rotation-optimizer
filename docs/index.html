@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rotation Optimizer: Christopher Le</title>
+<meta name="description" content="A CP-SAT solver that finds the proven-optimal rotation schedule for a networking dinner, and the zero-score slot no schedule can avoid.">
+<meta property="og:title" content="The optimal schedule gave one table nothing.">
+<meta property="og:description" content="A CP-SAT rotation scheduler built from a real alumni dinner. Proven optimal in milliseconds.">
+<meta property="og:type" content="website">
+<style>
+:root {
+  --bg: #fbfaf7; --fg: #1c1c1e; --muted: #5c5c63; --card: #ffffff; --line: #e3e1da;
+  --accent: #0f766e; --accent-rgb: 15, 118, 110; --accent-soft: rgba(15, 118, 110, 0.10);
+  --warn: #b4530a; --warn-soft: rgba(180, 83, 10, 0.12); --code: #f1efe9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121315; --fg: #ececee; --muted: #a2a2aa; --card: #1b1c1f; --line: #2d2e33;
+    --accent: #2dd4bf; --accent-rgb: 45, 212, 191; --accent-soft: rgba(45, 212, 191, 0.12);
+    --warn: #f5a524; --warn-soft: rgba(245, 165, 36, 0.14); --code: #232428;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 16px; top: 16px; background: var(--card); padding: 8px 12px; z-index: 10; }
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+nav { border-bottom: 1px solid var(--line); }
+nav .wrap { display: flex; gap: 20px; align-items: center; height: 56px; overflow-x: auto; white-space: nowrap; }
+nav strong { margin-right: auto; font-size: 15px; }
+nav a { font-size: 14px; text-decoration: none; color: var(--muted); }
+nav a:hover { color: var(--fg); }
+section { padding: 56px 0; border-bottom: 1px solid var(--line); }
+.kicker { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 20px; }
+h2 { font-size: 28px; line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 14px; }
+h3 { font-size: 18px; margin: 0 0 6px; }
+p { margin: 0 0 14px; max-width: 68ch; }
+.lede { font-size: 19px; color: var(--muted); }
+.stats { font-size: 15px; color: var(--muted); margin: 18px 0 26px; }
+.stats b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  display: inline-block; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 15px;
+  text-decoration: none; border: 1px solid var(--accent); cursor: pointer; font-family: inherit;
+}
+.btn.primary { background: var(--accent); color: var(--bg); }
+.btn.ghost { background: transparent; color: var(--accent); }
+.three { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 8px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.card p { font-size: 15px; margin: 0; color: var(--muted); }
+.card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 700; margin-bottom: 6px; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; }
+select {
+  width: 100%; min-width: 170px; padding: 7px 8px; font: inherit; font-size: 14px; color: var(--fg);
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+}
+select[aria-invalid="true"] { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn-soft); }
+.scorebar { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: baseline; margin: 18px 0 10px; }
+.big { font-size: 40px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.big small { font-size: 16px; color: var(--muted); font-weight: 500; }
+.status { min-height: 1.6em; font-size: 15px; }
+.status.warn { color: var(--warn); }
+.status.good { color: var(--accent); font-weight: 600; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 18px; }
+.zero { color: var(--warn); font-weight: 700; }
+.bars { display: grid; gap: 8px; margin: 16px 0 8px; }
+.bar { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 40px; gap: 10px; align-items: center; font-size: 14px; }
+.track { position: relative; height: 18px; background: var(--accent-soft); border-radius: 4px; }
+.fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.fill.low { background: var(--warn); }
+.mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--fg); opacity: 0.55; }
+.mark.thr { opacity: 0.35; background: var(--warn); }
+.legend { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.heat td { text-align: center; padding: 6px 4px; min-width: 38px; position: relative; }
+.heat td.rowh, .heat th.rowh { text-align: left; white-space: nowrap; padding-right: 10px; }
+.heat td.pick { outline: 2px solid var(--fg); outline-offset: -3px; font-weight: 700; }
+.heat td sup { position: absolute; top: 1px; right: 3px; font-size: 9px; color: var(--muted); }
+.hostkey { columns: 2 220px; font-size: 13px; color: var(--muted); margin: 12px 0 0; padding: 0; list-style: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 13px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); }
+.chip.one { background: var(--warn-soft); }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; margin: 18px 0; }
+code { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+.formula { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; background: var(--code); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+details { margin-top: 12px; font-size: 15px; }
+summary { cursor: pointer; color: var(--accent); }
+.placeholder { border: 1px dashed var(--line); border-radius: 12px; padding: 18px; color: var(--muted); }
+footer { padding: 36px 0 60px; font-size: 14px; color: var(--muted); }
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  section { padding: 40px 0; }
+  .bar { grid-template-columns: 1fr 40px; }
+  .bar .name { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#build">Skip to the schedule builder</a>
+<nav><div class="wrap">
+  <strong>rotation-optimizer</strong>
+  <a href="#build">Try it</a>
+  <a href="#zero">The forced zero</a>
+  <a href="#scale">Scaling</a>
+  <a href="https://github.com/chrishoangle/rotation-optimizer">Code</a>
+</div></nav>
+
+<main>
+<section><div class="wrap">
+  <p class="kicker">Constraint programming · Python · OR-Tools CP-SAT · GitHub Actions</p>
+  <h1>The optimal schedule gave one table nothing.</h1>
+  <p class="lede">At a real alumni dinner, ten career-themed host tables rotated between ten fams of admitted transfer students over two rounds. This solver finds the rotation that maximizes career-interest alignment and proves no better one exists. Even the best schedule leaves one fam with a host who shares none of its interests for one round. No schedule can avoid that.</p>
+  <p class="stats">
+    Score <b><span data-k="total_score">374</span></b>, bound <b><span data-k="objective_bound">374</span></b>, proven optimal in <b><span data-k="runtime_s">0.009</span> s</b>
+    · <b><span data-k="H">10</span></b> hosts, <b><span data-k="G">10</span></b> fams, <b><span data-k="R">2</span></b> rounds, <b><span data-k="admits">67</span></b> admits
+    · tests in CI on Python 3.10 and 3.12
+  </p>
+  <div class="btns">
+    <a class="btn primary" href="#build">Try to beat the solver</a>
+    <a class="btn ghost" href="https://github.com/chrishoangle/rotation-optimizer">Code</a>
+    <a class="btn ghost" href="https://github.com/chrishoangle/rotation-optimizer/blob/main/docs/algorithm.md">The math</a>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>In three lines</h2>
+  <div class="three">
+    <div class="card"><div class="label">Problem</div><p>Hosts rotate, fams stay seated, and no fam may meet the same host twice. A strong pairing used in round 1 is gone for round 2, so the schedule has to be planned as a whole.</p></div>
+    <div class="card"><div class="label">Built</div><p>A CP-SAT model with three constraints and a tag-overlap score. The solver returns a schedule plus a bound, and equal values prove optimality.</p></div>
+    <div class="card"><div class="label">Found</div><p>Four fams draw on the same four hosts for every nonzero match. Counting visits shows at least one zero-score slot is forced, in any schedule.</p></div>
+  </div>
+</div></section>
+
+<section id="build"><div class="wrap">
+  <h2>Build it by hand</h2>
+  <p>This is how the real dinner was scheduled: by hand. Pick a host for each fam in each round. The score next to each host is its match score with that fam. A host can sit at one table per round, and no fam can see the same host twice.</p>
+  <div class="scorebar">
+    <div><div class="big"><span id="yourScore">0</span> <small>your score</small></div></div>
+    <div><div class="big"><span data-k="total_score">374</span> <small>proven maximum</small></div></div>
+    <div><div class="big"><span id="filled">0</span><small> / 20 slots</small></div></div>
+  </div>
+  <div id="status" class="status" aria-live="polite">Pick hosts to start.</div>
+  <div class="controls">
+    <button class="btn ghost" type="button" id="showSolver">Show the solver's schedule</button>
+    <button class="btn ghost" type="button" id="clear">Clear</button>
+  </div>
+  <div class="scroll"><table id="builder" aria-describedby="status">
+    <thead><tr><th>Fam</th><th>Round 1</th><th>Round 2</th><th class="num">Total</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div></section>
+
+<section id="zero"><div class="wrap">
+  <h2>Why one zero is forced</h2>
+  <p>In the solver's schedule, the <b id="zeroFam">Public Affairs &amp; Communications fam</b> gets the <b id="zeroHost">Pharmacy</b> table in round 2, a score of <span class="zero">0</span>. That looks like a solver mistake. It is not, and a short count shows why.</p>
+  <p>Each fam needs two visits, from two different hosts. The table below lists four fams and every host that scores above zero with each of them.</p>
+  <div class="scroll"><table id="bottleneck">
+    <thead><tr><th>Fam</th><th>Hosts scoring above zero</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <p style="margin-top:16px" id="countText">These four fams need 8 nonzero visits. Only four hosts can supply them. Each host makes at most two visits in total, and at most one to any single fam. The Pharmacy table matches only one of the four fams, so it can supply one visit. That caps the supply at 7 visits for 8 slots.</p>
+  <p class="callout">At least one of these fams gets a zero-score slot in every feasible schedule. The test <code>test_no_feasible_schedule_avoids_a_zero_slot</code> confirms it: forbid every zero-score pairing, and CP-SAT reports the model infeasible.</p>
+
+  <h3 style="margin-top:34px">Per-fam totals in the optimal schedule</h3>
+  <p>Maximizing the sum is not the same as treating every fam well. The bars show each fam's two-round total. The dark mark is the median, <span data-k="median_fam_total">40</span>, and the orange mark is 60% of it, the line the example flags for coaching.</p>
+  <div class="bars" id="bars"></div>
+  <div class="legend"><span>Dark mark: median</span><span>Orange mark: 60% of median</span><span>Orange bar: below 60% of median</span></div>
+</div></section>
+
+<section id="matrix"><div class="wrap">
+  <h2>The score matrix</h2>
+  <p>Every cell is the match score between a fam and a host. Outlined cells are the optimal pairings, and the small number is the round. Most of the matrix is zero, which is why the schedule is tight.</p>
+  <div class="formula">score(h, f) = round(100 × |T_h ∩ I_f| / |T_h ∪ I_f|), or 0 if either set is empty</div>
+  <p style="font-size:14px;color:var(--muted);margin-top:8px">T_h is the host's tag set and I_f is the fam's interest set. Rounding is Python's built-in <code>round</code>.</p>
+  <div class="scroll"><table class="heat" id="heat"></table></div>
+  <ul class="hostkey" id="hostkey"></ul>
+</div></section>
+
+<section id="scale"><div class="wrap">
+  <h2>Where "under one second" holds</h2>
+  <p>The same 10 hosts and 10 fams, with more rounds. Measured by <code>benchmarks/rounds_sweep.py</code> with a 10 s limit on Python 3.10.12 and OR-Tools 9.15.6755, in a 4 vCPU aarch64 Linux VM on an Apple Silicon MacBook Pro. Results matched across two runs.</p>
+  <div class="scroll"><table>
+    <thead><tr><th class="num">Rounds</th><th class="num">Score</th><th class="num">Bound</th><th>Proven optimal</th><th class="num">Runtime (s)</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td class="num">208</td><td class="num">208</td><td>yes</td><td class="num">0.005</td></tr>
+      <tr><td class="num">2</td><td class="num">374</td><td class="num">374</td><td>yes</td><td class="num">0.008</td></tr>
+      <tr><td class="num">3</td><td class="num">484</td><td class="num">484</td><td>yes</td><td class="num">0.046</td></tr>
+      <tr><td class="num">4</td><td class="num">538</td><td class="num">568</td><td>no, stopped at limit</td><td class="num">10.004</td></tr>
+      <tr><td class="num">5</td><td class="num">556</td><td class="num">556</td><td>yes</td><td class="num">2.148</td></tr>
+      <tr><td class="num">10</td><td class="num">574</td><td class="num">1403</td><td>no, stopped at limit</td><td class="num">10.004</td></tr>
+    </tbody>
+  </table></div>
+  <p style="margin-top:16px">Proven optimality in under one second held for up to three rounds. At ten rounds every host meets every fam once, so every feasible schedule scores 574, yet the solver could not close the bound in 10 s. Why four rounds is harder than five has not been investigated.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it's built</h2>
+  <div class="three">
+    <div class="card"><div class="label">Model</div><p>Boolean x[h, f, r]. C1: each host at one table per round. C2: each fam gets one host per round. C3: no host and fam pair repeats.</p></div>
+    <div class="card"><div class="label">Proof</div><p>"Optimal" means the solver's objective bound equals the returned score. Anything less is reported as a gap, never as optimal.</p></div>
+    <div class="card"><div class="label">Tests</div><p>pytest checks C1 to C3, the proven optimum on the example, this page's numbers against a fresh solve, and the forced-zero claim.</p></div>
+    <div class="card"><div class="label">Privacy</div><p>The example uses real fam profiles at the group level only. No alumni or admit names, employers, or contact details are in the repo.</p></div>
+  </div>
+</div></section>
+
+<section id="story"><div class="wrap">
+  <h2>The story</h2>
+  <div class="placeholder">The story of the dinner, and of the rotation decision behind this project, is being written. It will live in <code>CASE_STUDY.md</code>.</div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  Built by Christopher Le. Every number on this page is rendered from <code>docs/site-data.json</code>, generated by <code>scripts/export_site_data.py</code> and checked by <code>tests/test_site_data.py</code>.
+  <br><a href="https://github.com/chrishoangle/rotation-optimizer">Source on GitHub</a>
+</div></footer>
+
+<script>
+(function () {
+  "use strict";
+  var D, hostById = {}, famById = {}, state = {};
+  var el = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); };
+  var shortFam = function (name) { return name.replace(/ fam$/, ""); };
+
+  fetch("site-data.json").then(function (r) { return r.json(); }).then(init).catch(function () {
+    el("status").textContent = "Could not load site-data.json. Serve this folder over HTTP to use the builder.";
+  });
+
+  function init(data) {
+    D = data;
+    D.hosts.forEach(function (h, i) { h.n = i + 1; hostById[h.id] = h; });
+    D.fams.forEach(function (f) { famById[f.id] = f; });
+    var flat = Object.assign({}, D.meta, { median_fam_total: D.median_fam_total });
+    document.querySelectorAll("[data-k]").forEach(function (s) {
+      var v = flat[s.getAttribute("data-k")];
+      if (v !== undefined) s.textContent = v;
+    });
+    buildBuilder(); buildZero(); buildBars(); buildHeat();
+  }
+
+  function sc(h, f) { return D.scores[h][f]; }
+
+  function buildBuilder() {
+    var tb = document.querySelector("#builder tbody");
+    tb.innerHTML = D.fams.map(function (f) {
+      var cells = [1, 2].map(function (r) {
+        var opts = ['<option value="">Choose a host</option>'].concat(D.hosts.map(function (h) {
+          return '<option value="' + h.id + '">' + esc(h.theme) + " (" + sc(h.id, f.id) + ")</option>";
+        })).join("");
+        return '<td><select data-f="' + f.id + '" data-r="' + r + '" aria-label="' + esc(f.name) + ", round " + r + '">' + opts + "</select></td>";
+      }).join("");
+      return '<tr><td title="' + esc(f.note) + '">' + esc(shortFam(f.name)) + "</td>" + cells + '<td class="num" id="tot_' + f.id + '">0</td></tr>';
+    }).join("");
+    tb.addEventListener("change", function (e) {
+      var s = e.target; if (!s.matches("select")) return;
+      state[s.dataset.f + "|" + s.dataset.r] = s.value; update();
+    });
+    el("clear").addEventListener("click", function () { state = {}; syncSelects(); update(); });
+    el("showSolver").addEventListener("click", function () {
+      state = {};
+      D.optimal.forEach(function (a) { state[a.fam + "|" + a.round] = a.host; });
+      syncSelects(); update();
+    });
+  }
+
+  function syncSelects() {
+    document.querySelectorAll("#builder select").forEach(function (s) {
+      s.value = state[s.dataset.f + "|" + s.dataset.r] || "";
+    });
+  }
+
+  function update() {
+    var total = 0, filled = 0, problems = [], bad = {};
+    var famTot = {};
+    D.fams.forEach(function (f) { famTot[f.id] = 0; });
+    [1, 2].forEach(function (r) {
+      var seen = {};
+      D.fams.forEach(function (f) {
+        var h = state[f.id + "|" + r]; if (!h) return;
+        filled++; total += sc(h, f.id); famTot[f.id] += sc(h, f.id);
+        (seen[h] = seen[h] || []).push(f.id);
+      });
+      Object.keys(seen).forEach(function (h) {
+        if (seen[h].length > 1) {
+          seen[h].forEach(function (f) { bad[f + "|" + r] = true; });
+          problems.push(hostById[h].theme + " is at two tables in round " + r + ".");
+        }
+      });
+    });
+    D.fams.forEach(function (f) {
+      var a = state[f.id + "|1"], b = state[f.id + "|2"];
+      if (a && a === b) {
+        bad[f.id + "|1"] = bad[f.id + "|2"] = true;
+        problems.push(shortFam(f.name) + " sees " + hostById[a].theme + " twice.");
+      }
+      el("tot_" + f.id).textContent = famTot[f.id];
+    });
+    document.querySelectorAll("#builder select").forEach(function (s) {
+      s.setAttribute("aria-invalid", bad[s.dataset.f + "|" + s.dataset.r] ? "true" : "false");
+    });
+    el("yourScore").textContent = total;
+    el("filled").textContent = filled;
+    var st = el("status");
+    st.className = "status";
+    if (problems.length) {
+      st.className = "status warn";
+      st.textContent = problems.join(" ");
+    } else if (filled === 0) {
+      st.textContent = "Pick hosts to start.";
+    } else if (filled < 20) {
+      st.textContent = "No rule broken so far. " + (20 - filled) + " slots left.";
+    } else if (total === D.meta.total_score) {
+      st.className = "status good";
+      st.textContent = "Valid schedule scoring " + total + ". That matches the proven maximum.";
+    } else {
+      st.textContent = "Valid schedule scoring " + total + ", which is " + (D.meta.total_score - total) + " below the proven maximum.";
+    }
+  }
+
+  function buildZero() {
+    var z = D.optimal.filter(function (a) { return a.score === 0; })[0];
+    if (z) {
+      el("zeroFam").textContent = famById[z.fam].name;
+      el("zeroHost").textContent = hostById[z.host].theme;
+    }
+    var b = D.bottleneck;
+    document.querySelector("#bottleneck tbody").innerHTML = b.fams.map(function (f) {
+      var chips = b.nonzero_hosts[f].map(function (h) {
+        var cls = b.host_capacity[h] < D.meta.R ? "chip one" : "chip";
+        return '<span class="' + cls + '">' + esc(hostById[h].theme) + " (" + sc(h, f) + ")</span>";
+      }).join("");
+      return "<tr><td>" + esc(famById[f].name) + '</td><td><div class="chips">' + chips + "</div></td></tr>";
+    }).join("");
+  }
+
+  function buildBars() {
+    var max = Math.max.apply(null, D.fams.map(function (f) { return D.fam_totals[f.id]; }));
+    var med = D.median_fam_total, thr = 0.6 * med;
+    el("bars").innerHTML = D.fams.map(function (f) {
+      var v = D.fam_totals[f.id];
+      return '<div class="bar"><span class="name">' + esc(shortFam(f.name)) + "</span>" +
+        '<div class="track" role="img" aria-label="' + esc(shortFam(f.name)) + ": " + v + '">' +
+        '<div class="fill' + (v < thr ? " low" : "") + '" style="width:' + (100 * v / max) + '%"></div>' +
+        '<span class="mark" style="left:' + (100 * med / max) + '%"></span>' +
+        '<span class="mark thr" style="left:' + (100 * thr / max) + '%"></span></div>' +
+        '<span class="num" style="text-align:right">' + v + "</span></div>";
+    }).join("");
+  }
+
+  function buildHeat() {
+    var pick = {};
+    D.optimal.forEach(function (a) { pick[a.fam + "|" + a.host] = a.round; });
+    var max = 0;
+    D.hosts.forEach(function (h) { D.fams.forEach(function (f) { max = Math.max(max, sc(h.id, f.id)); }); });
+    var head = '<thead><tr><th class="rowh">Fam</th>' + D.hosts.map(function (h) {
+      return '<th class="num" title="' + esc(h.theme) + '">H' + h.n + "</th>";
+    }).join("") + "</tr></thead>";
+    var body = D.fams.map(function (f) {
+      return '<tr><td class="rowh">' + esc(shortFam(f.name)) + "</td>" + D.hosts.map(function (h) {
+        var v = sc(h.id, f.id), r = pick[f.id + "|" + h.id];
+        var bg = v ? "background: rgba(var(--accent-rgb)," + (0.12 + 0.6 * v / max).toFixed(2) + ")" : "";
+        return '<td class="' + (r ? "pick" : "") + '" style="' + bg + '" title="' + esc(h.theme) + ": " + v + '">' +
+          (v || '<span style="opacity:.35">0</span>') + (r ? "<sup>R" + r + "</sup>" : "") + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    el("heat").innerHTML = head + "<tbody>" + body + "</tbody>";
+    el("hostkey").innerHTML = D.hosts.map(function (h) { return "<li>H" + h.n + ": " + esc(h.theme) + "</li>"; }).join("");
+  }
+})();
+</script>
+</body>
+</html>

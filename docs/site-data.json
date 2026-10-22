@@ -1,0 +1,574 @@
+{
+  "meta": {
+    "python": "3.10.12",
+    "ortools": "9.15.6755",
+    "H": 10,
+    "G": 10,
+    "R": 2,
+    "total_score": 374,
+    "objective_bound": 374,
+    "proven_optimal": true,
+    "runtime_s": 0.009,
+    "admits": 67
+  },
+  "hosts": [
+    {
+      "id": "h01",
+      "theme": "Physician (MD)",
+      "tags": [
+        "endocrinology",
+        "healthcare",
+        "internal medicine",
+        "medicine",
+        "pre-med",
+        "residency"
+      ]
+    },
+    {
+      "id": "h02",
+      "theme": "Pharmacy",
+      "tags": [
+        "healthcare",
+        "pharmacy",
+        "pharmacy ownership",
+        "pharmd",
+        "small-business"
+      ]
+    },
+    {
+      "id": "h03",
+      "theme": "Therapy & Rehab",
+      "tags": [
+        "allied health",
+        "healthcare",
+        "occupational therapy",
+        "physical therapy",
+        "physician assistant"
+      ]
+    },
+    {
+      "id": "h04",
+      "theme": "Aerospace & Defense",
+      "tags": [
+        "aerospace",
+        "defense",
+        "engineering",
+        "industry",
+        "mechanical engineering"
+      ]
+    },
+    {
+      "id": "h05",
+      "theme": "Nonprofit & Social Impact",
+      "tags": [
+        "advocacy",
+        "development",
+        "education reform",
+        "fundraising",
+        "nonprofit",
+        "public service"
+      ]
+    },
+    {
+      "id": "h06",
+      "theme": "Physics & Engineering",
+      "tags": [
+        "applied physics",
+        "engineering",
+        "mentorship",
+        "physics",
+        "test engineering"
+      ]
+    },
+    {
+      "id": "h07",
+      "theme": "Pre-Med Mentorship",
+      "tags": [
+        "application process",
+        "gap years",
+        "healthcare",
+        "med school",
+        "mentorship",
+        "pre-med"
+      ]
+    },
+    {
+      "id": "h08",
+      "theme": "Semiconductor & Chip Engineering",
+      "tags": [
+        "chip",
+        "computer engineering",
+        "electrical engineering",
+        "engineering",
+        "hardware",
+        "semiconductor"
+      ]
+    },
+    {
+      "id": "h09",
+      "theme": "Urban Planning & Public Service",
+      "tags": [
+        "housing",
+        "humanities",
+        "local government",
+        "policy",
+        "public service",
+        "urban planning"
+      ]
+    },
+    {
+      "id": "h10",
+      "theme": "Admissions & Higher Ed",
+      "tags": [
+        "admissions",
+        "consulting",
+        "higher education",
+        "humanities",
+        "mentorship",
+        "student affairs"
+      ]
+    }
+  ],
+  "fams": [
+    {
+      "id": "fam_01",
+      "name": "Public Affairs & Communications fam",
+      "size": 6,
+      "interests": [
+        "communications",
+        "digital media",
+        "humanities",
+        "math economics",
+        "policy",
+        "political science",
+        "public affairs"
+      ],
+      "note": "Six admits with a strong public-service and media bent. Political science, communications leaning digital humanities and TV, pre-public-affairs, and public affairs with math econ. Low pre-med signal, high interest in policy and storytelling."
+    },
+    {
+      "id": "fam_02",
+      "name": "Cog Sci & Pre-Health fam",
+      "size": 6,
+      "interests": [
+        "biochemistry",
+        "cognitive science",
+        "healthcare",
+        "mathematics",
+        "nursing",
+        "pre-med"
+      ],
+      "note": "Six admits weighted toward cognitive science and pre-health. Nursing, biochemistry, and math round out the group. Several admits exploring pre-med pathways."
+    },
+    {
+      "id": "fam_03",
+      "name": "Humanities & Social Sciences fam",
+      "size": 6,
+      "interests": [
+        "higher education",
+        "history",
+        "humanities",
+        "philosophy",
+        "political science",
+        "public service",
+        "sociology"
+      ],
+      "note": "Six admits anchored in humanities and social sciences. Philosophy, history (one with an English minor), sociology, and political science. The fam most likely to ask what a non-STEM UCLA path actually looks like after graduation."
+    },
+    {
+      "id": "fam_04",
+      "name": "Engineering + Pre-Med fam",
+      "size": 7,
+      "interests": [
+        "aerospace",
+        "computer engineering",
+        "electrical engineering",
+        "engineering",
+        "healthcare",
+        "mechanical engineering",
+        "pre-med"
+      ],
+      "note": "Seven admits leaning heavily engineering (mechanical, aerospace, electrical, computer) with two MCDB and microbiology admits leaning pre-med. Interesting dual character: the engineering block fits aerospace and semiconductor tables, the pre-med block fits the MD and pre-med mentorship tables."
+    },
+    {
+      "id": "fam_05",
+      "name": "Linguistics, CS & Applied Math fam",
+      "size": 7,
+      "interests": [
+        "applied mathematics",
+        "computer engineering",
+        "computer science",
+        "engineering",
+        "linguistics",
+        "physics"
+      ],
+      "note": "Seven admits across linguistics, computer science, and applied math. Several linguistics-plus-CS or linguistics-plus-psychology combinations, plus physics with applied math and stats. The fam most interested in technical careers that are not pure engineering."
+    },
+    {
+      "id": "fam_06",
+      "name": "Sociology & Public Service fam",
+      "size": 7,
+      "interests": [
+        "advocacy",
+        "humanities",
+        "nonprofit",
+        "policy",
+        "political science",
+        "public service",
+        "sociology"
+      ],
+      "note": "Seven admits with four in sociology, plus political science and engineering geology. The strongest social-sciences fam of the night. Natural fit for nonprofit and public-service tables."
+    },
+    {
+      "id": "fam_07",
+      "name": "Psychology, Data Theory & Math fam",
+      "size": 7,
+      "interests": [
+        "allied health",
+        "data theory",
+        "mathematics",
+        "mentorship",
+        "pre-med",
+        "psychology"
+      ],
+      "note": "Seven admits combining psychology, data theory, and math for teaching. Several admits exploring pre-med through psychology or psychobiology. Benefits from both pre-med mentorship and allied-health perspectives."
+    },
+    {
+      "id": "fam_08",
+      "name": "Economics & Business Econ fam",
+      "size": 7,
+      "interests": [
+        "business economics",
+        "consulting",
+        "data science",
+        "economics",
+        "entrepreneurship",
+        "small-business",
+        "stats"
+      ],
+      "note": "Seven admits in economics and business economics, with a psychology-plus-entrepreneurship admit at the edge. The fam most likely to ask about business ownership, consulting, and the operations side of any industry."
+    },
+    {
+      "id": "fam_09",
+      "name": "Engineering & Psych fam",
+      "size": 7,
+      "interests": [
+        "applied mathematics",
+        "chemical engineering",
+        "electrical engineering",
+        "engineering",
+        "mechanical engineering",
+        "physics",
+        "psychology"
+      ],
+      "note": "Seven admits combining engineering (electrical, chemical, mechanical) with psychology. The engineering block fits aerospace and physics tables cleanly, and the psych-adjacent admits fit allied-health perspectives."
+    },
+    {
+      "id": "fam_10",
+      "name": "Bio & Chem fam",
+      "size": 7,
+      "interests": [
+        "allied health",
+        "biochemistry",
+        "biology",
+        "chemistry",
+        "healthcare",
+        "pre-med",
+        "psychology"
+      ],
+      "note": "Seven admits in biology, chemistry, and biochemistry, plus psychology. The purest pre-med fam of the night. Natural fit for the physician and therapy tables."
+    }
+  ],
+  "scores": {
+    "h01": {
+      "fam_01": 0,
+      "fam_02": 20,
+      "fam_03": 0,
+      "fam_04": 18,
+      "fam_05": 0,
+      "fam_06": 0,
+      "fam_07": 9,
+      "fam_08": 0,
+      "fam_09": 0,
+      "fam_10": 18
+    },
+    "h02": {
+      "fam_01": 0,
+      "fam_02": 10,
+      "fam_03": 0,
+      "fam_04": 9,
+      "fam_05": 0,
+      "fam_06": 0,
+      "fam_07": 0,
+      "fam_08": 9,
+      "fam_09": 0,
+      "fam_10": 9
+    },
+    "h03": {
+      "fam_01": 0,
+      "fam_02": 10,
+      "fam_03": 0,
+      "fam_04": 9,
+      "fam_05": 0,
+      "fam_06": 0,
+      "fam_07": 10,
+      "fam_08": 0,
+      "fam_09": 0,
+      "fam_10": 20
+    },
+    "h04": {
+      "fam_01": 0,
+      "fam_02": 0,
+      "fam_03": 0,
+      "fam_04": 33,
+      "fam_05": 10,
+      "fam_06": 0,
+      "fam_07": 0,
+      "fam_08": 0,
+      "fam_09": 20,
+      "fam_10": 0
+    },
+    "h05": {
+      "fam_01": 0,
+      "fam_02": 0,
+      "fam_03": 8,
+      "fam_04": 0,
+      "fam_05": 0,
+      "fam_06": 30,
+      "fam_07": 0,
+      "fam_08": 0,
+      "fam_09": 0,
+      "fam_10": 0
+    },
+    "h06": {
+      "fam_01": 0,
+      "fam_02": 0,
+      "fam_03": 0,
+      "fam_04": 9,
+      "fam_05": 22,
+      "fam_06": 0,
+      "fam_07": 10,
+      "fam_08": 0,
+      "fam_09": 20,
+      "fam_10": 0
+    },
+    "h07": {
+      "fam_01": 0,
+      "fam_02": 20,
+      "fam_03": 0,
+      "fam_04": 18,
+      "fam_05": 0,
+      "fam_06": 0,
+      "fam_07": 20,
+      "fam_08": 0,
+      "fam_09": 0,
+      "fam_10": 18
+    },
+    "h08": {
+      "fam_01": 0,
+      "fam_02": 0,
+      "fam_03": 0,
+      "fam_04": 30,
+      "fam_05": 20,
+      "fam_06": 0,
+      "fam_07": 0,
+      "fam_08": 0,
+      "fam_09": 18,
+      "fam_10": 0
+    },
+    "h09": {
+      "fam_01": 18,
+      "fam_02": 0,
+      "fam_03": 18,
+      "fam_04": 0,
+      "fam_05": 0,
+      "fam_06": 30,
+      "fam_07": 0,
+      "fam_08": 0,
+      "fam_09": 0,
+      "fam_10": 0
+    },
+    "h10": {
+      "fam_01": 8,
+      "fam_02": 0,
+      "fam_03": 18,
+      "fam_04": 0,
+      "fam_05": 0,
+      "fam_06": 8,
+      "fam_07": 9,
+      "fam_08": 8,
+      "fam_09": 0,
+      "fam_10": 0
+    }
+  },
+  "optimal": [
+    {
+      "round": 1,
+      "host": "h09",
+      "fam": "fam_01",
+      "score": 18
+    },
+    {
+      "round": 1,
+      "host": "h01",
+      "fam": "fam_02",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h10",
+      "fam": "fam_03",
+      "score": 18
+    },
+    {
+      "round": 1,
+      "host": "h04",
+      "fam": "fam_04",
+      "score": 33
+    },
+    {
+      "round": 1,
+      "host": "h08",
+      "fam": "fam_05",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h05",
+      "fam": "fam_06",
+      "score": 30
+    },
+    {
+      "round": 1,
+      "host": "h07",
+      "fam": "fam_07",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h02",
+      "fam": "fam_08",
+      "score": 9
+    },
+    {
+      "round": 1,
+      "host": "h06",
+      "fam": "fam_09",
+      "score": 20
+    },
+    {
+      "round": 1,
+      "host": "h03",
+      "fam": "fam_10",
+      "score": 20
+    },
+    {
+      "round": 2,
+      "host": "h02",
+      "fam": "fam_01",
+      "score": 0
+    },
+    {
+      "round": 2,
+      "host": "h07",
+      "fam": "fam_02",
+      "score": 20
+    },
+    {
+      "round": 2,
+      "host": "h05",
+      "fam": "fam_03",
+      "score": 8
+    },
+    {
+      "round": 2,
+      "host": "h08",
+      "fam": "fam_04",
+      "score": 30
+    },
+    {
+      "round": 2,
+      "host": "h06",
+      "fam": "fam_05",
+      "score": 22
+    },
+    {
+      "round": 2,
+      "host": "h09",
+      "fam": "fam_06",
+      "score": 30
+    },
+    {
+      "round": 2,
+      "host": "h03",
+      "fam": "fam_07",
+      "score": 10
+    },
+    {
+      "round": 2,
+      "host": "h10",
+      "fam": "fam_08",
+      "score": 8
+    },
+    {
+      "round": 2,
+      "host": "h04",
+      "fam": "fam_09",
+      "score": 20
+    },
+    {
+      "round": 2,
+      "host": "h01",
+      "fam": "fam_10",
+      "score": 18
+    }
+  ],
+  "fam_totals": {
+    "fam_01": 18,
+    "fam_02": 40,
+    "fam_03": 26,
+    "fam_04": 63,
+    "fam_05": 42,
+    "fam_06": 60,
+    "fam_07": 30,
+    "fam_08": 17,
+    "fam_09": 40,
+    "fam_10": 38
+  },
+  "median_fam_total": 40,
+  "bottleneck": {
+    "fams": [
+      "fam_01",
+      "fam_03",
+      "fam_06",
+      "fam_08"
+    ],
+    "nonzero_hosts": {
+      "fam_01": [
+        "h09",
+        "h10"
+      ],
+      "fam_03": [
+        "h05",
+        "h09",
+        "h10"
+      ],
+      "fam_06": [
+        "h05",
+        "h09",
+        "h10"
+      ],
+      "fam_08": [
+        "h02",
+        "h10"
+      ]
+    },
+    "host_capacity": {
+      "h02": 1,
+      "h05": 2,
+      "h09": 2,
+      "h10": 2
+    },
+    "demand": 8,
+    "capacity": 7
+  }
+}
