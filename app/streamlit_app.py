@@ -475,7 +475,7 @@ def tables() -> None:
         st.caption(
             "must meet: the pair meets once, in one of the listed rounds (blank means any round). "
             "never meet: the pair never meets in the listed rounds (blank means never). "
-            "only in rounds: the host comes only for the listed rounds; leave the fam blank. "
+            "only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. "
             "Write rounds as 1 or 1, 2."
         )
         rules_df = st.data_editor(
@@ -835,7 +835,7 @@ GLOSSARY = """
 - **Weak round**: a round where a fam's host shares none of its interests, or no host comes to the fam.
 - **Open table**: a fam with no host for a round, when there are more fams than host tables.
 - **No table this round**: a host with no fam for a round, when there are more host tables than fams.
-- **Pairing rule**: must meet, never meet, or only in rounds. Rules always hold; the score decides the rest.
+- **Pairing rule**: must meet, never meet, only in rounds, or stays with. Rules always hold; the score decides the rest.
 - **Finished round**: a round that already happened. Re-planning never changes it.
 - **Printed version**: the schedule you marked as printed. Changes are listed against it, so you reprint only what changed.
 - **Event file**: the file Save event file downloads. It holds everything, and it is the only copy.

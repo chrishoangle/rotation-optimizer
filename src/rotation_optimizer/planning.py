@@ -15,6 +15,9 @@ Coordinator rules, all by id, with rounds numbered from 1:
               when given, otherwise in any round.
   never       Rule("never", host, fam, rounds): never meet in `rounds`, or
               never at all when rounds is empty.
+  stays       Rule("stays", host, fam): the host stays with one fam all
+              night instead of moving, for example an alum who cannot
+              move between tables. An empty fam lets the planner choose.
   host_away   {host_id: rounds} the host is not there, for example after a
               cancellation "from round 2".
   fam_away    {fam_id: rounds} the fam is not there.
@@ -52,7 +55,7 @@ class RuleConflictError(InfeasibleProblemError):
 
 @dataclass(frozen=True)
 class Rule:
-    """A coordinator rule. kind is "must" or "never". Empty rounds means any round."""
+    """A coordinator rule. kind is "must", "never", or "stays". Empty rounds means any round; an empty fam on "stays" means any fam."""
 
     kind: str
     host_id: str
@@ -178,10 +181,10 @@ def _check_rules(
     musts = [r for r in rules if r.kind == "must"]
     nevers = [r for r in rules if r.kind == "never"]
     for rule in rules:
-        if rule.kind not in ("must", "never"):
-            problems.append(f"Unknown rule type {rule.kind!r}. Use must or never.")
+        if rule.kind not in ("must", "never", "stays"):
+            problems.append(f"Unknown rule type {rule.kind!r}. Use must, never, or stays.")
             continue
-        if not known(f"A {rule.kind} rule", rule.host_id, rule.fam_id):
+        if not known(f"A {rule.kind} rule", rule.host_id, rule.fam_id or None):
             continue
         bad = [r for r in rule.rounds if r not in all_rounds]
         if bad:
@@ -192,6 +195,23 @@ def _check_rules(
     if problems:
         raise RuleConflictError("\n".join(problems))
 
+    stays = [r for r in rules if r.kind == "stays"]
+    by_stay_host: dict[str, list[Rule]] = {}
+    for st in stays:
+        by_stay_host.setdefault(st.host_id, []).append(st)
+    for h, rs in by_stay_host.items():
+        if len(rs) > 1:
+            problems.append(f"{hname[h]} has more than one stays with rule. Keep one of them.")
+    by_stay_fam: dict[str, list[str]] = {}
+    for st in stays:
+        if st.fam_id:
+            by_stay_fam.setdefault(st.fam_id, []).append(st.host_id)
+    for f, hs in by_stay_fam.items():
+        if len(hs) > 1:
+            problems.append(
+                f"{' and '.join(hname[h] for h in hs)} both stay with {fname[f]}, but a fam gets only one host "
+                "per round. Choose a different fam for one of them, or leave its fam blank."
+            )
     for m in musts:
         allowed = set(m.rounds) or all_rounds
         h, f = hname[m.host_id], fname[m.fam_id]
@@ -378,6 +398,8 @@ def plan_event(
             repeat_ok=[h.host_id for h in padded_hosts[len(hosts):]] + [f.group_id for f in padded_fams[len(fams):]],
             spread_hosts=spread_hosts,
             spread_groups=spread_groups,
+            stay_hosts={r.host_id: r.fam_id for r in rules if r.kind == "stays"},
+            stay_groups=sorted(fam_ids),
         )
     except InfeasibleProblemError as err:
         if "no schedule satisfies every rule" not in str(err):
@@ -446,6 +468,9 @@ def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, h
         key = ("rule", str(i))
         items.append(key)
         when = f" in {_round_text(rule.rounds)}" if rule.rounds else ""
+        if rule.kind == "stays":
+            words[key] = f"{hname[rule.host_id]} stays with " + (fname[rule.fam_id] if rule.fam_id else "one fam") + " all night"
+            continue
         verb = "must meet" if rule.kind == "must" else "never meets"
         words[key] = f"{hname[rule.host_id]} {verb} {fname[rule.fam_id]}{when}"
     for h, rs in host_limits.items():

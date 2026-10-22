@@ -892,7 +892,7 @@ function reprintButton(label: string, file: string, make: () => string): HTMLEle
 
 const START_HERE = [
   "**1. Your tables.** The page opens with an example dinner so you can try everything first. For your own event, click **Start a blank event** in the sidebar, or fill in the **Hosts template** and **Fams template** and upload them. A Google Forms export works too.",
-  "**2. Pairing rules (optional).** Add a rule when a host must meet a fam, must never meet one, or only comes for some rounds.",
+  "**2. Pairing rules (optional).** Add a rule when a host must meet a fam, must never meet one, only comes for some rounds, or stays at one table all night.",
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
@@ -910,7 +910,7 @@ const GLOSSARY: [string, string][] = [
   ["Weak round", "a round where a fam's host shares none of its interests, or no host comes to the fam."],
   ["Open table", "a fam with no host for a round, when there are more fams than host tables."],
   ["No table this round", "a host with no fam for a round, when there are more host tables than fams."],
-  ["Pairing rule", "must meet, never meet, or only in rounds. Rules always hold; the score decides the rest."],
+  ["Pairing rule", "must meet, never meet, only in rounds, or stays with. Rules always hold; the score decides the rest."],
   ["Finished round", "a round that already happened. Re-planning never changes it."],
   ["Printed version", "the schedule you marked as printed. Changes are listed against it, so you reprint only what changed."],
   ["Event file", "the file Save event file downloads. It holds everything, and it is the copy to keep."],
@@ -943,7 +943,7 @@ function renderShell(): void {
       h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. You can paste rows copied from a spreadsheet."),
       h("div", { id: "fams-table" }),
       h("h2", {}, "3. Pairing rules (optional)"),
-      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. Write rounds as 1 or 1, 2."),
+      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. Write rounds as 1 or 1, 2."),
       h("div", { id: "rules-table" }),
       h("p", { className: "help" }, "Your changes are checked as you type and kept in this browser."),
       h("div", { className: "row" }, find, h("span", { id: "find-status", className: "help" })),

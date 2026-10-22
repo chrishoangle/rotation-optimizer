@@ -195,8 +195,8 @@ export function famIdByLabel(fams: GuestGroup[], label: string): string {
   return f.groupId;
 }
 
-export const RULE_KINDS: Record<string, "must" | "never" | "only"> = {
-  "must meet": "must", "never meet": "never", "only in rounds": "only",
+export const RULE_KINDS: Record<string, "must" | "never" | "only" | "stays"> = {
+  "must meet": "must", "never meet": "never", "only in rounds": "only", "stays with": "stays",
 };
 
 const PY_FLOAT = /^[+-]?((\d[\d_]*(\.[\d_]*)?|\.\d[\d_]*)([eE][+-]?\d+)?|inf(inity)?|nan)$/i;
@@ -220,7 +220,7 @@ export function parseRounds(text: string, rounds: number): number[] {
 }
 
 export interface Rule {
-  kind: "must" | "never";
+  kind: "must" | "never" | "stays";
   hostId: string;
   famId: string;
   rounds: number[];
@@ -234,7 +234,7 @@ export function parseRuleRows(rows: Iterable<Row>, hosts: Host[], fams: GuestGro
   cleanRows(rows).forEach((row, idx) => {
     const i = idx + 1;
     const kind = RULE_KINDS[(row.rule ?? "").toLowerCase()];
-    if (!kind) { problems.push(`Pairing rule ${i}: choose must meet, never meet, or only in rounds.`); return; }
+    if (!kind) { problems.push(`Pairing rule ${i}: choose must meet, never meet, only in rounds, or stays with.`); return; }
     let h: string;
     try { h = hostIdByLabel(hosts, row.host_table ?? ""); } catch { problems.push(`Pairing rule ${i}: choose a host table from the list.`); return; }
     let rs: number[];
@@ -244,6 +244,10 @@ export function parseRuleRows(rows: Iterable<Row>, hosts: Host[], fams: GuestGro
       const keep = new Set(rs);
       hostAway[h] = Array.from({ length: rounds }, (_, k) => k + 1).filter((r) => !keep.has(r));
       return;
+    }
+    if (kind === "stays") {
+      if (rs.length) { problems.push(`Pairing rule ${i}: stays with is for the whole night, so leave Rounds blank.`); return; }
+      if (!(row.fam ?? "").trim()) { rules.push({ kind: "stays", hostId: h, famId: "", rounds: [] }); return; }
     }
     let f: string;
     try { f = famIdByLabel(fams, row.fam ?? ""); } catch { problems.push(`Pairing rule ${i}: choose a fam from the list.`); return; }

@@ -75,6 +75,16 @@ use this.
 rule limited to some rounds, a cancellation, and the non-locked pairings of
 a locked round all use this.
 
+**(R5) Staying host.** Host $h$ stays with one group all night, for an alum
+who cannot move between tables. With a boolean $y_{h,g}$ for each real
+group, $\sum_g y_{h,g} = 1$, $x_{h,g,r} \le y_{h,g}$ in every round, and
+$x_{h,g,r} \ge y_{h,g}$ in every round where the slot is not forbidden. C3
+is lifted for $h$ only, since it meets the same group every round. A named
+group fixes $y_{h,g} = 1$; a blank one lets the solver choose. Note that a
+staying host can raise the total score, because a good pairing then counts
+in every round. [`tests/test_stays.py`](../tests/test_stays.py) checks the
+rule, and the parity fixture includes seven staying-host cases.
+
 ### Uneven counts and cancellations
 
 `plan_event()` pads the problem to $N$ hosts and $N$ groups with
@@ -120,7 +130,7 @@ any round gets a fairness note suggesting two alums share a table, and a fam
 with two open tables is told they are already shared out as evenly as
 possible. [`tests/test_uneven.py`](../tests/test_uneven.py) checks both
 review cases, and the web app's parity tests check that the browser solver
-reaches the same $P$ and the same score on all 40 shared cases.
+reaches the same $P$ and the same score on every shared case.
 
 Synthetic events (tags from a fixed pattern, see the test file), Python
 3.13.16 and OR-Tools 9.15.6755 with 8 workers on a 2 vCPU x86_64 Xeon

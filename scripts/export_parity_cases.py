@@ -128,6 +128,17 @@ def main() -> None:
         {"rule": "must meet", "host_table": "Pharmacy", "fam": "Bio & Chem", "rounds": "2"},
         {"rule": "never meet", "host_table": "Physician (MD)", "fam": "Cog Sci & Pre-Health", "rounds": ""},
         {"rule": "only in rounds", "host_table": "Academic Mentorship", "fam": "", "rounds": "1"}]))
+    stay = lambda host, fam="": {"rule": "stays with", "host_table": host, "fam": fam, "rounds": ""}
+    add("stays with a chosen fam", event(practice_h, practice_f, 3, rules=[stay("Therapy & Rehab", "Cog Sci & Pre-Health")]))
+    add("stays with any fam", event(practice_h, practice_f, 3, rules=[stay("Therapy & Rehab")]))
+    add("stays with any fam, uneven", event(extra_h, practice_f, 2, rules=[stay("Film & TV")]))
+    add("conflict: two stay with one fam", event(practice_h, practice_f, 2, rules=[
+        stay("Therapy & Rehab", "Cog Sci & Pre-Health"), stay("Pharmacy", "Cog Sci & Pre-Health")]))
+    add("conflict: stays and must meet", event(practice_h, practice_f, 2, rules=[
+        stay("Therapy & Rehab", "Cog Sci & Pre-Health"),
+        {"rule": "must meet", "host_table": "Therapy & Rehab", "fam": "Bio & Chem", "rounds": ""}]))
+    add("stays with, rounds given", event(practice_h, practice_f, 2, rules=[
+        {"rule": "stays with", "host_table": "Pharmacy", "fam": "", "rounds": "1"}]))
     add("one weak round", event(practice_h, practice_f, 3, one_weak_round=True))
     add("one weak round, real example", event(real_h, real_f, 2, one_weak_round=True))
     add("conflict: three musts", event(small_h, small_f, 2, rules=[
@@ -163,6 +174,12 @@ def main() -> None:
         s = copy.deepcopy(base)
         s.cancel_fams = {"fam_05": 2}
         add(f"{r} rounds, from scratch with a cancellation", s, keep_printed=False)
+    s = event(practice_h, practice_f, 3, rules=[stay("Therapy & Rehab")])
+    solve_event(s)
+    s.printed = s.plan
+    s.finished = 1
+    s.cancel_hosts = {"h02": 2}
+    add("stays with, a cancellation on the night", s)
     s = event(practice_h, practice_f, 3)
     solve_event(s)
     s.printed = s.plan

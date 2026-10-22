@@ -89,8 +89,8 @@ function checkRules(
   const musts = rules.filter((r) => r.kind === "must");
   const nevers = rules.filter((r) => r.kind === "never");
   for (const rule of rules) {
-    if (rule.kind !== "must" && rule.kind !== "never") { problems.push(`Unknown rule type '${rule.kind}'. Use must or never.`); continue; }
-    if (!known(`A ${rule.kind} rule`, rule.hostId, rule.famId)) continue;
+    if (rule.kind !== "must" && rule.kind !== "never" && rule.kind !== "stays") { problems.push(`Unknown rule type '${rule.kind}'. Use must, never, or stays.`); continue; }
+    if (!known(`A ${rule.kind} rule`, rule.hostId, rule.famId || null)) continue;
     const bad = rule.rounds.filter((r) => !allRounds.has(r));
     if (bad.length) {
       problems.push(`The rule ${hname[rule.hostId]} ${rule.kind} meet ${fname[rule.famId]} mentions round ${bad[0]}, but the event has ${rounds} rounds.`);
@@ -98,6 +98,17 @@ function checkRules(
   }
   if (problems.length) throw new RuleConflictError(problems.join("\n"));
 
+  const stays = rules.filter((r) => r.kind === "stays");
+  const byStayHost = new Map<string, Rule[]>();
+  for (const st of stays) byStayHost.set(st.hostId, [...(byStayHost.get(st.hostId) ?? []), st]);
+  for (const [h, rs] of byStayHost) if (rs.length > 1) problems.push(`${hname[h]} has more than one stays with rule. Keep one of them.`);
+  const byStayFam = new Map<string, string[]>();
+  for (const st of stays) if (st.famId) byStayFam.set(st.famId, [...(byStayFam.get(st.famId) ?? []), st.hostId]);
+  for (const [f, hs] of byStayFam) {
+    if (hs.length > 1) {
+      problems.push(`${hs.map((h) => hname[h]).join(" and ")} both stay with ${fname[f]}, but a fam gets only one host per round. Choose a different fam for one of them, or leave its fam blank.`);
+    }
+  }
   const lockedSet = new Set(locked.map(([r, h, f]) => slotKey(r, h, f)));
   const lockedRounds = new Set(locked.map(([r]) => r));
   for (const m of musts) {
@@ -226,6 +237,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
     forbiddenSlots: forbidden, fixedSlots: locked, preferSlots: keep, hostAway, famAway,
     weakLimit: o.weakLimit ?? null, timeLimitS, minPairsPerRound: hosts.length + fams.length - n,
     spreadHosts, spreadFams,
+    stayHosts: Object.fromEntries(rules.filter((x) => x.kind === "stays").map((x) => [x.hostId, x.famId])),
   });
   if (result.status === "infeasible") {
     if (o.diagnose === false) throw new RuleConflictError("No schedule satisfies every rule.");
@@ -271,7 +283,9 @@ function explainConflict(
     const k = `rule\u0000${i}`;
     items.push(k);
     const when = rule.rounds.length ? ` in ${roundText(rule.rounds)}` : "";
-    words[k] = `${hname[rule.hostId]} ${rule.kind === "must" ? "must meet" : "never meets"} ${fname[rule.famId]}${when}`;
+    words[k] = rule.kind === "stays"
+      ? `${hname[rule.hostId]} stays with ${rule.famId ? fname[rule.famId] : "one fam"} all night`
+      : `${hname[rule.hostId]} ${rule.kind === "must" ? "must meet" : "never meets"} ${fname[rule.famId]}${when}`;
   });
   for (const [h, rs] of Object.entries(hostLimits)) {
     const k = `limit\u0000${h}`; items.push(k);
