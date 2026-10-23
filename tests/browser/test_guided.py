@@ -236,3 +236,17 @@ def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     button(p, "Work out who moves").click()
     p.wait_for_selector(".c-tell")
     assert "change of plan for round 2" in words(p)
+
+
+def test_an_old_full_planner_choice_still_opens_the_coordinator_app(url):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        ctx = browser.new_context()
+        ctx.add_init_script("localStorage.setItem('rotation-optimizer:ui', 'full')")
+        p = ctx.new_page()
+        p.goto(url)
+        p.wait_for_selector("text=Plan your rotation dinner")
+        assert p.locator("#sidebar").count() == 0
+        browser.close()

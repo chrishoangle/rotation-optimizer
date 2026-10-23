@@ -1247,7 +1247,9 @@ function reprintButton(label: string, file: string, make: () => string): HTMLEle
 // ----------------------------------------------------------------------
 
 const MODE_KEY = "rotation-optimizer:mode";
-const UI_KEY = "rotation-optimizer:ui"; // "guided" (the default) or "full"
+// "guided" (the default) or "full". A new key, so a choice of the old full
+// planner from an earlier version does not hide the coordinator app.
+const UI_KEY = "rotation-optimizer:ui2";
 let uiMode: "guided" | "full" = "guided";
 
 function showPlanner(): void {
@@ -1896,6 +1898,14 @@ function boot(): void {
   if (mode === "night" && ev.plan) setNightMode(true);
   else showPlanner();
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    // A new release installs in the background; reload once so it is used now, not on the next visit.
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
     navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(() => {
       const el = document.getElementById("offline-status");
       if (el) el.textContent = "This page is saved on this device, so it opens and plans with no internet.";

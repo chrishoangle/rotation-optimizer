@@ -50,7 +50,7 @@ def page(url):
         browser = pw.chromium.launch()
         ctx = browser.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
         # These tests drive the full planner; test_guided.py drives the guided one.
-        ctx.add_init_script("try { if (!localStorage.getItem('rotation-optimizer:ui')) localStorage.setItem('rotation-optimizer:ui', 'full'); } catch (e) {}")
+        ctx.add_init_script("try { if (!localStorage.getItem('rotation-optimizer:ui2')) localStorage.setItem('rotation-optimizer:ui2', 'full'); } catch (e) {}")
         p = ctx.new_page()
         errors: list[str] = []
         p.on("pageerror", lambda e: errors.append(str(e)))
