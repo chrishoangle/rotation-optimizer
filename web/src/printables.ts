@@ -46,7 +46,12 @@ export function coordinatorGuideHtml(title: string): string {
     ["An alum arrives late, or an extra one comes", "Night mode, tap An alum arrived late, fill in their table name and fields, choose the round they join, then Re-plan now. If every fam already has a host, seat them with a host table that shares their fields."],
     ["A student walks in", "Nothing to change: they join any fam with space."],
     ["A whole fam leaves", "Night mode, Someone has to leave, choose the fam, then Re-plan now."],
-    ["A round runs long", "Nothing to change in the tool. Tap Round finished only when hosts actually move."],
+    ["A round runs long, or the night is late", "Tap Start and Finished as rounds really happen. Night mode shows how late you are, when the night will now end, and how short the remaining rounds would need to be. Print the MC cue card with the new times."],
+    ["Students sit at the wrong table, or tents are misplaced", "Don't move the students. In Room setup, tap Different table next to the fam and type the number they are at, then Re-plan now. Every alum whose table changed is listed."],
+    ["Two alumni end up at the same table", "Who is where shows who should be there. If moving them would be worse, tap Not right? on that table, choose who is really there, then Re-plan now."],
+    ["A table can't be reached without steps", "Mark tables in the Step-free column, and give the alum a needs step-free rule. On the night, a fam can move to a step-free table with Different table."],
+    ["A volunteer disappears", "Hand their role card and runner sheet to someone else, or let anyone scan the QR code under Show volunteers who is where."],
+    ["An alum who didn't show turns up later", "Under Check-in, tap Arrived late next to them, choose the round they join, then Re-plan now."],
     ["The wifi is down", "The page still opens on any device that visited it before. If not, open the offline copy file you downloaded, then Open a saved event file."],
     ["The laptop dies", "Use the backup packet on paper to run the night, or open the printed backup event file on a phone or a second laptop."],
     ["Something looks wrong in the schedule", "Click Why? next to the pairing. To change it, choose a different host there; it becomes a rule, and Undo puts it back."],
@@ -60,13 +65,14 @@ export function coordinatorGuideHtml(title: string): string {
 <li><strong>Upload or paste.</strong> Upload each form's CSV, or paste rows from a spreadsheet into the tables. Check the warnings under the tables.</li>
 <li><strong>Add rules if needed.</strong> must meet, never meet, only in rounds (for alumni who come late or leave early), or stays with (for an alum who cannot move between tables).</li>
 <li><strong>Find the best schedule.</strong> Read the fairness notes. Click Why? on anything that looks odd, and choose a different host there if you know better.</li>
-<li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, and the backup packet. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
+<li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, backup packet, runner sheets, and host badges. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
 <li><strong>Brief volunteers.</strong> Print the volunteer role cards and hand one to each person.</li>
+<li><strong>Set up the room.</strong> Before doors open, open night mode, put each tent on its table, walk the room with the setup sheet, and tap Checked for each table.</li>
 </ol>
 <h2>The 30-second explanation for staff</h2>
 <p>Students stay seated with their fam. Alumni move tables every round. The tool picks who goes where so every fam meets people in their fields and nobody meets the same alum twice. If someone cancels, we press one button and it tells us who to send where and what to reprint.</p>
 <h2 class="break">On the night: if this happens, do this</h2>
-<p>Open the event and click <strong>Open night mode</strong>. It works on a phone. Tap <strong>Round finished</strong> each time hosts move.</p>
+<p>Open the event and click <strong>Open night mode</strong>. It works on a phone. Tap <strong>Start round 1</strong> when the first round begins, then <strong>Finished</strong> and <strong>Start</strong> for each round as it really happens. The chips at the top say what needs you. Show the QR code to volunteers so they can see who is where.</p>
 ${ifs.map(([when, what]) => `<div class="if"><strong>${e(when)}</strong>${e(what)}</div>`).join("\n")}
 <h2>After the night</h2>
 <p>Write what you learned in Notes for next year (sidebar), then click Hand off to next year and pass the folder on.</p>
@@ -79,11 +85,13 @@ export function roleCardsHtml(title: string): string {
     ["Check-in (door)", [
       "Greet alumni and send students to sit with their fam. Students stay at that table all night.",
       "Tell the coordinator each alum who arrives, or tick them in night mode, Check-in.",
+      "Count students into each fam in night mode, Students, so short fams show up early.",
       "At the start of round 1, tell the coordinator who has not arrived.",
       "A student without a fam: point them to the find-your-table page, or any fam with space.",
     ]],
     ["Runner", [
-      "Move alumni between rounds. Each alum's host card says their table for every round.",
+      "Move alumni between rounds. Each alum's host card and badge say their table for every round. Your runner sheet lists who arrives at your tables.",
+      "Scan the coordinator's QR code to see who is where on your phone.",
       "When the coordinator re-plans, hand out the change slips, or tell each alum the sentence on the page.",
       "Keep spare host cards and the seating chart with you.",
       "If an alum is lost, ask the coordinator to search Where is in night mode.",

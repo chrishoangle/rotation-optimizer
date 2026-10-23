@@ -1694,7 +1694,7 @@ const START_HERE = [
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
-  "**6. On the night.** Click **Open night mode** (under the schedule). It shows the round, who is where, and check-in, and works on a phone. When someone cancels, doesn't show, or arrives late, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint.",
+  "**6. On the night.** Click **Open night mode** (under the schedule). It works on a phone: check the room setup, check people in, start and finish each round, and see who is where. When someone cancels, doesn't show, arrives late, or sits at the wrong table, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint, and a QR code shows volunteers the schedule on their phones.",
   "**7. Next year.** Click **Hand off to next year** for a copy without student names or the night's changes.",
 ];
 
