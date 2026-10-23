@@ -79,17 +79,20 @@ alum does adds their interests, with the emails dropped; or paste your alumni
 and fams as plain lists; a title row is skipped and said so; alumni who
 share a field host one table together as a pair, and any pair can be split or
 two alumni paired by hand), **Schedule** (the room drawn one round at a time,
-with each alum or pair at their table, and changes made in Adjust), **Print** (what to print, how many pages, and why, then Print
+with each alum or pair at their table; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
-"Something came up", which turns any change into a list of people to tell;
+"Something came up", which turns any change into a list of people to tell,
+with who is where always beside it; on a laptop the two sit side by side;
 if one of a pair leaves, their partner keeps the table and nobody moves).
 After the last round, **Wrap up** saves the event for next year. Wherever you
 are, the logo goes home (the dinner, its progress, and one Next button), a bar
 at the bottom says which step you are on with Back and the next action, and
-anything removed or replaced can be undone for a few seconds. Each paste box
-shows real example rows for the three things coordinators paste (a seating
-chart, an alumni list, one per line), and **Send to your phone** carries the
+anything removed or replaced can be undone for a few seconds; on a phone the
+next action floats above the tabs and Back sits in the header. Set up first
+asks what you have; each paste box can show real example rows for the three
+things coordinators paste (a seating chart, an alumni list, one per line),
+what was read is shown as a small table to confirm or undo, and **Send to your phone** carries the
 dinner to your phone in a link, without student names. Special
 arrangements (late arrivals, stairs, must or never meet) sit under More
 options; file actions and the extra night tools (check-in, room setup, QR

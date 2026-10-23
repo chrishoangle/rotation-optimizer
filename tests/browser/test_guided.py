@@ -109,16 +109,17 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
 
     # Swap two alumni in round 3 in Adjust.
     button(p, "Adjust").click()
+    p.get_by_role("button", name="Round 3", exact=True).click()
     seats = p.locator('.c-seat-button[data-round="3"]')
     a, b = seats.nth(0).locator(".c-seat-name").inner_text(), seats.nth(1).locator(".c-seat-name").inner_text()
     seats.nth(0).click()
     assert "Now tap where they should go in round 3" in words(p)
     seats.nth(1).click()
-    p.wait_for_selector("text=placed by hand")
+    p.wait_for_selector("text=set by hand")
     seats = p.locator('.c-seat-button[data-round="3"]')
     assert (seats.nth(0).locator(".c-seat-name").inner_text(), seats.nth(1).locator(".c-seat-name").inner_text()) == (b, a)
     button(p, "Undo my changes").click()
-    p.wait_for_function("() => !document.body.innerText.includes('placed by hand')")
+    p.wait_for_function("() => !document.body.innerText.includes('set by hand')")
     button(p, "Done adjusting").click()
 
     button(p, "Looks good: print").click()
@@ -154,8 +155,8 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
         assert "Everyone else stays where their card says." in words(p)
         p.locator(".c-tell input[type=checkbox]").first.check()
         assert p.locator(".c-tell li.told").count() == 1
-    button(p, "See who is at each table").click()
-    p.get_by_role("button", name="Round 2", exact=True).click()
+    assert "Who is where, round 1" in p.inner_text(".c-where-wrap"), "who is where is always on the Run screen"
+    p.locator('[data-k="where-next"]').click()
     seated = " ".join(p.locator(".c-where .who").all_inner_texts())
     assert "Alum B" not in seated and "Alum F" in seated
 
@@ -177,8 +178,8 @@ def test_the_example_is_a_sandbox(page):
     p = page
     p.get_by_text("See the STEW 2026 dinner").click()
     p.wait_for_selector(".c-plan")
-    assert "Practice" in p.inner_text(".c-top")
-    p.locator(".c-top").get_by_role("button", name="End practice").click()
+    assert "Example: nothing is saved" in words(p)
+    p.locator('[data-k="exit-example"]').first.click()
     p.wait_for_selector("text=Plan your rotation dinner")
     assert "Continue" not in words(p)
 
@@ -198,7 +199,7 @@ def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p.wait_for_selector(".c-plan")
     button(p, "Adjust").click()
     kenneth = p.locator('.c-seat-button[data-round="1"]', has_text="Kenneth Tran")
-    fam3 = p.locator(".c-plan-row", has_text="Fam 3").locator('.c-seat-button[data-round="1"]')
+    fam3 = p.locator('.c-seat-button[data-round="1"]', has_text="Fam 3")
     before = p.inner_text(".c-plan")
     kenneth.click()
     assert fam3.get_attribute("aria-disabled") == "true"
@@ -428,16 +429,18 @@ def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
 
     # The example rows beside the box show what a seating chart looks like, and can be tried.
     button(p, "Next: your alumni").click()
+    assert p.locator(".c-sample").count() == 0, "examples stay folded until asked for"
+    p.locator('[data-k="examples-hosts"]').click()
     assert "Kenneth Tran" in p.inner_text(".c-sample")
     p.locator('[data-k="example-hosts"]').click()
     assert "Read your seating chart: 10 fams, 13 alumni at 10 tables (3 pairs), 2 rounds." in p.inner_text('[data-card="hosts"]')
-    assert "First in the list:" in words(p)
+    assert "Kenneth Tran" in p.inner_text(".c-preview") and p.locator(".c-preview tr").count() >= 3, "what was read shows as a table"
     assert "Your alumni have no interests yet" in words(p), "a chart alone has no interests to match on"
     # The alumni list adds what each alum does, as interests.
     p.locator('[data-card="hosts"] .c-card-head').click()
     button(p, "Paste more alumni").click()
     p.locator('[data-k="format-hosts-list"]').click()
-    assert "Practicing internist" in p.inner_text(".c-sample")
+    assert "Practicing internist" in p.inner_text(".c-sample:not(.c-preview)")
     p.locator('[data-k="example-hosts"]').click()
     assert "Added what 13 of 13 alumni do" in words(p)
     assert "share an interest word with at least one alum" in words(p)

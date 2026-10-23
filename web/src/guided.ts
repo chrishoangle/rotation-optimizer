@@ -95,12 +95,14 @@ let paired: string[] = []; // pairs made from alumni who share a field, said onc
 let fromChart = false; // the lists came from a seating chart, whose seating is kept
 let pairA = "";
 let showMatches = false;
-let cardNote: { card: "dinner" | "hosts" | "fams"; text: string; preview: string } | null = null; // what a paste did, shown in its card
+let cardNote: { card: "dinner" | "hosts" | "fams"; text: string; preview: string[][] } | null = null; // what a paste did, shown in its card
 let focusAfter: string | null = null; // a data-k to focus after the next render
 let format: "chart" | "list" | "lines" = "chart"; // which example sits beside the paste boxes
 let confirmNew = false; // "Start another dinner" asked, waiting for a yes
 let leaveRun = false; // "Back to planning" tapped during a round
 let swapSaved = false;
+let showExamples = false; // the example rows beside a paste box, folded away until asked for
+let dinnerSeen = false; // "Next: your alumni" was pressed, even with no name typed
 let opened: { plan: EventPlan | null; docs: Set<string> } = { plan: null, docs: new Set() }; // printouts opened one at a time, for this schedule
 let phone: { link: string; copied: boolean } | null = null;
 let undoSnap: { label: string; json: string } | null = null;
@@ -120,7 +122,6 @@ let changeOpen = false;
 let runProblem = "";
 let runNote = "";
 let beforeChange: EventPlan | null = null;
-let showWhere = false;
 let showNext = false;
 let whereQuery = "";
 let runMenu = false;
@@ -280,10 +281,11 @@ function topBar(): HTMLElement {
   const practising = ctx.inPractice();
   return h("header", { className: "c-top" },
     h("div", { className: "c-bar" },
+      BACK[place] ? h("button", { className: "c-head-back", "aria-label": `Back to ${BACK[place]![0]}`, onclick: () => go(BACK[place]![1]) }, "\u2039") : null,
       place === "home" ? h("span", { className: "c-home-link" }, logo(), h("strong", { className: "c-title" }, "Rotation Dinner"))
-        : h("button", { className: "c-home-link", "aria-label": `Home: ${s.title || "Your dinner"}`, "data-k": "home-link", onclick: () => go("home") },
-          logo(), h("strong", { className: "c-title" }, s.title || "Your dinner")),
-      practising ? h("span", { className: "c-pill practice" }, "Practice ", h("button", { className: "c-link", onclick: () => ctx.endPractice() }, "End practice"))
+        : h("button", { className: "c-home-link", "aria-label": `Home: ${s.title || "Untitled dinner"}`, "data-k": "home-link", onclick: () => go("home") },
+          logo(), h("strong", { className: `c-title ${s.title.trim() ? "" : "untitled"}` }, s.title || "Untitled dinner")),
+      practising ? h("span", { className: "c-pill practice" }, "Example: nothing is saved ", h("button", { className: "c-link", "data-k": "exit-example", onclick: () => ctx.endPractice() }, "Exit"))
         : place !== "home" ? h("span", { className: "c-saved" }, "Saved on this computer \u00b7 ",
           h("button", { className: "c-link small", onclick: () => { ctx.saveFile(); say("ok", "A copy of your event was downloaded. Keep it with your event files, or open it on another computer."); render(); } }, "Download a copy")) : null,
       eventMenu()),
@@ -294,8 +296,10 @@ function topBar(): HTMLElement {
         className: `c-tab ${place === key ? "now" : ""} ${st}`, title: why || null,
         "aria-current": place === key ? "page" : null, "aria-label": `${label}, ${STATE_WORDS[st]}${why ? `: ${why}` : ""}`,
         onclick: () => go(key),
-      }, h("span", { className: "c-tab-icon" }, icon(TAB_ICONS[key]), st === "done" ? h("span", { className: "c-mark", "aria-hidden": "true" }, icon("check")) : null),
-        h("span", { className: "c-tab-label" }, label), st === "attention" ? h("span", { className: "c-dot", "aria-hidden": "true" }) : null);
+      }, h("span", { className: "c-tab-icon" }, icon(TAB_ICONS[key])),
+        h("span", { className: "c-tab-label" }, label),
+        st === "done" ? h("span", { className: "c-mark", "aria-hidden": "true" }, icon("check")) : null,
+        st === "attention" ? h("span", { className: "c-tab-why", "aria-hidden": "true" }, h("span", { className: "c-dot" }), h("span", { className: "c-tab-why-text" }, why.split(":")[0].replace(/^Your lists changed$/, "Update").replace(/^Reprint.*/, "Reprint").replace(/.*no alum$/, "Look"))) : null);
     }), eventOver(s) ? h("button", { className: `c-tab ${place === "wrap" ? "now" : ""}`, "aria-current": place === "wrap" ? "page" : null, onclick: () => go("wrap") },
       h("span", { className: "c-tab-icon" }, icon("check")), h("span", { className: "c-tab-label" }, "Wrap up")) : null) : null);
 }
@@ -419,7 +423,7 @@ function render(newPlace = false): void {
   replace(app, h("main", { className: `coord ${running ? "running stage" : ""} ${place !== "home" && !running ? "with-bar" : ""}`, id: "main" },
     running ? null : topBar(), running ? null : msg(), body, running ? null : nextBar(), toast()));
   const tab = TABS.find(([k]) => k === place)?.[1] ?? (place === "wrap" ? "Wrap up" : "");
-  document.title = place === "home" ? "Rotation Dinner" : `${tab} · ${s.title || "Your dinner"}`;
+  document.title = place === "home" ? "Rotation Dinner" : `${tab} · ${s.title || "Untitled dinner"}`;
   if (focusAfter) { (document.querySelector(`[data-k="${focusAfter}"]`) as HTMLElement | null)?.focus({ preventScroll: false }); focusAfter = null; }
   else if (newPlace) (document.querySelector("#main h1") as HTMLElement | null)?.focus({ preventScroll: true });
   else restoreFocus(key);
@@ -487,14 +491,16 @@ function elapsedShare(roundMinutes: number, minutesLeft: number): number {
 // The next-step bar: where you are, the way back, and the one thing to do next.
 // ----------------------------------------------------------------------
 
+/** Where Back goes from each step. */
+const BACK: Partial<Record<Place, [string, Place]>> = { setup: ["Home", "home"], schedule: ["Set up", "setup"], print: ["Schedule", "schedule"], run: ["Print", "print"], wrap: ["Home", "home"] };
+
 const STEP_OF: Partial<Record<Place, [number, string]>> = { setup: [1, "Set up"], schedule: [2, "Schedule"], print: [3, "Print"], run: [4, "Run"], wrap: [5, "Wrap up"] };
 
 function nextBar(): HTMLElement | null {
   const s = ev();
   const at = STEP_OF[place];
   if (!at) return null;
-  const back: Record<string, [string, Place]> = { setup: ["Home", "home"], schedule: ["Set up", "setup"], print: ["Schedule", "schedule"], run: ["Print", "print"], wrap: ["Home", "home"] };
-  const [backLabel, backTo] = back[place];
+  const [backLabel, backTo] = BACK[place]!;
   let action: HTMLElement | null = null;
   let note = "";
   const primary = (label: string, onclick: () => void, glyph?: IconName, disabled = false) =>
@@ -645,7 +651,7 @@ function homePage(): HTMLElement {
     const when = dateLine(s.night.date);
     const nPairs = pairCount(s);
     const daysOut = (() => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.night.date ?? ""); if (!m) return null; const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])); const t = new Date(); t.setHours(0, 0, 0, 0); return Math.round((d.getTime() - t.getTime()) / 864e5); })();
-    const phoneTime = !!s.plan && !phone && ((daysOut !== null && daysOut <= 3 && daysOut >= 0) || (!!s.printed && daysOut === null));
+    const phoneTime = !!s.plan && !phone && (daysOut === null || daysOut >= 0);
     const steps: [Place, string][] = [...TABS, ["wrap", "Wrap up"]];
     return h("section", { className: "c-page c-home" },
       incomingCard,
@@ -654,12 +660,12 @@ function homePage(): HTMLElement {
         h("p", { className: "c-help" }, "A new dinner replaces this one in this browser. Download a copy first if you want to keep it."),
         h("div", { className: "c-row" },
           h("button", { className: "c-button", onclick: () => { ctx.saveFile(); say("ok", "A copy was downloaded."); render(); } }, "Download a copy"),
-          h("button", { className: "c-button primary", "data-k": "replace-dinner", onclick: () => { confirmNew = false; undoable(`Started a new dinner. "${s.title || "Your dinner"}" was replaced.`, fresh); } }, "Replace it"),
+          h("button", { className: "c-button primary", "data-k": "replace-dinner", onclick: () => { confirmNew = false; undoable(`Started a new dinner. "${s.title || "Untitled dinner"}" was replaced.`, fresh); } }, "Replace it"),
           h("button", { className: "c-link", onclick: () => { confirmNew = false; render(); } }, "Cancel"))) : null,
       phonePanel(),
       h("div", { className: "c-hero" },
         h("p", { className: "c-hero-when" }, icon("calendar"), when || "Your dinner"),
-        h("h1", { tabindex: -1 }, s.title || "Your dinner"),
+        h("h1", { tabindex: -1 }, s.title || "Untitled dinner"),
         h("p", { className: "c-hero-meta" }, [alumni(peopleCount(s)) + (nPairs ? ` (${nPairs} pair${nPairs !== 1 ? "s" : ""})` : ""), famsN(famsOf(s).length), `${s.rounds} round${s.rounds !== 1 ? "s" : ""}`].join(" \u00b7 ")),
         h("ol", { className: "c-steps", "aria-label": "Progress" }, steps.map(([key, name]) => {
           const st = key === "wrap" ? (eventOver(s) ? "ready" : "locked") : stateOf(key);
@@ -835,8 +841,11 @@ function addRows(kind: "hosts" | "fams", grid: string[][]): void {
 /** Say what a paste did inside the card it changed, with the first few names, and move on to the next card. */
 function noted(card: "hosts" | "fams", text: string): void {
   const s = ev();
-  const names = card === "hosts" ? hostsOf(s).map(whoAt) : famsOf(s).map((r) => r.fam_label);
-  const preview = names.slice(0, 3).join(", ") + (names.length > 3 ? `, and ${names.length - 3} more` : "");
+  const tables = roomTables(s);
+  const split = (t: string) => (t ?? "").split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(", ");
+  const rows = card === "hosts" ? hostsOf(s).map((r) => [whoAt(r), split(r.tags) || "no interests yet"]) : famsOf(s).map((r) => [String(tables[r.fam_id] ?? ""), r.fam_label, split(r.interests) || "no interests yet"]);
+  const preview = [card === "hosts" ? ["Alum or pair", "Interests"] : ["Table", "Fam", "Interests"], ...rows.slice(0, 5)];
+  if (rows.length > 5) preview.push([`and ${rows.length - 5} more`]);
   cardNote = { card, text, preview };
   announce(text);
   openCard = null;
@@ -846,7 +855,7 @@ function noted(card: "hosts" | "fams", text: string): void {
 
 /** The first Set up card still to do, in order. */
 function firstUndone(s: EventState): "dinner" | "hosts" | "fams" | null {
-  if (!s.title.trim() && !hasPeople(s)) return "dinner";
+  if (!s.title.trim() && !hasPeople(s) && !dinnerSeen) return "dinner";
   if (!hostsOf(s).length) return "hosts";
   if (!famsOf(s).length) return "fams";
   return null;
@@ -862,7 +871,6 @@ function importChart(chart: SeatingChart): void {
   s.rules = [];
   tidy(s);
   for (const seat of chart.seats) placeInGrid(s, seat.host, seat.fam, seat.round);
-  if (!s.title.trim()) s.title = "Alumni dinner";
   fromChart = true;
   paired = [];
   imported = null;
@@ -971,7 +979,7 @@ function formatPicker(kind: "hosts" | "fams"): HTMLElement {
 function pasteBox(kind: "hosts" | "fams"): HTMLElement {
   const shown = kind === "fams" && format === "list" ? "lines" : format;
   const id = `c-paste-${kind}`;
-  const box = h("textarea", { id, rows: 5, className: "c-paste", placeholder: SAMPLES[shown].placeholder[kind === "hosts" ? 0 : 1], "aria-describedby": `${id}-help` }) as HTMLTextAreaElement;
+  const box = h("textarea", { id, rows: 5, className: "c-paste", placeholder: SAMPLES[shown].placeholder[kind === "hosts" ? 0 : 1], }) as HTMLTextAreaElement;
   const add = h("button", { className: "c-button primary", hidden: true, onclick: () => {
     const grid = typedGrid(box.value);
     if (!grid.length) return;
@@ -992,12 +1000,13 @@ function pasteBox(kind: "hosts" | "fams"): HTMLElement {
     render();
   });
   return h("div", { className: "c-paste-zone" },
-    formatPicker(kind),
-    h("label", { for: id, className: "c-label" }, kind === "hosts" ? "Paste or type your alumni" : "Paste or type your fams"),
+    h("label", { for: id, className: "c-label" }, kind === "hosts" ? "Paste or type your alumni" : "Paste or type your fams",
+      h("span", { className: "c-label-hint" }, kind === "hosts" ? "A seating chart, an alumni list, or one alum per line, from Docs, Sheets, or Excel" : "A seating chart, or one fam per line with its majors")),
     h("div", { className: "c-paste-wrap" }, box, pasteDemo()),
-    h("p", { id: `${id}-help`, className: "c-help" }, "Copy from Google Docs, Sheets, or Excel and paste here, or type."),
     h("div", { className: "c-row" }, add, uploadButton(kind),
-      ev()[kind].length ? h("button", { className: "c-link", onclick: () => { adding = null; render(); } }, "Cancel") : null));
+      h("button", { className: "c-link", "aria-expanded": showExamples ? "true" : "false", "data-k": `examples-${kind}`, onclick: () => { showExamples = !showExamples; render(); } }, showExamples ? "Hide examples" : "See examples"),
+      ev()[kind].length ? h("button", { className: "c-link", onclick: () => { adding = null; render(); } }, "Cancel") : null),
+    showExamples ? formatPicker(kind) : null);
 }
 
 /** Once, the first time an empty paste box is shown: a sheet slides in and becomes a list. Any key or click stops it. */
@@ -1123,7 +1132,9 @@ const CARD_STEP = { dinner: 1, hosts: 2, fams: 3 } as const;
 function setupCard(key: "dinner" | "hosts" | "fams", title: string, summary: string, done: boolean, body: () => (HTMLElement | null)[]): HTMLElement {
   const isOpen = openCard === key || (openCard === null && firstUndone(ev()) === key);
   const note = cardNote && cardNote.card === key ? h("div", { className: "c-msg ok c-card-note", role: "status" },
-    h("p", {}, cardNote.text), cardNote.preview ? h("p", { className: "c-help" }, `First in the list: ${cardNote.preview}.`) : null,
+    h("p", {}, cardNote.text),
+    cardNote.preview.length > 1 ? h("div", { className: "c-sample c-preview", role: "figure", tabindex: 0, "aria-label": "What was read, first rows" },
+      h("table", {}, cardNote.preview.map((r, i) => h("tr", { className: i === 0 ? "head" : r.length === 1 ? "more" : "" }, r.map((c) => h("td", { colspan: r.length === 1 ? 3 : null }, c)))))) : null,
     h("div", { className: "c-row" },
       h("button", { className: "c-button", "data-k": `looks-right-${key}`, onclick: () => { cardNote = null; render(); } }, "Looks right"),
       undoSnap ? h("button", { className: "c-link", onclick: undoLast }, "Undo") : null)) : null;
@@ -1200,11 +1211,11 @@ function matchHint(s: EventState): HTMLElement | null {
 function setupPage(): HTMLElement {
   const s = ev();
   const nHosts = hostsOf(s).length, nFams = famsOf(s).length;
-  const name = h("input", { id: "c-name", type: "text", value: s.title, placeholder: "Alumni dinner" }) as HTMLInputElement;
-  name.addEventListener("input", () => { s.title = name.value; ctx.persist(); const t = document.querySelector(".c-title"); if (t) t.textContent = s.title || "Your dinner"; });
+  const name = h("input", { id: "c-name", type: "text", value: s.title, placeholder: "e.g. STEW 2026 Family Dinner" }) as HTMLInputElement;
+  name.addEventListener("input", () => { s.title = name.value; ctx.persist(); const t = document.querySelector(".c-title"); if (t) t.textContent = s.title || "Untitled dinner"; });
   const rounds = h("select", { id: "c-rounds" }, [1, 2, 3, 4, 5, 6].map((n) => h("option", { value: n, selected: n === s.rounds }, `${n} round${n !== 1 ? "s" : ""}`))) as HTMLSelectElement;
   rounds.addEventListener("change", () => { s.rounds = Number(rounds.value); s.finished = Math.min(s.finished, s.rounds - 1); ctx.persist(); });
-  const have = (k: "chart" | "list" | "lines", label: string) => h("button", { className: `c-chip ${format === k ? "on" : ""}`, "aria-pressed": format === k ? "true" : "false", onclick: () => { format = k; render(); } }, label);
+  const have = (k: "chart" | "list" | "lines", label: string) => h("button", { className: `c-chip ${format === k ? "on" : ""}`, "aria-pressed": format === k ? "true" : "false", onclick: () => { format = k; showExamples = k !== "lines"; render(); } }, label);
   const date = h("input", { id: "c-date", type: "date", value: s.night.date ?? "" }) as HTMLInputElement;
   date.addEventListener("change", () => { s.night = { ...s.night, date: date.value || undefined }; ctx.persist(); });
   const nPeople = peopleCount(s), nPairs = pairCount(s);
@@ -1231,7 +1242,7 @@ function setupPage(): HTMLElement {
         render();
       } }, "Pair them")),
     h("p", { className: "c-help" }, "They move together, so each fam meets them both at once.")) : null;
-  const dinnerDone = nHosts > 0 || nFams > 0 || !!s.title.trim();
+  const dinnerDone = nHosts > 0 || nFams > 0 || !!s.title.trim() || dinnerSeen;
   const hint = matchHint(s);
   const importNote = (kind: "hosts" | "fams") => imported && imported.kind === kind && (imported.skipped || imported.columns) ? h("p", { className: "c-note" },
     imported.skipped ? ["Your first row looked like column titles, so it was skipped. ", h("button", { className: "c-link", onclick: undoHeader }, "It's a real row: add it back")] : null,
@@ -1251,16 +1262,16 @@ function setupPage(): HTMLElement {
     fresh ? h("p", { className: "c-lead" }, "Three short steps. Most coordinators paste a seating chart or an alumni list they already have. ",
       ctx.inPractice() ? null : h("button", { className: "c-link", onclick: async () => { practiceReturn = "setup"; ctx.tryExample(); go("schedule"); await update(); } }, "See the STEW 2026 dinner first")) : null,
     problems.length ? h("div", { className: "c-msg error", role: "alert" }, h("strong", {}, "Before making the schedule:"), h("ul", {}, problems.map((p) => h("li", {}, plain(p))))) : null,
-    setupCard("dinner", "Your dinner", `${s.title || "Alumni dinner"} · ${s.rounds} round${s.rounds !== 1 ? "s" : ""}`, dinnerDone, () => [
+    setupCard("dinner", "Your dinner", `${s.title || "Untitled dinner"} · ${s.rounds} round${s.rounds !== 1 ? "s" : ""}`, dinnerDone, () => [
+      hasPeople(s) ? null : h("div", { className: "c-have" }, h("p", { className: "c-label" }, "First: what do you have for the lists?"),
+        h("div", { className: "c-row" }, have("chart", "Last year's seating chart"), have("list", "A list of alumni"), have("lines", "Nothing yet"))),
       h("div", { className: "c-fields" },
         h("div", { className: "c-field" }, h("label", { for: "c-name", className: "c-label" }, "Name"), name),
         h("div", { className: "c-field" }, h("label", { for: "c-rounds", className: "c-label" }, "Rounds"), rounds,
           h("span", { className: "c-help" }, "Alumni move to a new fam each round. 2 rounds suit about 90 minutes; 3 suit about 2 hours.")),
         h("div", { className: "c-field" }, h("label", { for: "c-date", className: "c-label" }, "Date (optional)"), date,
           h("span", { className: "c-help" }, "Shows a countdown on the home page."))),
-      hasPeople(s) ? null : h("div", { className: "c-have" }, h("p", { className: "c-label" }, "What do you have for the lists?"),
-        h("div", { className: "c-row" }, have("chart", "Last year's seating chart"), have("list", "A list of alumni"), have("lines", "Nothing yet"))),
-      h("button", { className: "c-button primary", "data-k": "next-alumni", onclick: () => { if (!s.title.trim()) s.title = "Alumni dinner"; ctx.persist(); openCard = nHosts ? null : "hosts"; focusAfter = "card-hosts"; render(); } }, "Next: your alumni"),
+      h("button", { className: "c-button primary", "data-k": "next-alumni", onclick: () => { dinnerSeen = true; ctx.persist(); openCard = nHosts ? null : "hosts"; focusAfter = "card-hosts"; render(); } }, "Next: your alumni"),
     ]),
     setupCard("hosts", "Alumni", alumni(nPeople) + (nPairs ? ` at ${nHosts} tables · ${nPairs} pair${nPairs !== 1 ? "s" : ""}` : "") + (special.length ? ` · ${special.length} with special arrangements` : ""), nHosts > 0, () => [
       importNote("hosts"),
@@ -1303,7 +1314,6 @@ async function makeSchedule(): Promise<void> {
   if (stairs && !stepFreeFams(s).length) { problems.push(`${stairs.host_name || stairs.table_label} can't use stairs: tick at least one step-free table under Alumni, More options.`); moreHosts = true; noteFor = stairs.host_id; openCard = "hosts"; }
   if (s.rounds > maxRounds(s)) problems.push(`With ${nHosts} alumni tables and ${famsN(nFams)}, at most ${maxRounds(s)} rounds can run without a fam meeting the same alum twice. Choose fewer rounds.`);
   if (problems.length) { render(); (document.querySelector("#main .c-msg.error") as HTMLElement | null)?.scrollIntoView({ block: "center" }); return; }
-  if (!s.title.trim()) s.title = "Alumni dinner";
   ctx.persist();
   go("schedule");
   await update();
@@ -1343,8 +1353,27 @@ function summary(p: EventPlan): HTMLElement {
   ].filter(Boolean);
   return h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, icon("check")),
     h("div", {}, h("p", { className: "c-answer-main" }, lines[0]),
+      showMatches ? weakList(p) : null,
       lines.length > 1 ? h("button", { className: "c-link small", "aria-expanded": showMatches ? "true" : "false", "data-k": "matches", onclick: () => { showMatches = !showMatches; render(); } }, showMatches ? "Hide" : "How good are the matches?") : null,
       showMatches ? lines.slice(1).map((l) => h("p", { className: "c-help" }, l)) : null));
+}
+
+/** The weaker matches, each with the words on both sides, and one tap to make two spellings the same word. */
+function weakList(p: EventPlan): HTMLElement | null {
+  const s = ev();
+  const tables = tableNumbers(p);
+  const weak = p.assignments.filter((a) => a.score === 0 && p.fams.find((f) => f.groupId === a.groupId)!.interests.length).slice(0, 6);
+  const tips = nearMisses(s.hosts, s.fams);
+  if (!weak.length && !tips.length) return null;
+  return h("div", { className: "c-weak-list" },
+    weak.length ? h("ul", {}, weak.map((a) => {
+      const f = p.fams.find((x) => x.groupId === a.groupId)!, x = p.hosts.find((y) => y.hostId === a.hostId)!;
+      return h("li", {}, h("strong", {}, `Round ${a.round}, table ${tables[f.groupId]}: ${f.name} and ${x.person || x.name}`), " share no word. ",
+        h("span", { className: "c-help" }, `${f.name}: ${f.interests.slice(0, 4).join(", ") || "none"}. ${x.person || x.name}: ${x.tags.slice(0, 4).join(", ") || "none"}.`));
+    })) : null,
+    tips.length ? h("div", {}, h("p", { className: "c-help" }, "These look like the same interest written two ways. Make them one word for better matches:"),
+      tips.slice(0, 4).map((m) => h("div", { className: "c-row" }, h("span", {}, m.spellings.join(" and ")),
+        h("button", { className: "c-button", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)))) : null);
 }
 
 function needsYou(p: EventPlan): HTMLElement[] {
@@ -1383,11 +1412,11 @@ function schedulePage(): HTMLElement {
     changed.length ? h("div", { className: "c-msg info" }, h("strong", {}, "What moved:"), h("ul", {}, changed.map((c) => h("li", {}, c)))) : null,
     attention.length ? h("div", { className: "c-msg warn" }, h("strong", {}, "Needs you"), h("ul", {}, attention)) : null,
     adjust ? adjustBar(p) : null,
-    adjust ? null : roundSwitch(p),
-    adjust || !showRound || showRound > p.rounds ? roomPlan(p, current) : room(p, showRound),
+    roundSwitch(p),
+    !showRound || showRound > p.rounds ? roomPlan(p, current) : room(p, showRound, current),
     whoSitsOut(p),
-    adjust && mine.length ? h("p", { className: "c-help" }, `${alumni(mine.length)} placed by hand. `,
-      h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, "Undo my changes")) : null,
+    adjust && mine.length ? h("p", { className: "c-help" }, fromChartSeating(s) ? "Your chart's seating is kept. " : `${mine.length} seat${mine.length !== 1 ? "s" : ""} set by hand. `,
+      h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, fromChartSeating(s) ? "Let the app re-seat everyone" : "Undo my changes")) : null,
     more(moreSchedule, () => { moreSchedule = !moreSchedule; render(); }, "More options",
       h("p", { className: "c-help" }, "To change who sits where, tap Adjust above."),
       tips.length ? h("div", {}, h("p", {}, "These look like the same interest, but only identical words count as a match:"),
@@ -1411,7 +1440,7 @@ function warningWords(w: string): string {
 
 function adjustBar(p: EventPlan): HTMLElement {
   if (!picked) return h("div", { className: "c-adjust" }, swapSaved ? h("p", { className: "c-saved-note" }, icon("check"), " Swap saved. ") : null,
-    h("p", {}, "Tap an alum, then another alum or an empty seat in the same round. They swap, and everything else stays where it can."));
+    h("p", {}, fromChartSeating(ev()) ? "Your chart's seating is kept. Tap two alumni in the same round to swap them." : "Tap an alum, then another alum or an empty seat in the same round. They swap, and everything else stays where it can."));
   const a = p.assignments.find((x) => x.round === picked!.round && x.groupId === picked!.famId);
   const host = a ? p.hosts.find((x) => x.hostId === a.hostId) : null;
   const who = host ? host.person || host.name : "This empty seat";
@@ -1443,7 +1472,6 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
   const list = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
   const rounds = Array.from({ length: p.rounds }, (_, k) => k + 1);
   const locked = new Set(p.lockedRounds);
-  const byHand = new Set(gridChanges(s).map((r) => `${r.rounds}|${(r.fam ?? "").toLowerCase()}|${(r.host_table ?? "").toLowerCase()}`));
   return h("div", { className: "c-plan-wrap" }, h("div", { className: `c-plan ${adjust ? "adjusting" : ""}`, role: "table", "aria-label": "Who sits at each table, each round", style: `--rounds: ${p.rounds}` },
     h("div", { className: "c-plan-row head", role: "row" }, h("span", { role: "columnheader" }, "Table"), rounds.map((r) => h("span", { role: "columnheader" }, `Round ${r}${r <= s.finished ? " (done)" : ""}`))),
     list.map((f) => h("div", { className: "c-plan-row", role: "row" },
@@ -1458,7 +1486,6 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
           return h("span", { role: "cell", className: `c-seat ${host ? "" : "empty"}`, "data-round": r },
             h("span", { className: "c-round-tag", "aria-hidden": "true" }, `R${r}`), h("span", { className: "c-seat-name" }, label));
         }
-        const pinned = !!host && byHand.has(`${r}|${f.name.toLowerCase()}|${host.name.toLowerCase()}`);
         const isPicked = picked?.round === r && picked.famId === f.groupId;
         const can = current && !locked.has(r) && r > s.finished && !gone && !busy;
         const blocked = !!picked && picked.round === r && !isPicked && can ? swapBlock(p, r, picked.famId, f.groupId) : "";
@@ -1466,10 +1493,10 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
           h("button", {
             className: `c-seat-button ${host ? "" : "empty"} ${isPicked ? "picked" : ""} ${picked && picked.round === r && !isPicked && !blocked ? "target" : ""} ${blocked ? "blocked" : ""}`,
             disabled: !can, "aria-disabled": blocked ? "true" : null, "aria-pressed": isPicked ? "true" : "false", "data-round": r,
-            "aria-label": `Table ${tables[f.groupId]}, ${f.name}, round ${r}: ${label}${weak ? ", weaker match" : ""}${pinned ? ", placed by hand" : ""}${blocked ? `. Not possible: ${blocked}` : ""}`,
+            "aria-label": `Table ${tables[f.groupId]}, ${f.name}, round ${r}: ${label}${weak ? ", weaker match" : ""}${blocked ? `. Not possible: ${blocked}` : ""}`,
             "data-k": `seat-${r}-${f.groupId}`, title: blocked || null,
             onclick: () => { if (blocked) { say("info", blocked); render(); return; } tapSeat(p, r, f.groupId); },
-          }, h("span", { className: "c-round-tag", "aria-hidden": "true" }, `R${r}`), h("span", { className: "c-seat-name" }, label), pinned ? h("span", { className: "c-pin", "aria-hidden": "true" }, "placed") : null,
+          }, h("span", { className: "c-round-tag", "aria-hidden": "true" }, `R${r}`), h("span", { className: "c-seat-name" }, label), 
             blocked ? h("span", { className: "c-blocked-note", "aria-hidden": "true" }, "not possible") : null));
       })))));
 }
@@ -1484,26 +1511,44 @@ function roundSwitch(p: EventPlan): HTMLElement {
 }
 
 
-/** The room in one round: each table drawn with its fam and the alum or pair sitting there. */
-function room(p: EventPlan, r: number): HTMLElement {
+/** The room in one round: each table drawn with its fam and the alum or pair sitting there. In Adjust, each table is a button: tap an alum, then another table. */
+function room(p: EventPlan, r: number, current = true): HTMLElement {
   const s = ev();
   const tables = tableNumbers(p);
   const list = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
-  return h("ul", { className: "c-plan c-room", "aria-label": `Round ${r}${r <= s.finished ? " (done)" : ""}: who sits at each table` },
+  const locked = new Set(p.lockedRounds);
+  return h("ul", { className: `c-plan c-room ${adjust ? "adjusting" : ""}`, "aria-label": `Round ${r}${r <= s.finished ? " (done)" : ""}: who sits at each table` },
     list.map((f) => {
       const a = p.assignments.find((x) => x.round === r && x.groupId === f.groupId);
       const host = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
       const gone = (p.famAway[f.groupId] ?? []).includes(r);
       const who = host ? host.person || host.name : "";
       const n = tables[f.groupId];
-      return h("li", { className: `c-tile c-seat ${host ? "" : "empty"}`, "data-round": r, style: `--h: ${famHue(n)}` },
+      const weak = !!a && a.score === 0 && f.interests.length > 0;
+      const inner = [
         h("span", { className: "c-disc", "aria-hidden": "true" }, String(n)),
         h("span", { className: "c-tile-text" },
           h("span", { className: "c-tile-fam" }, h("span", { className: "visually-hidden" }, `Table ${n}, `), f.name),
-          host ? h("span", { className: "c-tile-who" }, avatars(who), h("span", { className: "c-seat-name" }, who))
-            : h("span", { className: "c-tile-who c-seat-name" }, gone ? "Fam not here this round" : "No alum this round")));
+          host ? h("span", { className: "c-tile-who" }, avatars(who), h("span", { className: "c-seat-name" }, who), adjust && weak ? h("span", { className: "c-weak", title: "No shared interest word" }) : null)
+            : h("span", { className: "c-tile-who c-seat-name" }, gone ? "Fam not here this round" : "No alum this round")),
+      ];
+      if (!adjust) return h("li", { className: `c-tile c-seat ${host ? "" : "empty"}`, "data-round": r, style: `--h: ${famHue(n)}` }, ...inner);
+      const isPicked = picked?.round === r && picked.famId === f.groupId;
+      const can = current && !locked.has(r) && r > s.finished && !gone && !busy;
+      const blocked = !!picked && picked.round === r && !isPicked && can ? swapBlock(p, r, picked.famId, f.groupId) : "";
+      const label = gone ? "fam not here" : host ? who : "empty seat";
+      return h("li", { style: `--h: ${famHue(n)}` }, h("button", {
+        className: `c-tile c-seat-button ${host ? "" : "empty"} ${isPicked ? "picked" : ""} ${picked && picked.round === r && !isPicked && !blocked ? "target" : ""} ${blocked ? "blocked" : ""}`,
+        disabled: !can, "aria-disabled": blocked ? "true" : null, "aria-pressed": isPicked ? "true" : "false", "data-round": r,
+        "aria-label": `Table ${n}, ${f.name}, round ${r}: ${label}${weak ? ", weaker match" : ""}${blocked ? `. Not possible: ${blocked}` : ""}`,
+        "data-k": `seat-${r}-${f.groupId}`, title: blocked || null,
+        onclick: () => { if (blocked) { say("info", blocked); render(); return; } tapSeat(p, r, f.groupId); },
+      }, ...inner, blocked ? h("span", { className: "c-blocked-note", "aria-hidden": "true" }, "not possible") : null));
     }));
 }
+
+/** Every seat of every round was placed by hand: the seating came from a pasted chart. */
+const fromChartSeating = (s: EventState) => !!s.plan && gridChanges(s).length >= s.plan.assignments.length && s.plan.assignments.length > 0;
 
 function whoSitsOut(p: EventPlan): HTMLElement | null {
   const lines = Array.from({ length: p.rounds }, (_, k) => k + 1).map((r) => {
@@ -1600,14 +1645,18 @@ function whyBox(p: EventPlan): HTMLElement {
 
 interface Doc { label: string; purpose: string; pages: number; make: () => string }
 
+/** The name printed on every page: the coordinator's, never one the app made up. */
+const printName = (s: EventState) => s.title.trim() || "Rotation dinner";
+
 function docs(s: EventState, p: EventPlan): Doc[] {
   const loc = famLocations(s);
+  const title = printName(s);
   const students = p.fams.some((f) => f.members.length);
   return [
-    { label: "Room chart", purpose: "For the wall or the door: who sits where, each round.", pages: p.rounds + (students ? 1 : 0), make: () => seatingChartHtml(p, s.title, null, true, "", loc) },
-    { label: "Alumni cards", purpose: "One for each alum: where to go each round.", pages: Math.ceil(p.hosts.length / 2), make: () => hostCardsHtml(p, null, s.title, "", loc) },
+    { label: "Room chart", purpose: "For the wall or the door: who sits where, each round.", pages: p.rounds + (students ? 1 : 0), make: () => seatingChartHtml(p, title, null, true, "", loc) },
+    { label: "Alumni cards", purpose: "One for each alum: where to go each round.", pages: Math.ceil(p.hosts.length / 2), make: () => hostCardsHtml(p, null, title, "", loc) },
     { label: "Table numbers", purpose: "Fold one and stand it on each table.", pages: p.fams.length, make: () => tableTentsHtml(p) },
-    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, s.title, s.startTime, s.roundMinutes) },
+    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, title, s.startTime, s.roundMinutes) },
   ];
 }
 
@@ -1635,11 +1684,11 @@ function printPage(): HTMLElement {
   const name = h("input", { id: "c-print-name", type: "text", value: s.title }) as HTMLInputElement;
   name.addEventListener("input", () => { s.title = name.value; ctx.persist(); });
   const extra: [string, string, () => string][] = [
-    ["Runner sheets", "for two volunteers who walk alumni to tables", () => runnerSheetsHtml(p, s.title, 2, loc)],
-    ["Volunteer role cards", "door, runner, MC, floater", () => roleCardsHtml(s.title)],
-    ["Backup packet", "the whole night on paper", () => backupPacketHtml(p, s.title, s.printedAt)],
-    ["Alumni badges", "each alum's tables, for a name badge", () => hostBadgesHtml(p, s.title, loc)],
-    ["Summary for a director", "the plan on one page", () => planSummaryHtml(p, s.title, [], s.notes)],
+    ["Runner sheets", "for two volunteers who walk alumni to tables", () => runnerSheetsHtml(p, printName(s), 2, loc)],
+    ["Volunteer role cards", "door, runner, MC, floater", () => roleCardsHtml(printName(s))],
+    ["Backup packet", "the whole night on paper", () => backupPacketHtml(p, printName(s), s.printedAt)],
+    ["Alumni badges", "each alum's tables, for a name badge", () => hostBadgesHtml(p, printName(s), loc)],
+    ["Summary for a director", "the plan on one page", () => planSummaryHtml(p, printName(s), [], s.notes)],
   ];
   const printedOk = !!s.printed && !reprint.length && isCurrent(s);
   return h("section", { className: "c-page" },
@@ -1654,10 +1703,10 @@ function printPage(): HTMLElement {
         const out = reprintList(s.printed!, p);
         const stamp = ctx.now();
         const parts: [string, string][] = [];
-        if (out.seatingChart) parts.push(["Room chart pages", seatingChartHtml(p, s.title, out.seatingRounds, out.finderPage, stamp, loc)]);
-        if (out.hostIds.length) parts.push(["Alumni cards", hostCardsHtml(p, out.hostIds, s.title, stamp, loc)]);
+        if (out.seatingChart) parts.push(["Room chart pages", seatingChartHtml(p, printName(s), out.seatingRounds, out.finderPage, stamp, loc)]);
+        if (out.hostIds.length) parts.push(["Alumni cards", hostCardsHtml(p, out.hostIds, printName(s), stamp, loc)]);
         if (out.famIds.length) parts.push(["Table numbers", tableTentsHtml(p, out.famIds, stamp)]);
-        openPage(printEverythingHtml(`${s.title}: updated pages`, parts));
+        openPage(printEverythingHtml(`${printName(s)}: updated pages`, parts));
         recorded();
         render();
       } }, "Print only the changed pages")) : null,
@@ -1688,8 +1737,7 @@ function printPage(): HTMLElement {
 function openDoc(d: Doc): void {
   const s = ev();
   if (!s.plan) return;
-  if (!s.title.trim()) s.title = "Alumni dinner";
-  openPage(printEverythingHtml(`${s.title}: ${d.label}`, [[d.label, d.make()]], true));
+  openPage(printEverythingHtml(`${printName(s)}: ${d.label}`, [[d.label, d.make()]], true));
   if (opened.plan !== s.plan) opened = { plan: s.plan, docs: new Set() };
   opened.docs.add(d.label);
   if (opened.docs.size === docs(s, s.plan).length && !(s.printed && isCurrent(s) && !reprintNeeded(s).length)) ctx.markPrinted();
@@ -1699,8 +1747,7 @@ function openDoc(d: Doc): void {
 function printEverything(): void {
   const s = ev();
   if (!s.plan) return;
-  if (!s.title.trim()) s.title = "Alumni dinner";
-  openPage(printEverythingHtml(s.title, docs(s, s.plan).map((d) => [d.label, d.make()])));
+  openPage(printEverythingHtml(printName(s), docs(s, s.plan).map((d) => [d.label, d.make()])));
   ctx.markPrinted();
   render();
 }
@@ -1740,16 +1787,18 @@ function runPage(): HTMLElement {
   const p = s.plan!;
   const current = isCurrent(s);
   const over = eventOver(s);
+  const started = !!s.night.roundTimes?.["1"]?.start;
   return h("section", { className: "c-run" },
     h("header", { className: "c-run-top" },
       h("button", { className: "c-link", "data-k": "run-back", onclick: () => {
         if (status(s, nowMinutes()).phase === "during" && !leaveRun) { leaveRun = true; render(); return; }
         go("home");
       } }, "\u2039 Back to planning"),
-      h("strong", {}, s.title || "Your dinner"),
-      ctx.inPractice() ? h("span", { className: "c-pill practice" }, "Practice ", h("button", { className: "c-link", onclick: () => ctx.endPractice() }, "End practice")) : h("span"),
+      h("strong", {}, s.title || "Untitled dinner"),
+      ctx.inPractice() ? h("span", { className: "c-pill practice" }, "Example ", h("button", { className: "c-link", onclick: () => ctx.endPractice() }, "Exit")) : h("span"),
       runMenuEl()),
     h("h1", { className: "visually-hidden", tabindex: -1 }, "Run the event"),
+    h("div", { className: "c-run-body" },
     leaveRun ? h("div", { className: "c-msg warn", role: "alert" }, "A round is running. The clock keeps going while you're away. ",
       h("button", { className: "c-link", onclick: () => go("home") }, "Leave anyway"), " \u00b7 ",
       h("button", { className: "c-link", onclick: () => { leaveRun = false; render(); } }, "Stay")) : null,
@@ -1766,8 +1815,10 @@ function runPage(): HTMLElement {
       h("button", { className: "c-button primary big wide", onclick: () => go("wrap") }, "Save for next year")) : null,
     busy ? null : whereList(p),
     !changeOpen && !over && !busy ? changeSheet(p) : null,
-    ctx.inPractice() || s.finished > 0 || s.night.roundTimes?.["1"] ? null
-      : h("p", { className: "c-help center" }, "Nervous? ", h("button", { className: "c-link", onclick: () => { practiceReturn = "run"; ctx.practice(); } }, "Practice a cancellation first"), ". Nothing is kept."));
+    ctx.inPractice() || s.finished > 0 || started ? null
+      : h("p", { className: "c-help center c-run-extra" }, "Nervous? ", h("button", { className: "c-link", onclick: () => { practiceReturn = "run"; ctx.practice(); } }, "Practice a cancellation first"), ". Nothing is kept."),
+    started || ctx.inPractice() ? null : h("p", { className: "c-help center c-run-extra c-wide-only" }, "On a laptop now? ",
+      h("button", { className: "c-link", onclick: () => startPhone() }, "Send this dinner to your phone"), " to run the night from there.")));
 }
 
 function runMenuEl(): HTMLElement {
@@ -1864,7 +1915,7 @@ function tellList(p: EventPlan): HTMLElement | null {
     h("h2", {}, left ? `Tell these people to move (${left} left)` : "Everyone has been told"),
     h("p", { className: "c-help" }, "Everyone else stays where their card says."),
     h("ul", {}, redo.map(([k, t]) => item(k, t)), m.hosts.map((x) => item(keyOf(x), cardWord(x.text))), m.fams.map((x) => item(`fam|${x.round}|${x.famId}`, cardWord(x.text)))),
-    m.hosts.length ? h("button", { className: "c-link", onclick: () => openPage(changeSlipsHtml(p, m.hosts, s.title, ctx.now())) }, "Print a slip for each person") : null);
+    m.hosts.length ? h("button", { className: "c-link", onclick: () => openPage(changeSlipsHtml(p, m.hosts, printName(s), ctx.now())) }, "Print a slip for each person") : null);
 }
 
 function changeSheet(p: EventPlan): HTMLElement {
@@ -1969,13 +2020,10 @@ function whereList(p: EventPlan): HTMLElement {
     box.addEventListener("input", () => { whereQuery = box.value; replace(out, ...found()); });
     return h("div", { className: "c-form" }, box, out);
   })() : null;
-  return h("section", { className: "c-where-wrap" },
-    h("button", { className: "c-more-head", "aria-expanded": showWhere ? "true" : "false", "data-k": "where", onclick: () => { showWhere = !showWhere; render(); } },
-      showWhere ? `Who is where, round ${r}` : "See who is at each table", h("span", { "aria-hidden": "true" }, showWhere ? " ▴" : " ▾")),
-    showWhere ? h("div", { className: "c-card" },
-      last ? null : h("div", { className: "c-row" },
-        h("button", { className: `c-chip ${r === cur ? "on" : ""}`, "aria-pressed": r === cur ? "true" : "false", onclick: () => { showNext = false; render(); } }, `Round ${cur}`),
-        h("button", { className: `c-chip ${r !== cur ? "on" : ""}`, "aria-pressed": r !== cur ? "true" : "false", onclick: () => { showNext = true; render(); } }, `Round ${cur + 1}`)),
+  return h("section", { className: "c-where-wrap c-card", "aria-labelledby": "c-where-h" },
+    h("div", { className: "c-row spread" }, h("h2", { id: "c-where-h" }, `Who is where, round ${r}${r !== cur ? " (next)" : ""}`),
+      last ? null : h("button", { className: "c-link", "data-k": "where-next", onclick: () => { showNext = !showNext; render(); } }, r === cur ? `Show round ${cur + 1} \u203a` : `\u2039 Back to round ${cur}`)),
+    h("div", {},
       search,
       h("ul", { className: "c-where" }, [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]).map((f) => {
         const a = p.assignments.find((x) => x.round === r && x.groupId === f.groupId);
@@ -1983,7 +2031,7 @@ function whereList(p: EventPlan): HTMLElement {
         const gone = (p.famAway[f.groupId] ?? []).includes(r);
         return h("li", { className: host ? "" : "empty" }, h("span", { className: "c-num" }, String(tables[f.groupId])), h("span", { className: "fam" }, f.name),
           h("span", { className: "who" }, gone ? "fam has left" : host ? hostLabel(host) : "no alum this round"));
-      }))) : null);
+      }))));
 }
 
 // ----------------------------------------------------------------------

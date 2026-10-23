@@ -860,3 +860,72 @@ html:has(main.coord.with-bar) { scroll-padding-top: 120px; scroll-padding-bottom
 .c-doc-open .c-icon svg { width: 16px; height: 16px; }
 .c-opened-tag { position: absolute; top: 10px; right: 10px; z-index: 1; display: inline-flex; align-items: center; gap: 4px; background: var(--success); color: var(--surface); font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px 2px 6px; }
 .c-opened-tag .c-icon svg { width: 14px; height: 14px; stroke-width: 2.4; }
+
+/* Review fixes: quieter marks, phone bars merged, Run on a laptop, Adjust on cards. */
+.c-mark { position: static; width: 16px; height: 16px; margin-left: 2px; }
+.c-tab-icon { position: static; }
+.c-tab-why { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--warning); }
+.c-head-back { display: none; font: inherit; font-size: 26px; line-height: 1; width: 40px; height: 40px; border: none; border-radius: 10px; background: none; color: var(--accent-ink); cursor: pointer; margin-left: -8px; }
+.c-title.untitled { color: var(--ink-soft); font-weight: 500; }
+.c-home-link:hover .c-title { text-decoration: none; }
+button.c-home-link:hover .c-title { text-decoration: underline; text-underline-offset: 3px; }
+.c-label-hint { display: block; font-weight: 400; color: var(--ink-soft); font-size: var(--t-xs); margin-top: 2px; }
+.c-preview { margin: 8px 0; }
+.c-preview tr.more td { color: var(--ink-soft); font-style: italic; }
+.c-weak-list { margin: 10px 0 0; font-size: var(--t-sm); }
+.c-weak-list ul { margin: 0 0 8px; padding-left: 18px; }
+.c-weak-list li { margin: 4px 0; }
+
+/* Adjust works on the room cards. */
+.c-room li { list-style: none; }
+.c-room .c-tile.c-seat-button { font: inherit; width: 100%; height: 100%; text-align: left; color: var(--ink); cursor: pointer; }
+.c-room .c-tile.c-seat-button:hover:not([disabled]) { box-shadow: 0 0 0 2px var(--accent-wash), var(--shadow); }
+.c-room .c-tile.picked { box-shadow: 0 0 0 3px var(--accent); background: var(--accent-wash); }
+.c-room .c-tile.target { background: var(--surface); border: 1px dashed var(--accent); }
+.c-room .c-tile.blocked { opacity: .6; cursor: not-allowed; }
+.c-room .c-tile .c-blocked-note { margin-left: auto; font-size: 12px; color: var(--ink-soft); }
+.c-room .c-tile[disabled] { cursor: default; opacity: .75; }
+
+/* Run on a laptop: the clock on the left, who is where on the right. */
+.c-where-wrap.c-card h2 { font-size: var(--t-md); margin: 0; }
+@media (min-width: 900px) {
+  main.coord.running { max-width: 1040px; }
+  .c-run-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .c-run-body > * { grid-column: 1; }
+  .c-run-body > .c-where-wrap { grid-column: 2; grid-row: 1 / span 20; margin-top: 16px; }
+}
+
+/* Dark mode: the primary action outweighs everything else. */
+@media (prefers-color-scheme: dark) {
+  main.coord .c-button.primary, main.coord .c-choice.primary, .c-tour .c-button.primary { background: #2563eb; color: #fff; }
+  main.coord .c-choice.primary .c-choice-text strong, main.coord .c-choice.primary .c-choice-text span, main.coord .c-choice.primary .c-choice-go { color: #fff; }
+}
+main.coord.stage .c-button.primary { background: #2563eb; color: #fff; }
+
+@media (max-width: 700px) {
+  /* One bar, not two: the next action floats above the tabs; Back sits in the header. */
+  .c-head-back { display: inline-grid; place-items: center; }
+  .c-nextbar { background: none; border: none; backdrop-filter: none; padding: 0 16px; bottom: calc(68px + env(safe-area-inset-bottom)); }
+  .c-nextbar > .c-link { display: none; }
+  .c-nextbar .c-button.big { border-radius: 999px; box-shadow: 0 8px 24px rgb(16 24 40 / 25%); min-height: 52px; }
+  .c-nextbar .c-button.big[disabled] { display: none; }
+  main.coord.with-bar { padding-bottom: 150px; }
+  .c-wide-only { display: none; }
+  /* Printouts as a list. */
+  .c-docs { grid-template-columns: 1fr; gap: 10px; }
+  .c-docs li { flex-direction: row; align-items: center; padding: 12px; gap: 14px; }
+  .c-docs .c-thumb { width: 56px; flex: none; }
+  .c-docs .c-doc-text .c-help { display: none; }
+  .c-docs li.changed { transform: none; }
+  /* Progress labels never touch. */
+  .c-steps .c-step-name { font-size: 11px; overflow-wrap: anywhere; }
+  .c-tab-why-text { display: none; }
+  .c-sample { overflow-x: auto; }
+}
+@media (max-width: 700px) {
+  .c-room .c-tile.c-seat-button { flex-direction: row; align-items: center; gap: 14px; font-size: var(--t-sm); padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 16px; }
+  .c-room .c-tile.c-seat-button.target { border: 1px dashed var(--accent); }
+  /* The tab check sits on the icon's shoulder so labels line up. */
+  .c-tab { position: relative; }
+  .c-tab .c-mark { position: absolute; top: 4px; left: calc(50% + 6px); width: 14px; height: 14px; margin: 0; }
+}
