@@ -92,6 +92,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     p.get_by_label("Choose an alum").select_option(label="Alum D")
     p.get_by_label("Alum D is here from round").select_option("2")
     assert "arrives for round 2" in words(p)
+    p.locator('[data-card="fams"] .c-card-head').click()
     paste(p, "Paste or type your fams", FAMS)
     assert "Added 6 fams." in words(p)
     p.locator('[data-card="fams"] .c-card-head').click()
@@ -174,7 +175,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
 
 def test_the_example_is_a_sandbox(page):
     p = page
-    p.get_by_text("Try an example").click()
+    p.get_by_text("See the 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     assert "Practice" in p.inner_text(".c-top")
     p.locator(".c-top").get_by_role("button", name="End practice").click()
@@ -184,7 +185,7 @@ def test_the_example_is_a_sandbox(page):
 
 def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p = page
-    p.get_by_text("Try an example").click()
+    p.get_by_text("See the 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     p.locator(".c-tab", has_text="Set up").click()
     p.locator('[data-card="hosts"] .c-card-head').click()
@@ -225,7 +226,7 @@ def test_the_full_planner_is_at_its_own_address(url):
 def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     # Someone is told to move; a later change undoes that move. They must be told again.
     p = page
-    p.get_by_text("Try an example").click()
+    p.get_by_text("See the 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     button(p, "Looks good: print").click()
     with p.expect_popup() as pop:
@@ -233,6 +234,11 @@ def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     pop.value.close()
     button(p, "Next: run the event").click()
     button(p, "Start round 1").click()
+    # Leaving the night mid-round asks first.
+    p.locator('[data-k="run-back"]').click()
+    assert "A round is running." in words(p)
+    button(p, "Stay").click()
+    assert p.locator(".c-timer").count() == 1
     button(p, "Something came up").click()
     button(p, "An alum left or didn't come").click()
     p.get_by_label("Alum who left").select_option(label="Kenneth Tran")
@@ -285,9 +291,9 @@ def test_a_pair_can_split_and_two_alumni_can_pair(page):
 
     # Home becomes the event, with one next step.
     p.get_by_role("button", name="Event menu").click()
-    button(p, "Start another dinner or see the example").click()
+    button(p, "Home").click()
     assert p.locator("h1").inner_text() == "Spring Dinner"
-    assert p.locator(".c-steps li").count() == 4
+    assert p.locator(".c-steps li").count() == 5
     button(p, "Next: add your alumni and fams").click()
     p.wait_for_selector("text=Set up")
 
@@ -338,7 +344,7 @@ def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
     p.wait_for_selector("text=Your dinner")
     # Once seen, the tour is a quieter choice on the first screen.
     p.get_by_role("button", name="Event menu").click()
-    button(p, "Start another dinner or see the example").click()
+    button(p, "Home").click()
     assert p.locator(".c-choice.primary", has_text="Start a dinner").count() == 1
 
 
@@ -349,6 +355,7 @@ def test_the_tour_uses_the_coordinators_own_event(page):
     button(p, "Next: your alumni").click()
     paste(p, "Paste or type your alumni", ALUMNI)
     paste(p, "Paste or type your fams", FAMS)
+    assert "Added 6 fams." in words(p)
     p.get_by_role("button", name="Event menu").click()
     button(p, "Take the 2-minute tour").click()
     assert "Let's walk through your event." in tour_text(p)
@@ -367,7 +374,7 @@ def test_the_tour_uses_the_coordinators_own_event(page):
 
 def ev_plan_is_untouched(p) -> bool:
     # The tour plans on a copy: the coordinator's own event still has no schedule.
-    return p.locator(".c-tab", has_text="Print").get_attribute("disabled") is not None
+    return "locked" in p.locator(".c-tab", has_text="Print").get_attribute("class")
 
 
 # A seating chart as coordinators keep it in a Google Doc, with invented people.
@@ -405,3 +412,89 @@ def test_a_coordinator_pastes_the_seating_chart_and_alumni_list_they_already_hav
     p.get_by_role("button", name="Round 2", exact=True).click()
     r2 = [t.replace("\n", " ") for t in p.locator('.c-tile[data-round="2"]').all_inner_texts()]
     assert "Bo Lin" in r2[0] and "Ann Park" in r2[1] and "Cy Ruiz & Di Wu" in r2[2]
+
+
+def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
+    p = page
+    # Steps that aren't ready still open, and say what they will hold and why they're empty.
+    p.get_by_text("Start a dinner").click()
+    assert p.locator("h1").inner_text() == "Let's set up your dinner"
+    p.locator(".c-tab", has_text="Schedule").click()
+    assert "Your room plan will appear here" in words(p)
+    assert "Add your alumni and fams first" in p.locator(".c-tab", has_text="Schedule").get_attribute("aria-label")
+    assert "Step 2 of 4" in p.inner_text(".c-nextbar")
+    button(p, "Go to Set up").click()
+    assert "Step 1 of 4" in p.inner_text(".c-nextbar")
+
+    # The example rows beside the box show what a seating chart looks like, and can be tried.
+    button(p, "Next: your alumni").click()
+    assert "Kenneth Tran" in p.inner_text(".c-sample")
+    p.locator('[data-k="example-hosts"]').click()
+    assert "Read your seating chart: 10 fams, 13 alumni at 10 tables (3 pairs), 2 rounds." in p.inner_text('[data-card="hosts"]')
+    assert "First in the list:" in words(p)
+    assert "Your alumni have no interests yet" in words(p), "a chart alone has no interests to match on"
+    # The alumni list adds what each alum does, as interests.
+    p.locator('[data-card="hosts"] .c-card-head').click()
+    button(p, "Paste more alumni").click()
+    p.locator('[data-k="format-hosts-list"]').click()
+    assert "Practicing internist" in p.inner_text(".c-sample")
+    p.locator('[data-k="example-hosts"]').click()
+    assert "Added what 13 of 13 alumni do" in words(p)
+    assert "share an interest word with at least one alum" in words(p)
+
+    # Anything taken away can be put back for a few seconds.
+    p.locator('[data-card="hosts"] .c-card-head').click()
+    button(p, "Edit alumni").click()
+    rows = p.locator('[data-kind="hosts"] .c-grid-row:not(.head):not(.new)').count()
+    p.get_by_role("button", name="Remove row 1", exact=True).click()
+    assert "Removed" in p.inner_text(".c-toast")
+    p.locator(".c-toast").get_by_role("button", name="Undo").click()
+    assert p.locator('[data-kind="hosts"] .c-grid-row:not(.head):not(.new)').count() == rows
+
+    # The logo and name always lead home, where the next step waits.
+    p.locator('[data-k="home-link"]').click()
+    p.wait_for_selector(".c-hero")
+    assert p.locator('[data-k="next-step"]').inner_text().startswith("Next: make the schedule")
+
+    # Starting over asks first, and can be undone.
+    p.get_by_role("button", name="Event menu").click()
+    button(p, "Start another dinner").click()
+    assert "Replace " in words(p)
+    button(p, "Cancel").click()
+    assert p.locator("h1").inner_text() != "Let's set up your dinner"
+    p.get_by_role("button", name="Event menu").click()
+    button(p, "Start another dinner").click()
+    p.locator('[data-k="replace-dinner"]').click()
+    p.locator(".c-toast").get_by_role("button", name="Undo").click()
+    p.locator('[data-k="home-link"]').click() if p.locator('[data-k="home-link"]').count() else None
+    p.wait_for_selector(".c-hero")
+
+
+def test_the_dinner_travels_to_a_phone_in_a_link(url):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        ctx = browser.new_context()
+        ctx.grant_permissions(["clipboard-read", "clipboard-write"])
+        p = ctx.new_page()
+        p.goto(url)
+        p.wait_for_selector("text=Plan your rotation dinner")
+        p.get_by_text("Start a dinner").click()
+        p.get_by_label("Name").fill("Phone Dinner")
+        button(p, "Next: your alumni").click()
+        paste(p, "Paste or type your alumni", ALUMNI)
+        paste(p, "Paste or type your fams", FAMS)
+        button(p, "Make the schedule").click()
+        p.wait_for_selector(".c-room")
+        p.get_by_role("button", name="Event menu").click()
+        button(p, "Send to your phone").click()
+        button(p, "Copy the link").click()
+        link = p.evaluate("navigator.clipboard.readText()")
+        assert "#take=" in link
+        phone = browser.new_context().new_page()
+        phone.goto(link)
+        phone.wait_for_selector(".c-hero")
+        assert phone.locator("h1").inner_text() == "Phone Dinner"
+        assert "#take=" not in phone.url
+        browser.close()

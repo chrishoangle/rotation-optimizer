@@ -5,7 +5,7 @@
 // visit. Event data never passes
 // through here: it stays in the page and in the files you save.
 
-const CACHE = "rotation-optimizer-0.14.0-54a9065f8004";
+const CACHE = "rotation-optimizer-0.15.0-b2e61d8079eb";
 const FILES = ["./","index.html","app.js","style.css","highs.wasm","view.html","view.js"];
 
 self.addEventListener("install", (event) => {

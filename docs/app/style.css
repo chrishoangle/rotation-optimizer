@@ -279,7 +279,7 @@ main.coord select { width: auto; min-width: 10rem; }
 .c-top { position: sticky; top: 0; z-index: 5; background: var(--canvas); padding: 12px 0 0; }
 .c-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; }
 .c-logo { display: inline-flex; }
-.c-title { font-size: var(--t-md); font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-title { font-size: var(--t-md); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-saved { font-size: var(--t-xs); color: var(--ink-soft); }
 .c-saved::before { content: "● "; color: var(--success); }
 .c-pill { font-size: var(--t-xs); font-weight: 600; border-radius: 999px; padding: 4px 6px 4px 12px; background: var(--accent-wash); color: var(--accent-ink); display: inline-flex; align-items: center; gap: 4px; }
@@ -291,8 +291,10 @@ main.coord select { width: auto; min-width: 10rem; }
 .c-tabs { display: flex; gap: 4px; margin: 8px 0 0; border-bottom: 1px solid var(--hairline); }
 .c-tab { font: inherit; font-size: var(--t-sm); font-weight: 500; color: var(--ink-soft); background: none; border: none; border-bottom: 2px solid transparent; padding: 12px 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: -1px; min-height: 44px; }
 .c-tab.now { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
-.c-tab[disabled] { opacity: .45; cursor: default; }
-.c-mark { color: var(--success); font-size: var(--t-xs); }
+.c-tab.locked { color: var(--ink-soft); }
+.c-mark { position: absolute; right: -7px; top: -5px; width: 14px; height: 14px; border-radius: 50%; background: var(--success); color: #fff; display: inline-grid; place-items: center; }
+.c-mark .c-icon svg { width: 10px; height: 10px; stroke-width: 3; }
+.c-tab-icon { position: relative; display: inline-flex; }
 .c-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); display: inline-block; }
 
 /* Messages: quiet, and amber only for things that need you. */
@@ -743,3 +745,109 @@ body.c-touring { overflow: hidden; }
   .c-tour-stats strong { font-size: 28px; }
 }
 .c-tour-where li > span:nth-child(2) { white-space: nowrap; }
+
+/* Wayfinding: home link, grouped menu, next-step bar, undo. */
+.c-home-link { font: inherit; display: inline-flex; align-items: center; gap: 12px; flex: 1; min-width: 0; background: none; border: none; padding: 4px 8px 4px 0; color: var(--ink); cursor: pointer; border-radius: 10px; text-align: left; }
+.c-home-link:hover .c-title { text-decoration: underline; text-underline-offset: 3px; }
+.c-saved { display: inline-flex; align-items: center; gap: 2px; }
+.c-menu { gap: 2px; }
+.c-menu-group + .c-menu-group { border-top: 1px solid var(--hairline); margin-top: 4px; padding-top: 4px; }
+.c-menu-name { font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); margin: 6px 14px 2px !important; }
+.c-menu-group > button, .c-menu-group > .c-menu-label { font: inherit; display: block; width: 100%; text-align: left; background: none; border: none; color: var(--ink); padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+.c-menu-group > button:hover, .c-menu-group > .c-menu-label:hover { background: var(--sunken); }
+main.coord.with-bar { padding-bottom: 120px; }
+.c-nextbar { position: sticky; bottom: 0; z-index: 6; display: flex; align-items: center; gap: 16px; margin: 24px -24px 0; padding: 12px 24px calc(12px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--canvas) 88%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--hairline); }
+.c-nextbar-where { font-size: var(--t-xs); font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+.c-nextbar-note { flex: 1; font-size: var(--t-xs); color: var(--ink-soft); text-align: right; }
+.c-nextbar .c-button.big { min-height: 48px; }
+.c-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 16px; max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 12px; background: var(--ink); color: var(--canvas); box-shadow: 0 12px 32px rgb(16 24 40 / 25%); font-size: var(--t-sm); }
+.c-toast .c-link { color: var(--canvas); text-decoration: underline; }
+
+/* Set up: numbered steps, a note where the change happened, examples beside each box. */
+.c-check { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.c-card-note { margin: 0 24px 12px; }
+.c-card-note p { margin: 0 0 4px !important; }
+.c-card-nav { justify-content: space-between; margin-top: 16px; }
+.c-have { margin: 16px 0 4px; }
+.c-format { margin: 0 0 12px; }
+.c-format .c-round-switch { margin: 0 0 10px; }
+.c-sample { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); margin: 0 0 8px; }
+.c-sample table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.c-sample td { padding: 6px 10px; border-bottom: 1px solid var(--hairline); border-right: 1px solid var(--hairline); white-space: nowrap; color: var(--ink); }
+.c-sample tr:last-child td { border-bottom: none; }
+.c-sample td:last-child { border-right: none; }
+.c-sample tr.head td { background: var(--sunken); font-weight: 600; color: var(--ink-soft); }
+.c-sample tr.sub td { color: var(--ink-soft); padding-left: 22px; }
+.c-paste-wrap { position: relative; }
+.c-paste-demo { position: absolute; inset: 8px; pointer-events: none; display: grid; place-items: center; animation: c-demo-out .4s ease-in 4s forwards; }
+.c-demo-sheet { display: grid; grid-template-columns: repeat(3, auto); gap: 1px; background: var(--hairline-strong); border: 1px solid var(--hairline-strong); border-radius: 6px; overflow: hidden; font-size: 11.5px; animation: c-demo-sheet 4s ease-in-out forwards; }
+.c-demo-sheet span { background: var(--surface); padding: 4px 8px; white-space: nowrap; }
+.c-demo-list { position: absolute; display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--success); opacity: 0; animation: c-demo-list 4s ease-in-out forwards; }
+@keyframes c-demo-sheet { 0% { opacity: 0; transform: translate(-60px, -10px) scale(.9); } 20%, 55% { opacity: 1; transform: none; } 70%, 100% { opacity: 0; transform: scale(.9); } }
+@keyframes c-demo-list { 0%, 62% { opacity: 0; transform: translateY(6px); } 75%, 100% { opacity: 1; transform: none; } }
+@keyframes c-demo-out { to { opacity: 0; visibility: hidden; } }
+.c-match-hint { font-size: var(--t-xs); color: var(--ink-soft); background: var(--sunken); border-radius: 10px; padding: 10px 14px; margin: 8px 0 0; }
+.c-match-hint.some { background: var(--warning-wash); box-shadow: inset 3px 0 0 var(--amber); color: var(--ink); }
+
+/* Home: a confirm card, five steps with time, the phone tip. */
+.c-confirm { box-shadow: inset 4px 0 0 var(--amber), var(--shadow); }
+.c-confirm h2 { margin: 0 0 4px; }
+.c-steps { grid-template-columns: repeat(5, 1fr); }
+.c-step-go { font: inherit; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; background: none; border: none; padding: 0; color: inherit; cursor: pointer; text-align: left; width: 100%; }
+.c-step-go:hover .c-step-name { text-decoration: underline; }
+.c-step-time { font-size: 11.5px; font-weight: 500; color: var(--ink-soft); }
+.c-step-time.warn { color: var(--warning); font-weight: 600; }
+.c-steps li.later .c-step-dot { background: var(--sunken); }
+.c-phone-tip { display: flex; align-items: center; gap: 10px; padding: 14px 20px; max-width: 640px; }
+.c-phone-tip p { margin: 0 !important; }
+.c-phone h2 { margin: 0 0 8px; }
+.c-qr { width: 180px; margin: 8px 0; }
+.c-qr svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 8px; }
+
+/* Empty states. */
+.c-empty-card { text-align: center; padding: 32px 24px; }
+.c-empty-pic { max-width: 300px; margin: 0 auto 12px; }
+.c-empty-pic svg { width: 100%; height: auto; display: block; }
+.c-empty-card h2 { font-size: var(--t-md); margin: 0 0 6px; }
+.c-empty-card .c-help { max-width: 30rem; margin: 0 auto 8px; font-size: var(--t-sm); }
+
+/* Schedule: the build ticks while it works; Adjust says when a swap is saved. */
+.c-build { list-style: none; padding: 0; margin: 24px 0; display: grid; gap: 14px; }
+.c-build li { display: flex; align-items: center; gap: 12px; font-size: var(--t-md); color: var(--ink-soft); animation: c-build-done .01s linear forwards; animation-delay: calc(var(--i) * .4s + .3s); }
+.c-build-tick { width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--hairline-strong); flex: none; animation: c-build-tick .25s ease-out forwards; animation-delay: calc(var(--i) * .4s + .3s); }
+@keyframes c-build-done { to { color: var(--ink); } }
+@keyframes c-build-tick { to { background: var(--success); box-shadow: none; } }
+.c-saved-note { color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; margin: 0 0 4px !important; }
+
+/* Print: changed pages lift out of the stack. */
+.c-docs li { position: relative; }
+.c-docs li.changed { box-shadow: 0 0 0 2px var(--amber), 0 12px 24px rgb(16 24 40 / 12%); transform: translateY(-4px); }
+.c-reprint-tag { position: absolute; top: 10px; right: 10px; z-index: 1; background: var(--amber); color: #1f1300; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .c-hop circle { animation: c-hop 3.6s ease-in-out infinite; }
+  @keyframes c-hop { 0%, 35% { transform: translateY(0); } 45% { transform: translateY(-8px); } 55%, 100% { transform: translateY(0); } }
+  .c-docs li.changed { transition: transform .3s ease-out; }
+  .c-tell li:not(.told) { animation: c-pulse 1.2s ease-out 2; }
+  @keyframes c-pulse { 0% { background: transparent; } 40% { background: color-mix(in srgb, var(--amber) 22%, transparent); } 100% { background: transparent; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .c-build li, .c-build-tick { animation-duration: .01s; animation-delay: 0s; }
+}
+@media (max-width: 700px) {
+  .c-nextbar { position: fixed; left: 0; right: 0; bottom: calc(60px + env(safe-area-inset-bottom)); margin: 0; padding: 10px 16px; gap: 10px; }
+  .c-nextbar-where, .c-nextbar-note { display: none; }
+  .c-nextbar .c-button.big { flex: 1; min-height: 48px; }
+  main.coord.with-bar { padding-bottom: 190px; }
+  .c-toast { bottom: 140px; }
+  .c-saved { display: none; }
+  .c-tab-label { font-size: 14px; }
+  .c-tab.now { background: var(--accent-wash); border-radius: 12px; border-top-color: transparent; }
+  .c-steps { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .c-step-time { display: none; }
+  .c-card-note { margin: 0 16px 12px; }
+}
+/* Focus and scrolling never hide a control under the sticky header or the next-step bar. */
+html:has(main.coord.with-bar) { scroll-padding-top: 120px; scroll-padding-bottom: 110px; }
+@media (max-width: 700px) { html:has(main.coord.with-bar) { scroll-padding-bottom: 200px; } }
+.c-field .c-help { display: block; margin-top: 4px; }

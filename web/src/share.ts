@@ -64,3 +64,20 @@ export function qrSvg(link: string): string {
   q.make();
   return q.createSvgTag({ cellSize: 3, margin: 2, scalable: true } as never);
 }
+
+/**
+ * A whole event in a link, to carry it to the coordinator's own phone. Like
+ * the snapshot, it lives after the "#", which browsers never send to a
+ * server. The caller leaves out student names first.
+ */
+export async function encodeText(text: string): Promise<string> {
+  return b64url(await pipe(new TextEncoder().encode(text), new CompressionStream("deflate-raw")));
+}
+
+export async function decodeText(code: string): Promise<string | null> {
+  try {
+    return new TextDecoder().decode(await pipe(fromB64url(code), new DecompressionStream("deflate-raw")));
+  } catch {
+    return null;
+  }
+}

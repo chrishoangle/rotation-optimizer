@@ -32,7 +32,7 @@ import {
   backupPacketHtml, coordinatorGuideHtml, hostBadgesHtml, mcCueCardHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, runnerSheetsHtml,
   setupSheetHtml,
 } from "./printables";
-import { encodeSnapshot, qrSvg, snapshot as snapshotFor } from "./share";
+import { decodeText, encodeSnapshot, encodeText, qrSvg, snapshot as snapshotFor } from "./share";
 import { endRound, leftText, nowMinutes, shown, startRound, status, toMinutes } from "./timing";
 import { csvRecords, sha256Hex } from "./py";
 import {
@@ -1269,7 +1269,29 @@ function setUi(mode: "guided" | "full"): void {
   window.scrollTo(0, 0);
 }
 
+/** An event carried to this device in a "Send to your phone" link. */
+let incoming: EventState | null = null;
+async function takeFromLink(): Promise<void> {
+  const m = /^#take=(.+)$/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  const text = await decodeText(m[1]);
+  if (!text) return;
+  let next: EventState;
+  try { next = loadEvent(text); } catch { return; }
+  if (ev.hosts.some((r) => (r.table_label || r.host_name || "").trim()) || ev.fams.some((r) => (r.fam_label ?? "").trim())) incoming = next;
+  else guidedCtx.set(next);
+  if (uiMode === "guided") renderGuided(guidedCtx);
+}
+
 const guidedCtx: GuidedCtx = {
+  incoming: () => incoming,
+  takeIncoming: (accept) => { if (accept && incoming) guidedCtx.set(incoming); incoming = null; },
+  phoneLink: async () => {
+    const copy = loadEvent(saveEvent(ev));
+    copy.fams = copy.fams.map((r) => ({ ...r, students: "" })); // student names never travel in a link
+    return `${location.origin}${location.pathname}#take=${await encodeText(saveEvent(copy))}`;
+  },
   get: () => ev,
   set: (next) => {
     if (!practiceOriginal && (ev.hosts.length || ev.fams.length)) snapshot("before opening another event");
@@ -1930,3 +1952,4 @@ function boot(): void {
 }
 
 boot();
+takeFromLink();
