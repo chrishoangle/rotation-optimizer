@@ -11,6 +11,7 @@
 // stays at the address ending in #full.
 
 import { h, openPage, readFile, replace } from "./dom";
+import { IconName, icon } from "./icons";
 import {
   EventState, FAM_COLUMNS, HOST_COLUMNS, applySpelling, checkInputs, famLocations, hasStarted, isCurrent, loadEvent,
   maxRounds, nearMisses, newEvent, normalizeState, normalizeTable, stepFreeFams,
@@ -80,6 +81,7 @@ let imported: { kind: "hosts" | "fams"; skipped: string[] | null; columns: strin
 // Schedule
 let adjust = false;
 let picked: { round: number; famId: string } | null = null;
+let phoneRound = 1; // on a phone, the room plan shows one round at a time (0 = all rounds)
 let why = false;
 let changed: string[] = [];
 let moreSchedule = false;
@@ -169,6 +171,7 @@ function stateOf(t: Place): State {
   }
 }
 
+const TAB_ICONS: Record<string, IconName> = { setup: "people", schedule: "table", print: "printer", run: "play" };
 const STATE_WORDS: Record<State, string> = { locked: "not ready yet", ready: "ready", done: "done", attention: "needs attention" };
 
 // ----------------------------------------------------------------------
@@ -199,10 +202,10 @@ function topBar(): HTMLElement {
         className: `c-tab ${place === key ? "now" : ""} ${st}`, disabled: st === "locked",
         "aria-current": place === key ? "page" : null, "aria-label": `${label}, ${STATE_WORDS[st]}`,
         onclick: () => go(key),
-      }, h("span", { className: "c-tab-label" }, label), st === "done" ? h("span", { className: "c-mark", "aria-hidden": "true" }, "✓")
+      }, icon(TAB_ICONS[key]), h("span", { className: "c-tab-label" }, label), st === "done" ? h("span", { className: "c-mark", "aria-hidden": "true" }, "✓")
         : st === "attention" ? h("span", { className: "c-dot", "aria-hidden": "true" }) : null);
     }), eventOver(s) ? h("button", { className: `c-tab ${place === "wrap" ? "now" : ""}`, "aria-current": place === "wrap" ? "page" : null, onclick: () => go("wrap") },
-      h("span", { className: "c-tab-label" }, "Wrap up")) : null) : null);
+      icon("check"), h("span", { className: "c-tab-label" }, "Wrap up")) : null) : null);
 }
 
 function eventMenu(): HTMLElement {
@@ -325,7 +328,17 @@ function tick(): void {
   const el = document.getElementById("c-clock");
   if (!el) return;
   const st = status(ev(), nowMinutes());
-  if (st.phase === "during" && st.minutesLeft !== null) el.textContent = leftText(st.minutesLeft);
+  if (st.phase === "during" && st.minutesLeft !== null) {
+    el.textContent = leftText(st.minutesLeft);
+    const bar = document.getElementById("c-progress");
+    if (bar) bar.style.width = `${elapsedShare(ev().roundMinutes, st.minutesLeft)}%`;
+  }
+}
+
+/** How much of the round has gone, as a percentage for the progress bar. */
+function elapsedShare(roundMinutes: number, minutesLeft: number): number {
+  if (!roundMinutes) return 0;
+  return Math.round(Math.min(100, Math.max(0, (1 - minutesLeft / roundMinutes) * 100)));
 }
 
 // ----------------------------------------------------------------------
@@ -347,17 +360,19 @@ function homePage(): HTMLElement {
   const going = hasPeople(s) && !ctx.inPractice();
   const picture = h("div", { className: "c-picture" });
   picture.innerHTML = PICTURE;
-  const choice = (title: string, help: string, onclick: () => void, primary = false) =>
-    h("button", { className: `c-choice ${primary ? "primary" : ""}`, onclick }, h("strong", {}, title), h("span", {}, help));
+  const choice = (title: string, help: string, onclick: () => void, primary = false, glyph: IconName = "chevron") =>
+    h("button", { className: `c-choice ${primary ? "primary" : ""}`, onclick }, icon(glyph, "c-choice-icon"),
+      h("span", { className: "c-choice-text" }, h("strong", {}, title), h("span", {}, help)), icon("chevron", "c-choice-go"));
   return h("section", { className: "c-page c-home" },
     h("h1", { tabindex: -1 }, "Plan your rotation dinner"),
     h("p", { className: "c-lead" }, "Students stay at their table all night. Alumni move to a new table each round. Paste your two lists, print what you need, and run the night from your phone. If someone cancels, the app tells you who to move."),
     picture,
     h("div", { className: "c-choices" },
-      going ? choice(`Continue ${s.title || "your dinner"}`, `${alumni(hostsOf(s).length)}, ${famsN(famsOf(s).length)}`, () => go(s.plan ? "schedule" : "setup"), true) : null,
-      choice("Start a dinner", "Paste your alumni and fams from a spreadsheet.", () => { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); }, !going),
-      keyOpens(h("label", { className: "c-choice", for: "c-open-home", tabindex: 0 }, openInput("c-open-home"), h("strong", {}, "Open last year's file"), h("span", {}, "Or any event you saved."))),
-      choice("Try an example", "A practice dinner. Nothing you do is kept.", async () => { practiceReturn = "home"; ctx.tryExample(); go("schedule"); await update(); })),
+      going ? choice(`Continue ${s.title || "your dinner"}`, `${alumni(hostsOf(s).length)}, ${famsN(famsOf(s).length)}`, () => go(s.plan ? "schedule" : "setup"), true, "play") : null,
+      choice("Start a dinner", "Paste your alumni and fams from a spreadsheet.", () => { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); }, !going, "plus"),
+      keyOpens(h("label", { className: "c-choice", for: "c-open-home", tabindex: 0 }, openInput("c-open-home"), icon("folder", "c-choice-icon"),
+        h("span", { className: "c-choice-text" }, h("strong", {}, "Open last year's file"), h("span", {}, "Or any event you saved.")), icon("chevron", "c-choice-go"))),
+      choice("Try an example", "A practice dinner. Nothing you do is kept.", async () => { practiceReturn = "home"; ctx.tryExample(); go("schedule"); await update(); }, false, "sparkle")),
     h("p", { className: "c-fine" }, "Everything stays in this browser. Nothing is sent anywhere."));
 }
 
@@ -608,10 +623,10 @@ function setupCard(key: "dinner" | "hosts" | "fams", title: string, summary: str
   const isOpen = openCard === key || !done;
   return h("section", { className: `c-card c-setup ${done ? "done" : ""} ${isOpen ? "open" : ""}`, "data-card": key },
     h("h2", { className: "c-card-h" }, h("button", { className: "c-card-head", "aria-expanded": isOpen ? "true" : "false", "data-k": `card-${key}`, disabled: !done, onclick: () => { openCard = isOpen ? null : key; render(); } },
-      h("span", { className: `c-check ${done ? "on" : ""}`, "aria-hidden": "true" }, done ? "✓" : ""),
+      h("span", { className: `c-check ${done ? "on" : ""}`, "aria-hidden": "true" }, done ? icon("check") : ""),
       h("span", { className: "c-card-title" }, title),
       h("span", { className: "c-card-summary" }, done && !isOpen ? summary : ""),
-      done ? h("span", { className: "c-chev", "aria-hidden": "true" }, isOpen ? "▴" : "▾") : null)),
+      done ? icon("chevron", `c-chev ${isOpen ? "up" : "down"}`) : null)),
     isOpen ? h("div", { className: "c-card-body" }, ...body()) : null);
 }
 
@@ -754,7 +769,7 @@ function summary(p: EventPlan): HTMLElement {
       (weak * 2 > p.assignments.length ? " Matches only count identical words, so using the same words in both lists (for example \"computer science\" in both, not \"CS\" in one) gives better matches." : "") : "",
     provenOptimal(p) ? (p.keptSlots !== null ? "This is the best update, changing as little as possible." : "With these words, no other schedule shares more interests.") : "",
   ].filter(Boolean);
-  return h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, "✓"),
+  return h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, icon("check")),
     h("div", {}, h("p", { className: "c-answer-main" }, lines[0]), lines.slice(1).map((l) => h("p", { className: "c-help" }, l))));
 }
 
@@ -787,7 +802,7 @@ function schedulePage(): HTMLElement {
   const tips = nearMisses(s.hosts, s.fams);
   return h("section", { className: "c-page" },
     h("div", { className: "c-head-row" }, h("h1", { tabindex: -1 }, "Schedule"),
-      current ? h("button", { className: `c-button ${adjust ? "primary" : ""}`, "aria-pressed": adjust ? "true" : "false", "data-k": "adjust", onclick: () => { adjust = !adjust; picked = null; why = false; render(); } }, adjust ? "Done adjusting" : "Adjust") : null),
+      current ? h("button", { className: `c-button ${adjust ? "primary" : ""}`, "aria-pressed": adjust ? "true" : "false", "data-k": "adjust", onclick: () => { adjust = !adjust; picked = null; why = false; render(); } }, adjust ? "Done adjusting" : [icon("swap"), "Adjust"]) : null),
     current ? null : h("div", { className: "c-msg warn c-row spread" }, "Your lists changed since this schedule was made.",
       h("button", { className: "c-button primary", disabled: busy, onclick: () => update() }, "Update the schedule")),
     summary(p),
@@ -805,7 +820,7 @@ function schedulePage(): HTMLElement {
           h("button", { className: "c-button", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)))) : null,
       p.warnings.length ? h("details", {}, h("summary", {}, "Notes about this schedule"), h("ul", {}, p.warnings.map((w) => h("li", {}, warningWords(w))))) : null,
       !adjust && mine.length ? h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, `Undo the ${mine.length} change${mine.length !== 1 ? "s" : ""} you made by hand`) : null),
-    h("div", { className: "c-actions" }, h("span"), current ? h("button", { className: "c-button primary big", onclick: () => go("print") }, "Looks good: print") : null));
+    h("div", { className: "c-actions" }, h("span"), current ? h("button", { className: "c-button primary big", onclick: () => go("print") }, icon("printer"), "Looks good: print") : null));
 }
 
 function warningWords(w: string): string {
@@ -854,7 +869,11 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
   const rounds = Array.from({ length: p.rounds }, (_, k) => k + 1);
   const locked = new Set(p.lockedRounds);
   const byHand = new Set(gridChanges(s).map((r) => `${r.rounds}|${(r.fam ?? "").toLowerCase()}|${(r.host_table ?? "").toLowerCase()}`));
-  return h("div", { className: `c-plan ${adjust ? "adjusting" : ""}`, role: "table", "aria-label": "Who sits at each table, each round", style: `--rounds: ${p.rounds}` },
+  const show = phoneRound > p.rounds ? 0 : phoneRound;
+  const switcher = h("div", { className: "c-round-switch", role: "group", "aria-label": "Show on a small screen" },
+    [0, ...rounds].map((r) => h("button", { className: `c-seg ${show === r ? "on" : ""}`, "aria-pressed": show === r ? "true" : "false", "data-k": `show-${r}`,
+      onclick: () => { phoneRound = r; render(); } }, r ? `Round ${r}` : "All")));
+  return h("div", { className: "c-plan-wrap" }, switcher, h("div", { className: `c-plan ${adjust ? "adjusting" : ""}`, role: "table", "aria-label": "Who sits at each table, each round", style: `--rounds: ${p.rounds}`, "data-show": show || null },
     h("div", { className: "c-plan-row head", role: "row" }, h("span", { role: "columnheader" }, "Table"), rounds.map((r) => h("span", { role: "columnheader" }, `Round ${r}${r <= s.finished ? " (done)" : ""}`))),
     list.map((f) => h("div", { className: "c-plan-row", role: "row" },
       h("span", { className: "c-plan-fam", role: "rowheader" }, h("span", { className: "c-num" }, String(tables[f.groupId])), h("span", {}, f.name)),
@@ -873,7 +892,7 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
         const isPicked = picked?.round === r && picked.famId === f.groupId;
         const can = current && !locked.has(r) && r > s.finished && !gone && !busy;
         const blocked = !!picked && picked.round === r && !isPicked && can ? swapBlock(p, r, picked.famId, f.groupId) : "";
-        return h("span", { role: "cell", className: "c-seat-cell" },
+        return h("span", { role: "cell", className: "c-seat-cell", "data-round": r },
           h("button", {
             className: `c-seat-button ${host ? "" : "empty"} ${isPicked ? "picked" : ""} ${picked && picked.round === r && !isPicked && !blocked ? "target" : ""} ${blocked ? "blocked" : ""}`,
             disabled: !can, "aria-disabled": blocked ? "true" : null, "aria-pressed": isPicked ? "true" : "false", "data-round": r,
@@ -882,7 +901,7 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
             onclick: () => { if (blocked) { say("info", blocked); render(); return; } tapSeat(p, r, f.groupId); },
           }, h("span", { className: "c-round-tag", "aria-hidden": "true" }, `R${r}`), h("span", { className: "c-seat-name" }, label), pinned ? h("span", { className: "c-pin", "aria-hidden": "true" }, "placed") : null,
             blocked ? h("span", { className: "c-blocked-note", "aria-hidden": "true" }, "not possible") : null));
-      }))));
+      })))));
 }
 
 function whoSitsOut(p: EventPlan): HTMLElement | null {
@@ -1023,7 +1042,7 @@ function printPage(): HTMLElement {
   const printedOk = !!s.printed && !reprint.length && isCurrent(s);
   return h("section", { className: "c-page" },
     h("h1", { tabindex: -1 }, "Print"),
-    printedOk ? h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, "✓"),
+    printedOk ? h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, icon("check")),
       h("div", {}, h("p", { className: "c-answer-main" }, "You are ready for the event."), h("p", { className: "c-help" }, `Printed${s.printedAt ? ` at ${s.printedAt}` : ""}. If anything changes, the app tells you exactly what to reprint.`))) : null,
     !isCurrent(s) ? h("div", { className: "c-msg warn" }, "Your lists changed since the schedule was made. Update the schedule first. ",
       h("button", { className: "c-link", onclick: () => go("schedule") }, "Go to Schedule")) : null,
@@ -1049,7 +1068,7 @@ function printPage(): HTMLElement {
         openPage(printEverythingHtml(s.title, list.map((d) => [d.label, d.make()])));
         recorded();
         render();
-      } }, printedOk ? "Print everything again" : "Print everything")),
+      } }, icon("printer"), printedOk ? "Print everything again" : "Print everything")),
     more(morePrint, () => { morePrint = !morePrint; render(); }, "More options",
       h("div", { className: "c-fields" },
         h("div", { className: "c-field" }, h("label", { for: "c-print-name", className: "c-label" }, "Name on every page"), name),
@@ -1146,8 +1165,10 @@ function roundCard(p: EventPlan): HTMLElement {
   const startedAt = toMinutes(s.night.roundTimes?.[String(r)]?.start ?? "");
   return h("div", { className: "c-card c-now" },
     h("p", { className: "c-round" }, st.phase === "over" ? "All rounds done" : st.phase === "moving" ? `Alumni move to round ${r}` : `Round ${r} of ${p.rounds}`),
-    st.phase === "during" && st.minutesLeft !== null ? h("p", { className: `c-clock ${st.minutesLeft < 0 ? "over" : ""}` },
-      h("span", { id: "c-clock" }, leftText(st.minutesLeft)), startedAt !== null ? h("span", { className: "c-help" }, ` · ends ${shown(startedAt + s.roundMinutes)}`) : null)
+    st.phase === "during" && st.minutesLeft !== null ? h("div", {},
+      h("p", { className: `c-clock ${st.minutesLeft < 0 ? "over" : ""}` }, icon("clock"),
+        h("span", { id: "c-clock" }, leftText(st.minutesLeft)), startedAt !== null ? h("span", { className: "c-help" }, ` · ends ${shown(startedAt + s.roundMinutes)}`) : null),
+      h("div", { className: "c-progress", "aria-hidden": "true" }, h("span", { id: "c-progress", style: `width: ${elapsedShare(s.roundMinutes, st.minutesLeft)}%` })))
       : st.phase === "before" ? h("p", { className: "c-help" }, `${p.rounds} rounds of ${s.roundMinutes} minutes.`) : null,
     action,
     justFinished === s.finished && st.phase === "moving" && s.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "c-help" }, `Round ${s.finished} ended. `,
