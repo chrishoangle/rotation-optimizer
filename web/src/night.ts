@@ -195,3 +195,69 @@ export function roomTables(s: EventState): Record<string, number> {
   s.fams.forEach((r, i) => { if (r.fam_id) out[r.fam_id] = Number(r.table_number) || planned[r.fam_id] || i + 1; });
   return out;
 }
+
+// ----------------------------------------------------------------------
+// Moving between rounds, and passing on changes.
+// ----------------------------------------------------------------------
+
+export interface Transition { hostId: string; who: string; from: string; to: string; toTable: number | null; key: string }
+
+/**
+ * Every alum's walk into round `round`: from the table they had in the round
+ * before (or "arriving") to their table now (or "break"). Alumni who are
+ * cancelled or not hosting in either round are left out.
+ */
+export function transitions(p: EventPlan, round: number): Transition[] {
+  const tables = tableNumbers(p);
+  const seat = (h: string, r: number) => p.assignments.find((a) => a.round === r && a.hostId === h)?.groupId ?? null;
+  const out: Transition[] = [];
+  for (const h of p.hosts) {
+    const to = seat(h.hostId, round);
+    const from = round > 1 ? seat(h.hostId, round - 1) : null;
+    const away = (p.hostAway[h.hostId] ?? []).includes(round) || (p.hostLimits[h.hostId] ?? []).includes(round);
+    if (away || (!to && !from)) continue;
+    const fam = (id: string) => p.fams.find((f) => f.groupId === id)!.name;
+    out.push({
+      hostId: h.hostId, who: h.person ? `${h.person} (${h.name})` : h.name,
+      from: from ? `Table ${tables[from]}` : round === 1 ? "check-in" : "no table",
+      to: to ? `Table ${tables[to]} (${fam(to)})` : "no table this round",
+      toTable: to ? tables[to] : null, key: `${round}|${h.hostId}`,
+    });
+  }
+  return out.sort((a, b) => (a.toTable ?? 999) - (b.toTable ?? 999));
+}
+
+function toggleIn(list: string[] | undefined, key: string): string[] {
+  const set = new Set(list ?? []);
+  if (set.has(key)) set.delete(key); else set.add(key);
+  return [...set];
+}
+
+export function toggleMoved(s: EventState, key: string): void { s.night = { ...s.night, moved: toggleIn(s.night.moved, key) }; }
+export function toggleTold(s: EventState, key: string): void { s.night = { ...s.night, told: toggleIn(s.night.told, key) }; }
+
+/**
+ * What actually happened at a table this round, when it differs from the
+ * plan: an alum sat at the wrong fam and moving them would be worse. It
+ * becomes a must meet rule for this round, and a re-plan fits the rest of
+ * the night around it.
+ */
+export function recordActual(s: EventState, famId: string, hostId: string, round: number, at: string): string {
+  const fam = s.fams.find((r) => r.fam_id === famId);
+  const host = s.hosts.find((r) => r.host_id === hostId);
+  if (!fam || !host) return "Choose who is at the table.";
+  if (round <= s.finished) return `Round ${round} is already finished.`;
+  s.rules = s.rules.filter((r) => !(r.rule === "must meet" && r.rounds === String(round) &&
+    ((r.fam ?? "").toLowerCase() === fam.fam_label.toLowerCase() || (r.host_table ?? "").toLowerCase() === host.table_label.toLowerCase())));
+  s.rules.push({ rule: "must meet", host_table: host.table_label, fam: fam.fam_label, rounds: String(round) });
+  const who = host.host_name ? `${host.host_name} (${host.table_label})` : host.table_label;
+  logChange(s, at, `${who} is actually with ${fam.fam_label} in round ${round}; kept that way.`);
+  return "";
+}
+
+/** Open tables in a round: fams there with no host. */
+export function openTables(p: EventPlan, round: number): string[] {
+  const tables = tableNumbers(p);
+  return p.fams.filter((f) => !(p.famAway[f.groupId] ?? []).includes(round) && !p.assignments.some((a) => a.round === round && a.groupId === f.groupId))
+    .sort((a, b) => tables[a.groupId] - tables[b.groupId]).map((f) => `Table ${tables[f.groupId]}`);
+}

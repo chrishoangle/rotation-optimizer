@@ -22,10 +22,12 @@ import { explainPairing, sharedPairings } from "./explain";
 import { FIELDS, formsScript } from "./forms";
 import { changeSlipsHtml, movesBetween } from "./moves";
 import {
-  addLateHost, cancelFam, cancelHost, currentRound, finishRound, joinLate, logChange, moveFamTable, notArrived, roomTables, toggleSetup, whereIs,
+  addLateHost, cancelFam, cancelHost, currentRound, finishRound, joinLate, logChange, moveFamTable, notArrived, openTables, recordActual,
+  roomTables, setupMissing, toggleMoved, toggleSetup, toggleTold, transitions, whereIs,
 } from "./night";
 import { parsePasted } from "./paste";
-import { backupPacketHtml, coordinatorGuideHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, setupSheetHtml } from "./printables";
+import { backupPacketHtml, coordinatorGuideHtml, mcCueCardHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, setupSheetHtml } from "./printables";
+import { endRound, leftText, nowMinutes, shown, startRound, status, toMinutes } from "./timing";
 import { csvRecords, sha256Hex } from "./py";
 import {
   CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
@@ -1188,14 +1190,29 @@ function tellPeople(p: EventPlan, printed: EventPlan): HTMLElement | null {
   const m = movesBetween(printed, p, ev.finished + 1);
   if (!m.hosts.length && !m.fams.length) return null;
   const at = now();
+  const told = new Set(ev.night.told ?? []);
+  const again = () => (night.on ? nightRefresh() : (persist(), steady(renderNight)));
+  const item = (key: string, text: string) => h("li", { className: told.has(key) ? "told" : "" },
+    h("button", { className: `button small ${told.has(key) ? "primary" : ""}`, "aria-pressed": told.has(key) ? "true" : "false",
+      onclick: () => { toggleTold(ev, key); again(); } }, told.has(key) ? "Told" : "Not told"),
+    h("span", {}, text));
+  const left = untold(m).length;
   return h("div", { className: "panel tell" },
-    h("h3", {}, "What to tell people"),
-    m.hosts.length ? h("ul", {}, m.hosts.map((x) => h("li", {}, x.text))) : null,
-    m.fams.length ? h("ul", {}, m.fams.map((x) => h("li", {}, x.text))) : null,
+    h("h3", {}, "What to tell people" + (left ? ` (${left} not told yet)` : ": everyone told")),
+    m.hosts.length ? h("ul", { className: "told-list" }, m.hosts.map((x) => item(moveKey(x), x.text))) : null,
+    m.fams.length ? h("ul", { className: "told-list" }, m.fams.map((x) => item(`fam|${x.round}|${x.famId}`, x.text))) : null,
     m.mc.length ? [h("p", { className: "help" }, "For the MC to read out:"), h("ul", {}, m.mc.map((x) => h("li", {}, x)))] : null,
     m.hosts.length ? h("div", { className: "row" },
       h("button", { className: "button primary", onclick: () => openPage(changeSlipsHtml(p, m.hosts, ev.title, at)) }, "Print change slips"),
       h("span", { className: "help" }, "One slip per alum, quicker than reprinting a whole card.")) : null);
+}
+
+const moveKey = (x: { round: number; hostId: string; now: string }) => `${x.round}|${x.hostId}|${x.now}`;
+
+/** Changes from the printed plan nobody has been told about yet. */
+function untold(m: ReturnType<typeof movesBetween>): string[] {
+  const told = new Set(ev.night.told ?? []);
+  return [...m.hosts.map(moveKey), ...m.fams.map((x) => `fam|${x.round}|${x.famId}`)].filter((k) => !told.has(k));
 }
 
 function reprintButton(label: string, file: string, make: () => string): HTMLElement {
@@ -1219,10 +1236,12 @@ interface NightUi {
   renumber: string | null; // fam id whose table number is being corrected
   lateJoin: string | null; // host id joining late
   problem: string; // the last room action's problem, in plain words
+  actual: string | null; // fam id whose table is being corrected to what actually happened
+  startAnyway: boolean; // start round 1 although setup is not finished
 }
 const night: NightUi = {
   on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null,
-  renumber: null, lateJoin: null, problem: "",
+  renumber: null, lateJoin: null, problem: "", actual: null, startAnyway: false,
 };
 let clockTimer = 0;
 
@@ -1266,6 +1285,96 @@ function hostLabelRow(id: string): string {
   return r ? (r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label) : id;
 }
 
+/** The few things a coordinator needs at a glance, at the top of night mode. */
+function nowBoard(p: EventPlan, current: boolean): HTMLElement {
+  const st = status(ev, nowMinutes());
+  const r = st.round;
+  const items: [string, string, string][] = []; // [kind, text, panel to open]
+  if (st.phase === "during" && st.minutesLeft !== null) items.push([st.minutesLeft < 0 ? "warn" : st.minutesLeft <= 3 ? "info" : "ok", `Round ${r}: ${leftText(st.minutesLeft)}`, ""]);
+  if (st.phase === "moving") {
+    const moving = transitions(p, r).filter((t) => t.toTable !== null);
+    const done = moving.filter((t) => (ev.night.moved ?? []).includes(t.key)).length;
+    items.push([done === moving.length ? "ok" : "warn", `Moving to round ${r}: ${done} of ${moving.length} alumni at their tables`, ""]);
+  }
+  if (st.lateBy >= 5 && st.phase !== "over") items.push(["warn", `Running ${st.lateBy} minutes late` + (st.projectedEnd !== null ? `, ending about ${shown(st.projectedEnd)}` : ""), ""]);
+  const open = current && st.phase !== "over" ? openTables(p, r) : [];
+  if (open.length) items.push(["warn", `No host in round ${r}: ${open.join(", ")}`, ""]);
+  const missing = notArrived(ev);
+  if (missing.length && ev.finished === 0) items.push(["warn", `${missing.length} alum${missing.length !== 1 ? "ni" : ""} not checked in`, "checkin"]);
+  const setupLeft = setupMissing(ev).length;
+  if (setupLeft && st.phase === "before") items.push(["warn", `${setupLeft} table${setupLeft !== 1 ? "s" : ""} not checked in room setup`, "room"]);
+  const base = ev.printed ?? night.before;
+  const notTold = current && base ? untold(movesBetween(base, p, ev.finished + 1)).length : 0;
+  if (notTold) items.push(["warn", `${notTold} change${notTold !== 1 ? "s" : ""} not passed on yet`, ""]);
+  if (!current) items.push(["error", "Changes are waiting: re-plan now", ""]);
+  if (!items.length) items.push(["ok", "All good.", ""]);
+  return h("section", { className: "now-board", "aria-label": "Right now" }, items.map(([kind, text, key]) =>
+    h("button", { className: `chip ${kind}`, onclick: () => {
+      if (!key) return;
+      nightOpen.set(key, true);
+      nightRefresh();
+      document.querySelector(`[data-panel="${key}"]`)?.scrollIntoView({ block: "start" });
+    } }, text)));
+}
+
+/** The round, its clock, and the one button that moves the night forward. */
+function roundSection(p: EventPlan): HTMLElement {
+  const st = status(ev, nowMinutes());
+  const r = st.round;
+  const t = ev.night.roundTimes ?? {};
+  const setupLeft = setupMissing(ev);
+  const start = () => { startRound(ev, r, nowMinutes()); logChange(ev, now(), `Round ${r} started.`); night.startAnyway = false; nightRefresh(); };
+  let action: HTMLElement;
+  if (st.phase === "before") {
+    action = setupLeft.length && !night.startAnyway
+      ? h("div", { className: "msg warn" }, `Room setup is not finished: ${setupLeft.length} table${setupLeft.length !== 1 ? "s" : ""} not checked (${setupLeft.slice(0, 4).join(", ")}${setupLeft.length > 4 ? "…" : ""}).`,
+        h("div", { className: "row" },
+          h("button", { className: "button", onclick: () => { nightOpen.set("room", true); nightRefresh(); document.querySelector('[data-panel="room"]')?.scrollIntoView({ block: "start" }); } }, "Check the tables"),
+          h("button", { className: "button primary", onclick: () => { night.startAnyway = true; nightRefresh(); } }, "Start anyway")))
+      : h("button", { className: "button primary big wide", onclick: start }, "Start round 1");
+  } else if (st.phase === "moving") {
+    action = h("button", { className: "button primary big wide", onclick: start }, `Start round ${r}`);
+  } else if (st.phase === "during") {
+    action = h("button", { className: "button primary big wide", onclick: () => {
+      endRound(ev, r, nowMinutes());
+      if (r < p.rounds) { finishRound(ev, now()); night.justFinished = ev.finished; }
+      else logChange(ev, now(), `Round ${r} finished. The event is over.`);
+      nightRefresh();
+    } }, r < p.rounds ? `Round ${r} is finished: hosts move now` : `Round ${r} is finished: the event is over`);
+  } else {
+    action = h("p", {}, "The event is over. Thank the hosts and the fams.");
+  }
+  const timesLine = Object.keys(t).length ? h("p", { className: "help" }, Object.entries(t).sort(([a], [b]) => Number(a) - Number(b)).map(([k, v]) =>
+    `Round ${k}: ${v.start ? shown(toMinutes(v.start)!) : "?"}${v.end ? ` to ${shown(toMinutes(v.end)!)}` : ""}`).join(" · ")) : null;
+  const moving = st.phase === "moving" ? transitions(p, r) : [];
+  const moved = new Set(ev.night.moved ?? []);
+  return h("section", { className: "panel round-now" },
+    h("p", { className: "big-round" }, st.phase === "moving" ? `Moving to round ${r} of ${p.rounds}` : st.phase === "over" ? "Finished" : `Round ${r} of ${p.rounds}`),
+    st.phase === "during" && st.minutesLeft !== null ? h("p", { className: `clock-left ${st.minutesLeft < 0 ? "over" : ""}` }, leftText(st.minutesLeft)) : null,
+    st.lateBy >= 5 && st.phase !== "over" ? h("p", { className: "warn-text" }, `Running ${st.lateBy} minutes late.` +
+      (st.projectedEnd !== null ? ` At this pace the event ends about ${shown(st.projectedEnd)}` + (st.plannedEnd !== null ? `, not ${shown(st.plannedEnd)}.` : ".") : "") +
+      (st.catchUp ? ` To finish on time, make the remaining rounds ${st.catchUp} minutes and tell the MC.` : "")) : null,
+    action,
+    night.justFinished === ev.finished && st.phase === "moving" && ev.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "help" }, `Round ${ev.finished} marked finished. `,
+      h("button", { className: "button link", onclick: () => {
+        ev.finished -= 1; night.justFinished = null;
+        const k = String(ev.finished + 1);
+        const rt = ev.night.roundTimes ?? {};
+        if (rt[k]) ev.night = { ...ev.night, roundTimes: { ...rt, [k]: { start: rt[k].start } } };
+        logChange(ev, now(), `Round ${ev.finished + 1} un-finished.`);
+        nightRefresh();
+      } }, "Undo")) : null,
+    moving.length ? h("div", { className: "transition" },
+      h("p", { className: "help" }, "Tick each alum when they reach their table. Two runners: one takes the top half of the list, the other the bottom half."),
+      h("ul", { className: "moves" }, moving.map((m) => h("li", { className: moved.has(m.key) ? "done" : "" },
+        h("button", { className: `button small ${moved.has(m.key) ? "primary" : ""}`, "aria-pressed": moved.has(m.key) ? "true" : "false",
+          onclick: () => { toggleMoved(ev, m.key); nightRefresh(); } }, moved.has(m.key) ? "There" : "Moving"),
+        h("span", { className: "who" }, m.who), h("span", { className: "help" }, `${m.from} to ${m.to}`))))) : null,
+    timesLine,
+    st.phase !== "before" ? h("button", { className: "button small", onclick: () => openPage(mcCueCardHtml(ev, p, nowMinutes())) }, "Print the MC cue card with updated times") : null);
+}
+
+
 function renderNightMode(): void {
   const app = document.getElementById("app")!;
   const p = ev.plan;
@@ -1286,10 +1395,24 @@ function renderNightMode(): void {
     const a = p.assignments.find((x) => x.round === showRound && x.groupId === f.groupId);
     const host = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
     const gone = (p.famAway[f.groupId] ?? []).includes(showRound);
+    const fixing = night.actual === f.groupId && showRound === cur;
     return h("li", { className: host ? "" : "empty" },
       h("span", { className: "tn" }, `Table ${tables[f.groupId]}`),
       h("span", { className: "fam" }, f.name),
-      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"));
+      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"),
+      showRound === cur && !gone && current ? h("button", { className: "button small", onclick: () => { night.actual = fixing ? null : f.groupId; nightRefresh(); } }, fixing ? "Close" : "Not right?") : null,
+      fixing ? (() => {
+        const pick = h("select", { "aria-label": `Who is actually at Table ${tables[f.groupId]}` },
+          p.hosts.filter((x) => !(p.hostAway[x.hostId] ?? []).includes(cur)).map((x) => h("option", { value: x.hostId, selected: x.hostId === host?.hostId }, x.person ? `${x.person} (${x.name})` : x.name))) as HTMLSelectElement;
+        return h("div", { className: "row actual" },
+          h("span", { className: "help" }, "Who is actually there? If moving them would be worse, keep it, and the rest of the night is re-planned around it."),
+          pick,
+          h("button", { className: "button primary", onclick: () => {
+            night.problem = recordActual(ev, f.groupId, pick.value, cur, now());
+            night.actual = null;
+            nightRefresh();
+          } }, "Keep it this way"));
+      })() : null);
   });
 
   // Where is...
@@ -1426,20 +1549,8 @@ function renderNightMode(): void {
       h("div", {}, h("strong", {}, ev.title), " ", h("span", { id: "night-clock", className: "help" }, now())),
       exit),
     practiceBanner(),
-    h("section", { className: "panel round-now" },
-      h("p", { className: "big-round" }, `Round ${cur} of ${p.rounds}`),
-      last ? h("p", { className: "help" }, "Last round. Nobody moves after this one.")
-        : h("button", { className: "button primary big wide", onclick: () => {
-          finishRound(ev, now());
-          night.justFinished = ev.finished;
-          nightRefresh();
-        } }, `Round ${cur} is finished: hosts move now`),
-      night.justFinished === ev.finished && ev.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "help" }, `Round ${ev.finished} marked finished. `,
-        h("button", { className: "button link", onclick: () => {
-          ev.finished -= 1; night.justFinished = null;
-          logChange(ev, now(), `Round ${ev.finished + 1} un-finished.`);
-          nightRefresh();
-        } }, "Undo")) : null),
+    nowBoard(p, current),
+    roundSection(p),
     !current || err ? h("section", { className: "panel stale-panel" },
       h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
       h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {

@@ -79,6 +79,14 @@ def page_y(p, name: str) -> float:
     return button(p, name).evaluate("b => b.getBoundingClientRect().top + window.scrollY")
 
 
+def start_round_1(p) -> None:
+    """Start the event in night mode, past the room setup warning."""
+    if button(p, "Start anyway").count():
+        button(p, "Start anyway").click()
+    button(p, "Start round 1").click()
+    p.wait_for_selector("text=minutes left")
+
+
 def set_number(p, label: str, value: int) -> None:
     box = p.get_by_label(label, exact=True)
     box.fill(str(value))
@@ -303,15 +311,16 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     assert "Changes are waiting" not in body
     p.get_by_label("Where is").fill("alum k")
     assert "Round 2: Table" in p.inner_text("#where-results")
+    start_round_1(p)
     button(p, "Round 1 is finished: hosts move now").click()
-    assert "Round 2 of 2" in text(p) and "Last round" in text(p)
+    assert "Moving to round 2 of 2" in text(p)
     p.get_by_text("Tonight's log").click()
     log = text(p)
     assert "did not show up, cancelled from round 1." in log and "Added Alum K (Real Estate) as a host from round 1." in log
     assert jargon(text(p)) == []
     # A reload during the event comes back to night mode.
     p.reload()
-    p.wait_for_selector("text=Round 2 of 2")
+    p.wait_for_selector("text=Moving to round 2 of 2")
     p.set_viewport_size({"width": 390, "height": 844})
     assert p.evaluate("document.documentElement.scrollWidth") <= 390
     button(p, "Back to planning").click()
@@ -441,6 +450,7 @@ def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
     button(p, "Yes, cancel").click()
     button(p, "Re-plan now").click()
     p.wait_for_selector("text=What to tell people")
+    start_round_1(p)
     button(p, "Round 1 is finished: hosts move now").click()
     if not p.eval_on_selector('[data-panel="checkin"]', "d => d.open"):
         p.locator('[data-panel="checkin"] > summary').click()
@@ -451,4 +461,45 @@ def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
     p.wait_for_selector("text=What to tell people")
     p.get_by_text("Tonight's log").click()
     assert "arrived late and hosts from round 2." in text(p)
+    assert jargon(text(p)) == []
+
+
+def test_rounds_on_a_clock_with_moves_ticked_and_changes_passed_on(page):
+    p = page
+    set_number(p, "Rounds", 3)
+    find(p)
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.wait_for_selector("text=Room setup is not finished")
+    assert "10 tables not checked in room setup" in p.inner_text(".now-board")
+    start_round_1(p)
+    assert "Round 1: 20 minutes left" in p.inner_text(".now-board")
+    # Two alumni ended up at the wrong tables: keep it, and re-plan the rest around it.
+    row = p.locator(".now-list li").first
+    row.get_by_role("button", name="Not right?").click()
+    pick = p.get_by_label("Who is actually at Table 1")
+    other = pick.evaluate("s => [...s.options].find(o => !o.selected).value")
+    pick.select_option(other)
+    button(p, "Keep it this way").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    assert "not told yet" in p.inner_text(".panel.tell")
+    first = p.locator(".panel.tell .told-list li").first
+    first.get_by_role("button", name="Not told").click()
+    assert p.locator(".panel.tell .told-list li").first.get_by_role("button", name="Told").count() == 1
+    button(p, "Round 1 is finished: hosts move now").click()
+    p.wait_for_selector("text=Moving to round 2 of 3")
+    moving = p.locator(".moves li")
+    n = moving.count()
+    assert n >= 9 and f"0 of {n} alumni at their tables" in p.inner_text(".now-board")
+    moving.first.get_by_role("button", name="Moving").click()
+    assert f"1 of {n} alumni at their tables" in p.inner_text(".now-board")
+    with p.expect_popup() as pop:
+        button(p, "Print the MC cue card with updated times").click()
+    assert "Round 2" in pop.value.inner_text("body") and "Round 3" in pop.value.inner_text("body")
+    pop.value.close()
+    button(p, "Start round 2").click()
+    p.wait_for_selector("text=Round 2 of 3")
+    assert "Round 1:" in text(p) and " to " in text(p)
     assert jargon(text(p)) == []

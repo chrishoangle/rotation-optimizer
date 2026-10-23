@@ -6,7 +6,9 @@
 import { sharedPairings } from "./explain";
 import { hostViewRows, scheduleRows } from "./export";
 import { EventPlan, provenOptimal } from "./planning";
+import type { EventState } from "./event";
 import { htmlEscape as e } from "./py";
+import { SWITCH, plannedStart, shown, status, toMinutes } from "./timing";
 
 const APP_URL = "https://chrishoangle.github.io/rotation-optimizer/app/";
 
@@ -205,4 +207,25 @@ export function setupSheetHtml(rows: SetupRow[], title: string): string {
 ${sorted.map((r) => `<tr><td class="box"></td><td><b>${r.table}</b></td><td>${e(r.fam)}</td><td>${e(r.location)}</td><td>${r.stepFree ? "Yes" : ""}</td><td>${r.students || ""}</td></tr>`).join("\n")}
 </table>
 `, ".box { width: 28px; } td.box::before { content: ''; display: inline-block; width: 14px; height: 14px; border: 1.5px solid #1c1c1e; }");
+}
+
+/** For the MC: when to call each remaining round, from where the night really is. */
+export function mcCueCardHtml(s: EventState, p: EventPlan, now: number): string {
+  const st = status(s, now);
+  const len = st.catchUp ?? s.roundMinutes;
+  const rows: string[] = [];
+  let t = st.phase === "during" ? toMinutes(s.night.roundTimes?.[String(st.round)]?.start ?? "") ?? now : Math.max(now, plannedStart(s, st.round) ?? now);
+  for (let r = st.round; r <= p.rounds; r++) {
+    const say = r === 1 ? "Hosts, go to the table on your host card for round 1." : `Thank your table. Hosts, move to the table on your host card for round ${r}.`;
+    const started = st.phase === "during" && r === st.round;
+    rows.push(`<tr><td class="t">${started ? "now" : e(shown(t))}</td><td><b>Round ${r}</b>${started ? " (under way)" : ""}</td><td>${started ? "" : e(say)}</td></tr>`);
+    rows.push(`<tr><td class="t">${e(shown(t + len))}</td><td>End of round ${r}</td><td>${r < p.rounds ? "Ask hosts to say goodbye; they move in a minute." : "Thank the hosts and the fams. Closing."}</td></tr>`);
+    t += len + SWITCH;
+  }
+  return page(`${s.title}: MC cue card`, `
+<h1>${e(s.title)}: MC cue card</h1>
+<p class="meta">Printed at ${e(shown(now))}. ${st.lateBy >= 5 ? `Running ${st.lateBy} minutes late. ` : ""}${st.catchUp ? `Rounds shortened to ${len} minutes to finish on time.` : `Rounds are ${len} minutes, with ${SWITCH} minutes to move.`}</p>
+<table class="cues">${rows.join("\n")}</table>
+<p class="meta">Students stay seated all night. Alumni move.</p>
+`, ".cues td { font-size: 16px; padding: 8px; } .cues .t { font-weight: 800; white-space: nowrap; width: 1.2in; }");
 }
