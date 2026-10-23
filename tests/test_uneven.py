@@ -105,3 +105,26 @@ def test_the_weak_round_setting_says_how_to_turn_it_off():
         assert "Untick it in the sidebar" in str(err)
     else:
         raise AssertionError("expected the setting to be impossible for the practice event at 3 rounds")
+
+
+
+def test_a_replan_spreads_empty_tables_over_fams_before_keeping_printed_slots():
+    # Film arrives for round 2; then Law and Art cancel from round 2. The
+    # printed plan would leave some fam waiting twice; the re-plan moves
+    # printed hosts so every fam waits at most once.
+    from rotation_optimizer.event import EventState, normalize_state, solve_event
+
+    topics = ("Law", "Art", "Data", "Music", "Film", "Policy")
+    s = EventState(
+        rounds=3,
+        hosts=[{"table_label": t, "tags": t.lower()} for t in topics],
+        fams=[{"fam_label": f"Fam {i + 1}", "interests": t.lower()} for i, t in enumerate(topics)],
+        rules=[{"rule": "only in rounds", "host_table": "Film", "fam": "", "rounds": "2, 3"}],
+    )
+    normalize_state(s)
+    s.printed = solve_event(s)
+    s.cancel_hosts = {"h01": 2, "h02": 2}
+    plan = solve_event(s, keep_printed=True)
+    waits = {f.group_id: sum(1 for r in (1, 2, 3) if not any(a.round_number == r and a.group_id == f.group_id for a in plan.assignments))
+             for f in plan.fams}
+    assert max(waits.values()) == 1, waits

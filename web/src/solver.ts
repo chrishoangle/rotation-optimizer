@@ -9,9 +9,10 @@
 //   no host and fam meet twice
 //   rules, cancellations, and finished rounds remove or fix variables
 //
-// The objective is the Python solver's: keep as many printed slots as
-// possible first, then spread the empty rounds evenly (when there are more
-// hosts than fams or the other way round), then the highest total score,
+// The objective is the Python solver's: first no fam without any host all
+// night, then spread fams' empty rounds evenly (when there are more fams
+// than hosts), then keep as many printed slots as possible, then spread
+// hosts' empty rounds evenly, then the highest total score,
 // then, among equal scores,
 // the most real pairings, so no available host sits out while a fam has no
 // host. The weights make each level strictly more important than the next,
@@ -158,31 +159,28 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
   const k = R * Math.max(G, m.hosts.length) + 1;
   const top = k * R * G * maxScore + R * G;
   const prefer = new Set(m.preferSlots.map(([r, h, f]) => index.get(slotKey(r, h, f))).filter((v): v is string => !!v));
-  let weight = top + 1;
-  const penalty: string[] = [];
+  const penalty: Record<"host" | "fam", string[]> = { host: [], fam: [] };
+  const worst = { host: 0, fam: 0 };
   const zero: string[] = [];
   const bounds: string[] = [];
   if (m.spreadHosts && m.spreadFams) {
-    const items: [number[], string[]][] = [];
-    m.hosts.forEach((h, hi) => { if (m.spreadHosts![h.hostId]) items.push([m.spreadHosts![h.hostId], vars.filter((x) => x.hi === hi).map((x) => `${x.r}\u0000${x.v}`)]); });
-    m.fams.forEach((f, fi) => { if (m.spreadFams![f.groupId]) items.push([m.spreadFams![f.groupId], vars.filter((x) => x.fi === fi).map((x) => `${x.r}\u0000${x.v}`)]); });
-    let worst = 0;
-    for (const [rs, tagged] of items) {
+    const items: ["host" | "fam", number[], string[]][] = [];
+    m.hosts.forEach((h, hi) => { if (m.spreadHosts![h.hostId]) items.push(["host", m.spreadHosts![h.hostId], vars.filter((x) => x.hi === hi).map((x) => `${x.r}\u0000${x.v}`)]); });
+    m.fams.forEach((f, fi) => { if (m.spreadFams![f.groupId]) items.push(["fam", m.spreadFams![f.groupId], vars.filter((x) => x.fi === fi).map((x) => `${x.r}\u0000${x.v}`)]); });
+    let n = 0;
+    for (const [kind, rs, tagged] of items) {
       const avail = [...new Set(rs)];
       if (avail.length < 2) continue;
       const set = new Set(avail.map(String));
       const terms = tagged.filter((t) => set.has(t.split("\u0000")[0])).map((t) => t.split("\u0000")[1]);
       for (let j = 1; j < avail.length; j++) {
-        const e = `e_${penalty.length}`;
-        penalty.push(e);
+        const e = `e_${n++}`;
+        penalty[kind].push(e);
         add([e, ...terms], ">=", avail.length - j);
         bounds.push(` 0 <= ${e} <= ${avail.length - j}`);
-        worst += avail.length - j;
+        worst[kind] += avail.length - j;
       }
     }
-    weight = weight * (worst + 1);
-    // Above everything else, even kept printed slots: no fam goes the whole
-    // event without a host when some schedule avoids it.
     m.fams.forEach((f, fi) => {
       const rs = m.spreadFams![f.groupId];
       if (!rs || !rs.length) return;
@@ -194,11 +192,18 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
       bounds.push(` 0 <= ${z} <= 1`);
     });
   }
-  const fairWeight = top + 1;
+  // Each level outweighs everything below it (see the header comment).
+  const hostWeight = top + 1;
+  const keptWeight = hostWeight * (worst.host + 1);
+  const famWeight = keptWeight * (prefer.size + 1);
+  const zeroWeight = famWeight * (worst.fam + 1);
   const coef = new Map<string, number>();
-  for (const x of vars) coef.set(x.v, k * x.s + 1 + (prefer.has(x.v) ? weight : 0));
-  const zeroWeight = weight * (prefer.size + 1);
-  const objTerms = [...vars.map((x) => `+ ${coef.get(x.v)} ${x.v}`), ...penalty.map((e) => `- ${fairWeight} ${e}`), ...zero.map((z) => `- ${zeroWeight} ${z}`)];
+  for (const x of vars) coef.set(x.v, k * x.s + 1 + (prefer.has(x.v) ? keptWeight : 0));
+  const objTerms = [
+    ...vars.map((x) => `+ ${coef.get(x.v)} ${x.v}`),
+    ...penalty.host.map((e) => `- ${hostWeight} ${e}`), ...penalty.fam.map((e) => `- ${famWeight} ${e}`),
+    ...zero.map((z) => `- ${zeroWeight} ${z}`),
+  ];
 
   const lp = [
     "Maximize",

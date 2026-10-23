@@ -125,15 +125,23 @@ which is zero while nobody sits out more than one round, and grows by more
 with each extra empty round, so it spreads empty rounds as evenly as the
 rules allow. In particular a host table gets at least one fam whenever the
 fams have enough places. Each $\max$ is an integer variable $e_{i,k} \ge 0$
-with $e_{i,k} \ge b_i - k$. $P$ ranks below kept slots and above score:
-kept slots, then even spread, then score, then the tie-break, each weighted
-so that it outweighs everything after it. $P$ is only added when there are
+with $e_{i,k} \ge b_i - k$. Split $P$ into $P_G$ (groups) and $P_H$
+(hosts), and let $Z$ count groups with no real host in any round they are
+there. The order is $Z$, then $P_G$, then kept slots, then $P_H$, then
+score, then the tie-break, each weighted so that it outweighs everything
+after it. A fair night for every group of students matters more than
+sparing a few alumni a walk, while a seated host is not bumped only so a
+late one gets a table. These terms are only added when there are
 placeholders; with $H = G$ and no cancellations every $b_i$ is 0.
+
+A host who needs a step-free table can visit each step-free group once, so
+with fewer step-free groups than rounds that host must sit some rounds
+out. The planner adds one placeholder per such host, so a full room stays
+feasible.
 
 When a gap cannot be avoided the plan says so: a host table with no fam in
 any round gets a fairness note suggesting two alums share a table, and a fam
-with two open tables is told they are already shared out as evenly as
-possible. [`tests/test_uneven.py`](../tests/test_uneven.py) checks both
+with two open tables is told some fams wait a round. [`tests/test_uneven.py`](../tests/test_uneven.py) checks both
 review cases, and the web app's parity tests check that the browser solver
 reaches the same $P$ and the same score on every shared case.
 

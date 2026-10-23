@@ -491,7 +491,7 @@ function problemsBox(): HTMLElement | null {
 function plain(text: string): string {
   return text.replace(/host tables?/g, (m) => (m.endsWith("s") ? "alumni" : "alum")).replace(/\bHost tables?\b/g, (m) => (m.endsWith("s") ? "Alumni" : "Alum"))
     .replace(/\btags?\b/g, "interests").replace(/\bhosts\b/g, "alumni").replace(/\bhost\b/g, "alum")
-    .replace(/Pairing rule \d+: /, "").replace(/pairing rule/g, "setting");
+    .replace(/Pairing rule \d+: /, "").replace(/pairing rule/g, "setting").replace(/\b([Aa]) alum/g, "$1n alum");
 }
 
 /** A planner warning in a coordinator's words, for Things to look at and Details. */
@@ -554,7 +554,9 @@ function schedulePage(): HTMLElement {
       h("button", { className: "button link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, "Undo my moves")) : null,
     h("details", { className: "g-details", open: details, ontoggle: (e: Event) => { details = (e.target as HTMLDetailsElement).open; } },
       h("summary", {}, "Details"),
-      h("p", {}, provenOptimal(p) ? "This is the best possible schedule for these people and settings: no other one gives more shared interests." : "The tool stopped before checking every possible schedule."),
+      h("p", {}, provenOptimal(p) ? (p.keptSlots !== null
+        ? "This is the best update: every fam's night stays as fair as it can be, and as little as possible of what you printed changes."
+        : "This is the best possible schedule for these people and settings: no other one gives more shared interests.") : "The tool stopped before checking every possible schedule."),
       p.warnings.length ? h("ul", {}, p.warnings.map((w) => h("li", {}, warningWords(w)))) : null),
     nav(2, current ? "Next: print" : null, () => go(4)));
 }
@@ -687,6 +689,17 @@ function thingsToLookAt(p: EventPlan): HTMLElement[] {
   for (const m of nearMisses(s.hosts, s.fams)) {
     out.push(h("div", { className: "g-item" }, `${m.spellings.join(" and ")} look like the same interest, but only exact words match.`,
       h("button", { className: "button small primary", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)));
+  }
+  const free = stepFreeFams(s);
+  for (const [hostId, rs] of Object.entries(p.hostBreaks)) {
+    const x = hostSettings(s, hostId);
+    if (!x.stepFree) continue;
+    const who = p.hosts.find((h) => h.hostId === hostId)!;
+    const sitOut = rs.filter((r) => r >= x.from && r <= x.until && !(p.hostAway[hostId] ?? []).includes(r));
+    if (!sitOut.length) continue;
+    out.push(h("div", { className: "g-item" },
+      `${who.person || who.name} sits out round${sitOut.length !== 1 ? "s" : ""} ${sitOut.join(" and ")}: they can't use stairs, and only ${free.length} table${free.length !== 1 ? "s are" : " is"} step-free, so they can visit ${free.length !== 1 ? "each" : "it"} once.`,
+      h("button", { className: "button small", onclick: () => go(2) }, "Mark more tables step-free")));
   }
   const fair = p.warnings.filter((x) => x.startsWith("Fairness check"));
   const shared = (w: string) => warningWords(w).match(/ There are more fams than .+$/)?.[0] ?? "";

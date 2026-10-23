@@ -51,8 +51,12 @@ and real group i, let b_i be the rounds it is there but has no real partner
 The penalty P = Σ_i Σ_{k=1}^{|A_i|-1} max(0, b_i - k) is zero while nobody
 sits out more than one round and grows faster with each extra round, so
 minimizing it spreads the empty rounds as evenly as the rules allow. In
-particular a host table hosts at least once whenever there is room. P sits
-between kept slots and score: kept slots > even spread > score > tie-break.
+particular a host table hosts at least once whenever there is room. Above
+everything, Z counts groups with no real host in any round they are there.
+The order is Z > even spread for groups > kept slots > even spread for
+hosts > score > tie-break: a fair night for every group of students matters
+more than sparing a few alumni a walk, and a seated host is not bumped just
+so a late one gets a table.
 
 Staying hosts (optional): a host h in S stays with one group all night. With
 a boolean y[h,g] per real group g:  Σ_g y[h,g] = 1, and in every round
@@ -303,42 +307,41 @@ def solve(
                     if scores[hosts[h].host_id, groups[g].group_id] == 0]
             if weak:
                 model.Add(sum(weak) <= weak_limit)
-    weight = top + 1
     zero = []
+    penalty = {"host": [], "group": []}
+    worst = {"host": 0, "group": 0}
     if spread_hosts and spread_groups:
         real_h = [host_index[h] for h in spread_hosts]
         real_g = [group_index[g] for g in spread_groups]
         items = [
-            (sorted(set(rs)), lambda r, h=host_index[h_id]: [x[h, g, r - 1] for g in real_g])
+            ("host", sorted(set(rs)), lambda r, h=host_index[h_id]: [x[h, g, r - 1] for g in real_g])
             for h_id, rs in spread_hosts.items()
         ] + [
-            (sorted(set(rs)), lambda r, g=group_index[g_id]: [x[h, g, r - 1] for h in real_h])
+            ("group", sorted(set(rs)), lambda r, g=group_index[g_id]: [x[h, g, r - 1] for h in real_h])
             for g_id, rs in spread_groups.items()
         ]
-        penalty = []
-        worst = 0
-        for avail, partners in items:
+        for kind, avail, partners in items:
             if len(avail) < 2:
                 continue
             empty = len(avail) - sum(v for r in avail for v in partners(r))
             for k in range(1, len(avail)):
                 e = model.NewIntVar(0, len(avail) - k, "")
                 model.Add(e >= empty - k)
-                penalty.append(e)
-                worst += len(avail) - k
-        score_expr = score_expr - weight * sum(penalty)
-        weight = weight * (worst + 1)
-        # Above everything else, even kept printed slots: no group goes the
-        # whole event without a host when some schedule avoids it.
+                penalty[kind].append(e)
+                worst[kind] += len(avail) - k
         for g_id, rs in spread_groups.items():
             avail = sorted(set(rs))
             if avail:
                 z = model.NewIntVar(0, 1, "")
                 model.Add(z >= 1 - sum(x[h, group_index[g_id], r - 1] for r in avail for h in real_h))
                 zero.append(z)
-    kept_expr = weight * sum(x[h, g, r] for h, g, r in prefer) if prefer else 0
-    zero_weight = weight * (len(prefer) + 1)
-    model.Maximize(kept_expr + score_expr - zero_weight * sum(zero))
+    host_weight = top + 1
+    kept_weight = host_weight * (worst["host"] + 1)
+    group_weight = kept_weight * (len(prefer) + 1)
+    zero_weight = group_weight * (worst["group"] + 1)
+    kept_expr = kept_weight * sum(x[h, g, r] for h, g, r in prefer) if prefer else 0
+    model.Maximize(kept_expr + score_expr - host_weight * sum(penalty["host"])
+                   - group_weight * sum(penalty["group"]) - zero_weight * sum(zero))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_s
