@@ -1261,6 +1261,7 @@ function showPlanner(): void {
 function setUi(mode: "guided" | "full"): void {
   uiMode = mode;
   try { localStorage.setItem(UI_KEY, mode); } catch { /* remembered for this visit only */ }
+  if (mode === "guided" && location.hash === "#full") history.replaceState(null, "", location.pathname + location.search);
   showPlanner();
   window.scrollTo(0, 0);
 }
@@ -1282,13 +1283,17 @@ const guidedCtx: GuidedCtx = {
   },
   openNight: () => setNightMode(true),
   openFull: () => setUi("full"),
-  practice: startPractice,
+  practice: () => {
+    practiceOriginal = ev;
+    ev = loadEvent(saveEvent(ev));
+    renderGuided(guidedCtx);
+  },
+  endPractice,
   tryExample: () => {
     if (!practiceOriginal) practiceOriginal = ev;
     ev = practiceEvent();
   },
   inPractice: () => practiceOriginal !== null,
-  practiceBanner: () => practiceBanner(),
   saveFile,
   handOff,
   markPrinted: () => markPrinted(false),
@@ -1885,6 +1890,8 @@ function boot(): void {
   let mode = "";
   try { mode = localStorage.getItem(MODE_KEY) ?? ""; } catch { /* the planning screen is the default */ }
   try { uiMode = localStorage.getItem(UI_KEY) === "full" ? "full" : "guided"; } catch { /* guided */ }
+  // The full planner, with every option, is at the address ending in #full.
+  if (location.hash === "#full") uiMode = "full";
   if (!restored && uiMode === "guided") ev = newEvent({ title: "", rounds: 2 }); // the guided start page offers the example instead
   if (mode === "night" && ev.plan) setNightMode(true);
   else showPlanner();

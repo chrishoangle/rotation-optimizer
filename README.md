@@ -65,13 +65,18 @@ python -m pytest tests/ -v
 ## Plan your own event
 
 Open the planner at https://chrishoangle.github.io/rotation-optimizer/app/.
-It is a guided planner, one step at a time in event words: Event, Alumni,
-Fams, Schedule, Print, The night, Next year. Alumni and fams are pasted from
-a spreadsheet or typed; settings such as "arrives for round 2" or "can't use
-stairs" sit on each alum's row; the schedule is one grid where tapping two
-names swaps them and the rest of the night is fixed up around it; and
-saving is automatic. Try it with an example runs in a sandbox. Every option
-below is also in the full planner, under More. No install and no
+It has four steps in event words: Your lists, Schedule, Print, and Run the
+event. Alumni and fams are pasted straight from a spreadsheet (or typed, or
+uploaded) and shown as plain lists; the few alumni who arrive late or can't
+use stairs get a note from one line under the list. The schedule is a list
+per table where tapping two alumni in a round swaps them, and the rest of
+the night is fixed up around it. Print everything makes one file with the
+seating chart, host cards, table tents, and run sheet. Run the event shows
+the round, who is where, and one Someone changed? button that re-plans and
+lists exactly who to tell. See an example runs in a sandbox, and saving is
+automatic. Every option below is in the full planner, at the address ending
+in `#full`, and its night tools (check-in, room setup, QR code) are under
+More. No install and no
 code are needed, and nothing leaves the browser: the solver runs in the page
 (HiGHS compiled to WebAssembly), and the event is saved on that computer as
 you work. The same app also runs in Python with Streamlit at
@@ -103,8 +108,8 @@ be written.
    step-free. Mark as printed also downloads a backup of the event file. The
    sidebar prints a two-page coordinator guide, volunteer role cards, and a
    privacy note.
-5. Rehearse with Practice the night, which runs night mode on a copy.
-6. On the night, open night mode: one screen that works on a phone.
+5. Rehearse with Practice a cancellation first, which runs the night on a copy.
+6. On the night, Run the event works on a phone. The full night tools add:
    - Room setup: put the tents out, walk the room with the setup sheet, and
      tick each table. If a fam is already sitting at another table, record
      the number they are at instead of moving the students.
