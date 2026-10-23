@@ -113,3 +113,85 @@ export function notArrived(s: EventState): { id: string; label: string }[] {
     .filter((r) => r.host_id && r.table_label && !(r.host_id in s.cancelHosts) && !s.arrived.includes(r.host_id))
     .map((r) => ({ id: r.host_id, label: r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label }));
 }
+
+// ----------------------------------------------------------------------
+// The room.
+// ----------------------------------------------------------------------
+
+/** Table numbers as the plan has them, or as the rows say when there is no plan. */
+export function currentTables(s: EventState): Record<string, number> {
+  if (s.plan) return tableNumbers(s.plan);
+  const out: Record<string, number> = {};
+  s.fams.forEach((r, i) => { if (r.fam_id) out[r.fam_id] = Number(r.table_number) || i + 1; });
+  return out;
+}
+
+export function toggleSetup(s: EventState, famId: string): void {
+  const done = new Set(s.night.setup ?? []);
+  if (done.has(famId)) done.delete(famId); else done.add(famId);
+  s.night = { ...s.night, setup: s.fams.map((r) => r.fam_id).filter((id) => done.has(id)) };
+}
+
+/** Tables not yet checked during setup, as "Table 3 (Fam Red)". */
+export function setupMissing(s: EventState): string[] {
+  const done = new Set(s.night.setup ?? []);
+  const tables = roomTables(s);
+  return s.fams.filter((r) => r.fam_id && r.fam_label && !done.has(r.fam_id)).map((r) => `Table ${tables[r.fam_id]} (${r.fam_label})`);
+}
+
+/**
+ * The fam is sitting at a different table than planned, the original
+ * failure: tents swapped, or students seated before the tents went out.
+ * Rather than move the students, change the number. When another fam has
+ * that number, the two swap. Re-plan afterwards: the printed pairings stay,
+ * and the alumni who have to walk somewhere else are listed.
+ */
+export function moveFamTable(s: EventState, famId: string, table: number, at: string): string {
+  if (!Number.isInteger(table) || table < 1) return "Type the number on the table where the fam is sitting, for example 7.";
+  const tables = currentTables(s);
+  const row = s.fams.find((r) => r.fam_id === famId);
+  if (!row) return "That fam is not in the event.";
+  const old = tables[famId];
+  if (old === table) return `${row.fam_label} is already at Table ${table}.`;
+  for (const r of s.fams) if (r.fam_id && !String(r.table_number ?? "").trim()) r.table_number = String(tables[r.fam_id]);
+  const other = s.fams.find((r) => r.fam_id !== famId && Number(r.table_number) === table);
+  row.table_number = String(table);
+  if (other) other.table_number = String(old);
+  s.night = { ...s.night, setup: (s.night.setup ?? []).filter((id) => id !== famId && id !== other?.fam_id) };
+  logChange(s, at, `${row.fam_label} is at Table ${table}, not ${old}` + (other ? `; ${other.fam_label} moves to Table ${old}.` : "."));
+  return "";
+}
+
+/**
+ * An alum who is in the event but arrived after it started: they host from
+ * round `from` on. Undoes a "didn't show" cancellation and limits them with
+ * an "only in rounds" rule, keeping any limit they already had.
+ */
+export function joinLate(s: EventState, hostId: string, from: number, at: string): string {
+  const row = s.hosts.find((r) => r.host_id === hostId);
+  const rounds = s.plan?.rounds ?? s.rounds;
+  if (!row) return "That alum is not in the event.";
+  if (from < s.finished + 1 || from > rounds) return `Choose a round from ${s.finished + 1} to ${rounds}.`;
+  delete s.cancelHosts[hostId];
+  if (from > 1) {
+    const label = (row.table_label ?? "").trim().toLowerCase();
+    const rule = s.rules.find((r) => r.rule === "only in rounds" && (r.host_table ?? "").trim().toLowerCase() === label);
+    const before = rule ? (rule.rounds ?? "").split(/[^0-9]+/).map(Number).filter((n) => n >= 1 && n <= rounds) : Array.from({ length: rounds }, (_, k) => k + 1);
+    const keep = before.filter((r) => r >= from);
+    if (!keep.length) return `${row.table_label} only comes for rounds before ${from}. Change their rule under Pairing rules instead.`;
+    if (rule) rule.rounds = keep.join(", ");
+    else s.rules.push({ rule: "only in rounds", host_table: row.table_label, fam: "", rounds: keep.join(", ") });
+  }
+  if (!s.arrived.includes(hostId)) s.arrived.push(hostId);
+  const who = row.host_name ? `${row.host_name} (${row.table_label})` : row.table_label;
+  logChange(s, at, `${who} arrived late and hosts from round ${from}.`);
+  return "";
+}
+
+/** Table numbers as the rows say now, even before a re-plan picks up a change. */
+export function roomTables(s: EventState): Record<string, number> {
+  const planned = currentTables(s);
+  const out: Record<string, number> = {};
+  s.fams.forEach((r, i) => { if (r.fam_id) out[r.fam_id] = Number(r.table_number) || planned[r.fam_id] || i + 1; });
+  return out;
+}

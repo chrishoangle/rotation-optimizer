@@ -175,3 +175,10 @@ ol.steps { margin: .3rem 0 .5rem 1.1rem; padding: 0; }
 ol.steps li { padding: .1rem 0; }
 .stack { display: flex; flex-direction: column; }
 .msg.practice { border: 2px dashed var(--warn); }
+.setup { list-style: none; margin: .4rem 0; padding: 0; }
+.setup li { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .3rem 0; border-bottom: 1px solid var(--line); }
+.setup li .button:first-child { min-width: 6.5rem; }
+.setup .tn { font-weight: 700; min-width: 4.5rem; }
+.setup .row, .checkin .row { flex-basis: 100%; }
+.checkin li.noshow { color: var(--muted); }
+.tag-out { font-weight: 700; color: var(--warn); min-width: 8.5rem; }

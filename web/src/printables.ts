@@ -186,3 +186,23 @@ export function privacyNoteHtml(): string {
 <p>The page loads its own files from GitHub Pages. It makes no other network requests. The offline copy makes none at all.</p>
 `);
 }
+
+export interface SetupRow { table: number; fam: string; location: string; stepFree: boolean; students: number }
+
+/** A walk-the-room sheet: tick each table once its tent is on it, before doors open. */
+export function setupSheetHtml(rows: SetupRow[], title: string): string {
+  const sorted = [...rows].sort((a, b) => a.table - b.table);
+  return page(`${title}: room setup`, `
+<h1>${e(title)}: room setup</h1>
+<p class="meta">Do this before doors open, so students sit at the right table. If students are already seated, do not move them: find which table each fam is at, then use night mode, A fam is at a different table.</p>
+<ol>
+<li>Put each table tent on its table. The tent shows the table number and the fam name.</li>
+<li>Walk the room with this sheet. Tick a table when the right tent is on it and the table is where it says.</li>
+<li>Check that the step-free tables can be reached without steps.</li>
+<li>In night mode, tap Checked for each table, so the tool knows the room is ready.</li>
+</ol>
+<table><tr><th>Done</th><th>Table</th><th>Fam</th><th>Where</th><th>Step-free</th><th>Students</th></tr>
+${sorted.map((r) => `<tr><td class="box"></td><td><b>${r.table}</b></td><td>${e(r.fam)}</td><td>${e(r.location)}</td><td>${r.stepFree ? "Yes" : ""}</td><td>${r.students || ""}</td></tr>`).join("\n")}
+</table>
+`, ".box { width: 28px; } td.box::before { content: ''; display: inline-block; width: 14px; height: 14px; border: 1.5px solid #1c1c1e; }");
+}

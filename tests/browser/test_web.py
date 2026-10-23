@@ -142,8 +142,8 @@ def test_typing_six_hosts_and_eight_fams_with_tab(page):
     for table, rows in (("hosts", hosts), ("fams", fams)):
         got = p.eval_on_selector_all(f'table[data-table="{table}"] tbody tr',
                                      "trs => trs.map(tr => [...tr.querySelectorAll('input')].map(i => i.value))")
-        assert [tuple(r) for r in got[: len(rows)]] == rows
-        assert got[len(rows)] == [""] * len(rows[0])  # one empty row is left for the next entry
+        assert [tuple(r[: len(rows[0])]) for r in got[: len(rows)]] == rows
+        assert set(got[len(rows)]) == {""}  # one empty row is left for the next entry
     find(p)
     assert "Planned for 2 rounds, 8 fams and 6 host tables." in text(p)
 
@@ -416,3 +416,39 @@ def test_remove_student_names_and_team_pages(page):
     p.wait_for_selector("text=Student names removed.")
     saved = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
     assert "Student 01" not in json.dumps(json.loads(saved)["fams"])
+
+
+def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
+    p = page
+    find(p)
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.wait_for_selector("text=Room setup: 0 of 10 tables checked")
+    p.locator(".setup li").first.get_by_role("button", name="Check").click()
+    assert "Room setup: 1 of 10 tables checked" in text(p)
+    # The original incident: a fam sat down at another table before the tents went out.
+    p.locator(".setup li", has_text="Bio & Chem").get_by_role("button", name="Different table").click()
+    p.get_by_label("Table the fam is at").fill("2")
+    button(p, "They are at this table").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    tell = p.inner_text(".panel.tell")
+    assert re.search(r"Bio & Chem is at Table 2, not Table 10 as your card says\.", tell)
+    assert re.search(r"Cog Sci & Pre-Health is at Table 10, not Table 2 as your card says\.", tell)
+    # An expected alum misses round 1, then turns up.
+    button(p, "Didn't show").first.click()
+    button(p, "Yes, cancel").click()
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    button(p, "Round 1 is finished: hosts move now").click()
+    if not p.eval_on_selector('[data-panel="checkin"]', "d => d.open"):
+        p.locator('[data-panel="checkin"] > summary').click()
+    p.locator(".checkin li.noshow").first.get_by_role("button", name="Arrived late").click()
+    button(p, "Add them back").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    p.get_by_text("Tonight's log").click()
+    assert "arrived late and hosts from round 2." in text(p)
+    assert jargon(text(p)) == []

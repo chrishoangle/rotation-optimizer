@@ -7,7 +7,7 @@ import practiceFams from "../../templates/practice_fams.csv";
 import practiceHosts from "../../templates/practice_hosts.csv";
 import { download, h, openPage, readFile, replace, rich } from "./dom";
 import {
-  EventState, FAM_COLUMNS, famLocations, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
+  EventState, FAM_COLUMNS, famLocations, stepFreeFams, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
   handoffEvent, hasStarted, isCurrent, loadEvent, maxRounds, nearMisses, newEvent, normalizeState, normalizeTable,
   removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
 } from "./event";
@@ -21,9 +21,11 @@ import {
 import { explainPairing, sharedPairings } from "./explain";
 import { FIELDS, formsScript } from "./forms";
 import { changeSlipsHtml, movesBetween } from "./moves";
-import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
+import {
+  addLateHost, cancelFam, cancelHost, currentRound, finishRound, joinLate, logChange, moveFamTable, notArrived, roomTables, toggleSetup, whereIs,
+} from "./night";
 import { parsePasted } from "./paste";
-import { backupPacketHtml, coordinatorGuideHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml } from "./printables";
+import { backupPacketHtml, coordinatorGuideHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, setupSheetHtml } from "./printables";
 import { csvRecords, sha256Hex } from "./py";
 import {
   CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
@@ -1214,8 +1216,14 @@ interface NightUi {
   confirm: { kind: "host" | "fam"; id: string; label: string; first: number; noShow: boolean } | null;
   justFinished: number | null;
   before: EventPlan | null; // the plan before the last re-plan, when nothing is marked printed
+  renumber: string | null; // fam id whose table number is being corrected
+  lateJoin: string | null; // host id joining late
+  problem: string; // the last room action's problem, in plain words
 }
-const night: NightUi = { on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null };
+const night: NightUi = {
+  on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null,
+  renumber: null, lateJoin: null, problem: "",
+};
 let clockTimer = 0;
 
 function setNightMode(on: boolean): void {
@@ -1234,6 +1242,16 @@ function setNightMode(on: boolean): void {
     renderTables();
     refresh({ scrollTo: "night" });
   }
+}
+
+// Night mode re-renders after every tap, so remember which panels are open.
+const nightOpen = new Map<string, boolean>();
+function panel(key: string, openByDefault: boolean, summary: string, ...body: Parameters<typeof h>[2][]): HTMLElement {
+  // Only a tap on the summary counts: the browser also fires "toggle" for panels drawn open.
+  const head = h("summary", {}, summary);
+  const el = h("details", { className: "panel", open: nightOpen.get(key) ?? openByDefault, "data-panel": key }, head, ...body) as HTMLDetailsElement;
+  head.addEventListener("click", () => nightOpen.set(key, !el.open));
+  return el;
 }
 
 function nightRefresh(): void {
@@ -1285,10 +1303,21 @@ function renderNightMode(): void {
 
   // Check-in.
   const expected = ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts));
+  const noShows = ev.hosts.filter((r) => r.host_id && r.table_label && r.host_id in ev.cancelHosts && !ev.arrived.includes(r.host_id));
   const here = expected.filter((r) => ev.arrived.includes(r.host_id)).length;
+  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
+  const lateRow = (id: string) => {
+    const from = h("select", { "aria-label": "Hosts from round" }, openRounds.map((r) => h("option", { value: r, selected: r === Math.min(p.rounds, ev.finished > 0 ? cur + 1 : cur) }, `hosts from round ${r}`))) as HTMLSelectElement;
+    return h("div", { className: "row" }, from,
+      h("button", { className: "button primary", onclick: () => {
+        night.problem = joinLate(ev, id, Number(from.value), now());
+        night.lateJoin = null;
+        nightRefresh();
+      } }, "Add them back"),
+      h("button", { className: "button", onclick: () => { night.lateJoin = null; nightRefresh(); } }, "Cancel"));
+  };
   const missing = notArrived(ev);
-  const checkIn = h("details", { className: "panel", open: ev.finished === 0 },
-    h("summary", {}, `Check-in: ${here} of ${expected.length} alumni here`),
+  const checkIn = panel("checkin", ev.finished === 0 || night.lateJoin !== null, `Check-in: ${here} of ${expected.length} alumni here`,
     h("ul", { className: "checkin" }, expected.map((r) => {
       const isHere = ev.arrived.includes(r.host_id);
       return h("li", {},
@@ -1300,13 +1329,19 @@ function renderNightMode(): void {
         !isHere ? h("button", { className: "button small", onclick: () => {
           night.confirm = { kind: "host", id: r.host_id, label: hostLabelRow(r.host_id), first: cur, noShow: true };
           nightRefresh();
-        } }, "Didn't show") : null);
-    })),
+        } }, "Didn't show") : null,
+        !isHere && ev.finished > 0 ? h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "Arrived late") : null,
+        night.lateJoin === r.host_id ? lateRow(r.host_id) : null);
+    }),
+    noShows.map((r) => h("li", { className: "noshow" },
+      h("span", { className: "tag-out" }, "Didn't show"),
+      h("span", {}, hostLabelRow(r.host_id)),
+      h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "Arrived late"),
+      night.lateJoin === r.host_id ? lateRow(r.host_id) : null))),
     missing.length && ev.finished === 0 ? h("p", { className: "help" }, `${missing.length} not here yet. If someone doesn't come, tap Didn't show next to their name, then Re-plan now.`) : null,
     h("p", { className: "help" }, "A student who walks in just joins a fam: nothing to change here."));
 
   // Someone has to leave.
-  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
   const leave = (kind: "host" | "fam") => {
     const options = kind === "host"
       ? ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts)).map((r) => [r.host_id, hostLabelRow(r.host_id)])
@@ -1333,6 +1368,39 @@ function renderNightMode(): void {
         nightRefresh();
       } }, "Yes, cancel"),
       h("button", { className: "button big", onclick: () => { night.confirm = null; nightRefresh(); } }, "No"))) : null;
+
+  // The room: tents on the right tables, and fams sitting somewhere else.
+  const setupDone = new Set(ev.night.setup ?? []);
+  const located = famLocations(ev);
+  const stepFree = new Set(stepFreeFams(ev));
+  const renumberRow = (famId: string) => {
+    const box = h("input", { type: "number", min: 1, step: 1, "aria-label": "Table the fam is at", placeholder: "Table number" }) as HTMLInputElement;
+    return h("div", { className: "row" }, box,
+      h("button", { className: "button primary", onclick: () => {
+        night.problem = moveFamTable(ev, famId, Number(box.value), now());
+        if (!night.problem) night.renumber = null;
+        nightRefresh();
+      } }, "They are at this table"),
+      h("button", { className: "button", onclick: () => { night.renumber = null; night.problem = ""; nightRefresh(); } }, "Cancel"));
+  };
+  const room = roomTables(ev);
+  const famsByTable = [...p.fams].filter((f) => f.groupId in room).sort((a, b) => room[a.groupId] - room[b.groupId]);
+  const setupLeft = famsByTable.filter((f) => !setupDone.has(f.groupId)).length;
+  const roomPanel = panel("room", (ev.finished === 0 && setupLeft > 0) || night.renumber !== null,
+    setupLeft ? `Room setup: ${famsByTable.length - setupLeft} of ${famsByTable.length} tables checked` : "Room setup: every table checked",
+    h("p", { className: "help" }, "Before doors open, put each tent on its table, walk the room, and tap Checked. If a fam is already sitting at a different table, don't move the students: tap Different table and type the number they are at."),
+    h("ul", { className: "setup" }, famsByTable.map((f) => {
+      const ok = setupDone.has(f.groupId);
+      return h("li", {},
+        h("button", { className: `button ${ok ? "primary" : ""}`, "aria-pressed": ok ? "true" : "false", onclick: () => { toggleSetup(ev, f.groupId); night.problem = ""; nightRefresh(); } }, ok ? "Checked" : "Check"),
+        h("span", { className: "tn" }, `Table ${room[f.groupId]}`),
+        h("span", {}, f.name, located[f.groupId] ? h("span", { className: "help" }, ` · ${located[f.groupId]}`) : null, stepFree.has(f.groupId) ? h("span", { className: "help" }, " · step-free") : null),
+        h("button", { className: "button small", onclick: () => { night.renumber = f.groupId; night.problem = ""; nightRefresh(); } }, "Different table"),
+        night.renumber === f.groupId ? renumberRow(f.groupId) : null);
+    })),
+    h("button", { className: "button", onclick: () => openPage(setupSheetHtml(famsByTable.map((f) => ({
+      table: room[f.groupId], fam: f.name, location: located[f.groupId] ?? "", stepFree: stepFree.has(f.groupId), students: f.size || f.members.length,
+    })), ev.title)) }, "Print the setup sheet"));
 
   // A late alum.
   const lateBox = night.late ? (() => {
@@ -1389,6 +1457,8 @@ function renderNightMode(): void {
       return tell ? [tell, ev.printed ? h("section", { className: "panel" }, reprintPanel(p, ev.printed)) : null] : null;
     })() : null,
     confirm,
+    night.problem ? h("div", { className: "msg error", role: "alert" }, night.problem) : null,
+    ev.finished === 0 ? roomPanel : null,
     h("section", { className: "panel" },
       h("div", { className: "row spread" },
         h("h2", {}, showRound === cur ? `Round ${cur}: who is where` : `Next, round ${showRound}`),
@@ -1398,12 +1468,13 @@ function renderNightMode(): void {
       h("ul", { className: "now-list" }, rows)),
     h("section", { className: "panel" }, h("h2", {}, "Where is…"), search, results),
     checkIn,
+    ev.finished > 0 ? roomPanel : null,
     h("section", { className: "panel" },
       h("h2", {}, "Someone has to leave"),
       openRounds.length ? [leave("host"), leave("fam")] : h("p", { className: "help" }, "Every round is finished."),
       h("p", { className: "help" }, "Then tap Re-plan now at the top. Finished rounds never change.")),
     h("section", { className: "panel" }, lateBox),
-    h("details", { className: "panel" }, h("summary", {}, `Tonight's log (${ev.nightLog.length})`),
+    panel("log", false, `Tonight's log (${ev.nightLog.length})`,
       ev.nightLog.length ? h("ul", {}, [...ev.nightLog].reverse().map((e) => h("li", {}, `${e.at}  ${e.text}`))) : h("p", { className: "help" }, "Nothing yet.")),
     h("p", { className: "help" }, "Everything you do here is saved in this browser as you go. Keep the event file too: Back to planning, then Save event file."),
   ));
