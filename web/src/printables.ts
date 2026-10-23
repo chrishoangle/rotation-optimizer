@@ -300,7 +300,7 @@ export function printEverythingHtml(title: string, parts: [string, string][]): s
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(title)}: everything to print</title>
 <style>
-@page { size: letter; margin: 0.5in; }
+@page { size: letter; margin: 0.4in; }
 body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1c1c1e; }
 .part { break-before: page; } .part:first-of-type { break-before: auto; }
 .bar { position: sticky; top: 0; background: #0f6b5f; color: #fff; padding: 12px 24px; display: flex; gap: 16px; align-items: center; justify-content: space-between; z-index: 2; }

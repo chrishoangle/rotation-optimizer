@@ -427,3 +427,13 @@ details.g-rare { margin: .6rem 0; background: var(--bg); }
   .g-visits { grid-template-columns: repeat(auto-fit, minmax(6.2rem, 1fr)); }
   .g-pick { top: 6.4rem; }
 }
+
+.g-pill .short { display: none; }
+.g-pick { position: static; }
+.g-visit[disabled][title] { opacity: .45; }
+.msg.info ul { margin: .3rem 0 0 1.1rem; }
+@media (max-width: 700px) {
+  .g-pill .long { display: none; }
+  .g-pill .short { display: inline; }
+  .guided .g-top { flex-wrap: wrap; }
+}

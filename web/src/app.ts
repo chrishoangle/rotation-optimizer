@@ -1757,7 +1757,7 @@ function renderNightMode(): void {
       current ? null : h("p", { className: "help warn-text" }, "This is the old schedule. Tap Update the schedule at the top to see the changes."),
       h("ul", { className: "now-list" }, rows)),
     h("section", { className: "panel changed" },
-      h("h2", {}, "Something changed?"),
+      h("h2", {}, "Someone changed?"),
       h("div", { className: "change-buttons" }, CHANGES.map(([key, label]) =>
         h("button", { className: `button ${night.action === key ? "primary" : ""}`, "aria-expanded": night.action === key ? "true" : "false",
           onclick: () => { night.action = night.action === key ? null : key; night.late = key === "new"; night.problem = ""; nightRefresh(); } }, label))),
@@ -1799,7 +1799,7 @@ const START_HERE = [
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
-  "**6. On the night.** Click **Open night mode** (under the schedule). It works on a phone: check the room setup, check people in, start and finish each round, and see who is where. When someone cancels, doesn't show, arrives late, or sits at the wrong table, tap it under **Something changed?**, then **Update the schedule**. It tells you who to send where and which pages to reprint, and a QR code shows volunteers the schedule on their phones.",
+  "**6. On the night.** Click **Open night mode** (under the schedule). It works on a phone: check the room setup, check people in, start and finish each round, and see who is where. When someone cancels, doesn't show, arrives late, or sits at the wrong table, tap it under **Someone changed?**, then **Update the schedule**. It tells you who to send where and which pages to reprint, and a QR code shows volunteers the schedule on their phones.",
   "**7. Next year.** Click **Hand off to next year** for a copy without student names, cancellations, or schedules. The README lists what happened on the night.",
 ];
 

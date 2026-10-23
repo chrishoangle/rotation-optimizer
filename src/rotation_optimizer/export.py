@@ -376,9 +376,11 @@ def run_sheet_html(
         return e(clock) if clock else '<span class="blank"></span>'
 
     timeline = "".join(f'<tr><td class="time">{when(m)}</td><td class="what">{e(what)}</td><td>{e(say)}</td></tr>' for m, what, say in steps)
-    named = any(h.person for h in plan.hosts)
+    # A topic column only when some alum has a topic that is not just their name.
+    named = any(h.person and h.person != h.name for h in plan.hosts)
     host_rows = "".join(
-        '<tr><td class="box"></td>' + (f"<td>{e(h.person)}</td>" if named else "") + f"<td>{e(h.name)}</td>"
+        '<tr><td class="box"></td>'
+        + (f"<td>{e(h.person or h.name)}</td><td>{e(h.name) if h.person and h.person != h.name else ''}</td>" if named else f"<td>{e(h.person or h.name)}</td>")
         + f'<td>{_first_table(plan, h.host_id, tables, by_host)}</td></tr>'
         for h in plan.hosts
     )
@@ -406,8 +408,8 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 <h2>MC timeline</h2>
 <table>{timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app's night mode, use Something changed?, then Update the schedule.
-Reprint only the pages the app lists under Reprint. Rounds already finished never change.</p>
+<p class="help">In the app, open Run the event, tap Someone changed?, then Re-plan.
+Tell the people it lists, and hand out change slips if you print them. Rounds already finished never change.</p>
 </section>
 <section>
 <h2>Check-in: alumni</h2>

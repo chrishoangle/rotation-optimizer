@@ -167,7 +167,7 @@ def test_the_example_is_a_sandbox(page):
     assert "Continue" not in words(p)
 
 
-def test_a_swap_that_breaks_a_setting_changes_nothing(page):
+def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p = page
     p.get_by_text("See an example").click()
     p.wait_for_selector(".g-tables")
@@ -182,9 +182,10 @@ def test_a_swap_that_breaks_a_setting_changes_nothing(page):
     bio = p.locator(".g-table", has_text="Bio & Chem").locator('.g-visit[data-round="1"]')
     before = p.inner_text(".g-tables")
     alum_a.click()
-    bio.click()
-    p.wait_for_selector("text=Nothing was changed")
-    assert "is set to never meet Bio & Chem" in words(p)
+    # The swap is refused before it is tried: the seat is greyed out and says why.
+    assert bio.is_disabled()
+    assert bio.get_attribute("title") == "Alum A is set to never meet Bio & Chem."
+    button(p, "Cancel").click()
     assert p.inner_text(".g-tables") == before
 
 

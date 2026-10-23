@@ -82,7 +82,7 @@ export function addLateHost(s: EventState, late: LateHost, at: string): string {
   }
   const id = s.hosts[s.hosts.length - 1].host_id;
   if (!s.arrived.includes(id)) s.arrived.push(id);
-  logChange(s, at, `Added ${late.person.trim() ? `${late.person.trim()} (${name})` : name} as a host from round ${late.from}.`);
+  logChange(s, at, `Added ${late.person.trim() && late.person.trim() !== name ? `${late.person.trim()} (${name})` : name} as a host from round ${late.from}.`);
   return "";
 }
 
@@ -91,7 +91,7 @@ export function cancelHost(s: EventState, hostId: string, from: number, at: stri
   s.cancelHosts[hostId] = from;
   s.arrived = s.arrived.filter((x) => x !== hostId);
   const row = s.hosts.find((r) => r.host_id === hostId);
-  const who = row ? (row.host_name ? `${row.host_name} (${row.table_label})` : row.table_label) : hostId;
+  const who = row ? (row.host_name && row.host_name !== row.table_label ? `${row.host_name} (${row.table_label})` : row.table_label) : hostId;
   logChange(s, at, noShow ? `${who} did not show up, cancelled from round ${from}.` : `${who} cancelled from round ${from}.`);
 }
 
@@ -199,7 +199,7 @@ export function joinLate(s: EventState, hostId: string, from: number, at: string
     else s.rules.push({ rule: "only in rounds", host_table: row.table_label, fam: "", rounds: keep.join(", ") });
   }
   if (!s.arrived.includes(hostId)) s.arrived.push(hostId);
-  const who = row.host_name ? `${row.host_name} (${row.table_label})` : row.table_label;
+  const who = row.host_name && row.host_name !== row.table_label ? `${row.host_name} (${row.table_label})` : row.table_label;
   logChange(s, at, `${who} arrived late and hosts from round ${from}.`);
   return "";
 }
@@ -266,7 +266,7 @@ export function recordActual(s: EventState, famId: string, hostId: string, round
   s.rules = s.rules.filter((r) => !(r.rule === "must meet" && r.rounds === String(round) &&
     ((r.fam ?? "").toLowerCase() === fam.fam_label.toLowerCase() || (r.host_table ?? "").toLowerCase() === host.table_label.toLowerCase())));
   s.rules.push({ rule: "must meet", host_table: host.table_label, fam: fam.fam_label, rounds: String(round) });
-  const who = host.host_name ? `${host.host_name} (${host.table_label})` : host.table_label;
+  const who = host.host_name && host.host_name !== host.table_label ? `${host.host_name} (${host.table_label})` : host.table_label;
   logChange(s, at, `${who} is actually with ${fam.fam_label} in round ${round}; kept that way.`);
   return "";
 }

@@ -226,7 +226,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
   n += stepFreeBreaks(rules, fams, rounds, hostAway, locked, reachable);
   for (const a of rules) {
     if (a.kind === "access" && ![...famIds].some((f) => reachable.has(f))) {
-      throw new RuleConflictError(`${hosts.find((x) => x.hostId === a.hostId)!.name} needs a step-free table, but no fam table is marked as step-free. Mark the tables with step-free access in the fams table.`);
+      throw new RuleConflictError(`${hosts.find((x) => x.hostId === a.hostId)!.name} needs a step-free table, but no fam table is marked as step-free. Mark which fam tables are step-free.`);
     }
   }
   const forbidden = new Set<string>();

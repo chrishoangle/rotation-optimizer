@@ -384,7 +384,7 @@ def plan_event(
         if a.kind == "access" and not reachable & fam_ids:
             raise RuleConflictError(
                 f"{next(x.name for x in hosts if x.host_id == a.host_id)} needs a step-free table, but no fam table is "
-                "marked as step-free. Mark the tables with step-free access in the fams table."
+                "marked as step-free. Mark which fam tables are step-free."
             )
     for a in rules:
         if a.kind == "access":

@@ -130,7 +130,7 @@ function header(): HTMLElement {
       logo(),
       h("strong", { className: "g-title" }, step >= 0 ? s.title || "Your dinner" : "Rotation Dinner"),
       practising
-        ? h("span", { className: "g-pill practice" }, "Practice, nothing is kept ", h("button", { className: "button link", onclick: () => ctx.endPractice() }, "End"))
+        ? h("span", { className: "g-pill practice" }, h("span", { className: "long" }, "Practice, nothing is kept "), h("span", { className: "short" }, "Practice "), h("button", { className: "button link", onclick: () => ctx.endPractice() }, "End"))
         : step >= 0 ? h("button", { className: "g-pill saved", title: "Saved in this browser as you work. Tap to download a copy you can keep or open on another computer.",
           onclick: () => { ctx.saveFile(); say("ok", "A copy of your event was downloaded. Keep it with your event files, or open it on another computer."); render(); } }, "Saved ✓ Download a copy") : null,
       h("div", { className: "g-more" },
@@ -216,7 +216,7 @@ function render(): void {
   const pages = [listsPage, schedulePage, printPage, runPage, nextYearPage];
   const body = step === -1 ? startPage() : pages[Math.min(step, pages.length - 1)]();
   replace(app, h("main", { className: `guided ${step === 3 ? "running" : ""}`, id: "main" }, header(), msg(), body,
-    h("footer", { className: "g-foot" }, "Saved in this browser as you work. Nothing is sent anywhere.")));
+    h("footer", { className: "g-foot" }, ctx.inPractice() ? "Practice: nothing here is kept." : "Saved in this browser as you work. Nothing is sent anywhere.")));
 }
 
 // ----------------------------------------------------------------------
@@ -234,7 +234,7 @@ const PICTURE = `<svg viewBox="0 0 520 150" role="img" aria-label="Students stay
 <circle cx="402" cy="50" r="7"/><circle cx="458" cy="110" r="7"/><circle cx="402" cy="110" r="7"/></g>
 <g fill="var(--brand)"><circle cx="118" cy="110" r="10"/><circle cx="232" cy="110" r="10"/><circle cx="458" cy="50" r="10"/></g>
 <g fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#ah)">
-<path d="M132 118 Q175 140 216 120"/><path d="M246 122 Q340 150 444 66"/></g>
+<path d="M132 118 Q175 140 216 120"/><path d="M246 122 Q360 150 448 68"/></g>
 </svg>`;
 
 function startPage(): HTMLElement {
@@ -246,7 +246,7 @@ function startPage(): HTMLElement {
     h("h1", {}, "Plan your rotation dinner in minutes"),
     h("p", { className: "lead" }, "Students stay at their table all night. Alumni move to a new table each round. Paste your two lists, print the cards, and run the night from your phone."),
     picture,
-    h("p", { className: "g-promise" }, h("strong", {}, "When someone cancels on the night, "), "tap their name. The app re-plans in seconds and tells you exactly who walks where."),
+    h("p", { className: "g-promise" }, h("strong", {}, "When someone cancels on the night, "), "tap Someone changed? and pick who. The app re-plans in seconds and tells you exactly who walks where."),
     h("div", { className: "g-choices" },
       going ? h("button", { className: "g-choice primary", onclick: () => go(Math.min(furthest(), 1)) },
         h("strong", {}, `Continue ${s.title || "your dinner"}`), h("span", {}, `${s.hosts.length} alumni, ${s.fams.length} fams`)) : null,
@@ -559,6 +559,7 @@ function listsPage(): HTMLElement {
     h("h1", {}, "Your lists"),
     h("p", { className: "lead" }, "Paste your alumni and your fams straight from your spreadsheet. That's all the app needs."),
     problemsBox(),
+    h("section", { className: "g-card g-name" }, field("Name of your dinner", titleInput(), "Printed at the top of every page. You can change it later.")),
     listSection("hosts"),
     listSection("fams"),
     h("section", { className: "g-card g-rounds" },
@@ -569,6 +570,9 @@ function listsPage(): HTMLElement {
       problems = checkInputs({ ...s, rules: [] }).problems;
       if (!s.hosts.length) problems.unshift("Add your alumni.");
       if (!s.fams.length) problems.push("Add your fams.");
+      const free = stepFreeFams(s);
+      const stairs = s.hosts.find((r) => hostSettings(s, r.host_id).stepFree);
+      if (stairs && !free.length) { problems.push(`${stairs.host_name || stairs.table_label} can't use stairs: tick at least one step-free fam table in their note below.`); noteFor = stairs.host_id; }
       if (s.hosts.length && s.fams.length && s.rounds > maxRounds(s)) problems.push(`With ${s.hosts.length} alumni and ${s.fams.length} fams, the most rounds without a repeat is ${maxRounds(s)}. Choose fewer rounds.`);
       if (problems.length) { render(); window.scrollTo(0, 0); return; }
       if (!s.title.trim()) s.title = "Alumni dinner";
@@ -645,8 +649,9 @@ function schedulePage(): HTMLElement {
       h("button", { className: "button primary", disabled: busy, onclick: () => update() }, "Update the schedule")),
     h("p", { className: "g-headline" }, headline(p),
       stretch ? h("span", { className: "help" }, ` ${stretch} visit${stretch !== 1 ? "s have" : " has"} nothing in common; ${stretch !== 1 ? "they are" : "it is"} marked.`) : null),
-    changed.length ? h("div", { className: "msg info" }, h("strong", {}, `Updated: ${changed.length} change${changed.length !== 1 ? "s" : ""}. `), changed.slice(0, 4).join(" "),
-      changed.length > 4 ? h("details", {}, h("summary", {}, `${changed.length - 4} more`), changed.slice(4).map((c) => h("p", {}, c))) : null) : null,
+    changed.length ? h("div", { className: "msg info" }, h("strong", {}, "Updated. What moved:"),
+      h("ul", {}, changed.slice(0, 6).map((c) => h("li", {}, c))),
+      changed.length > 6 ? h("details", {}, h("summary", {}, `${changed.length - 6} more`), h("ul", {}, changed.slice(6).map((c) => h("li", {}, c)))) : null) : null,
     look.length ? h("div", { className: "g-look" }, h("h2", {}, "Worth a look"), look) : null,
     pickBar(p, current),
     tableList(p, current),
@@ -691,9 +696,10 @@ function tableList(p: EventPlan, current: boolean): HTMLElement {
       const isPicked = picked?.round === r && picked.famId === f.groupId;
       const can = current && !locked.has(r) && r > s.finished && !gone && !busy;
       const weak = !!a && a.score === 0;
+      const blocked = !!picked && picked.round === r && !isPicked && can ? swapBlock(p, r, picked.famId, f.groupId) : "";
       return h("button", {
         className: `g-visit ${weak ? "weak" : ""} ${!host ? "empty" : ""} ${isPicked ? "picked" : ""} ${picked && picked.round === r && !isPicked ? "target" : ""}`,
-        disabled: !can, "aria-pressed": isPicked ? "true" : "false", "data-round": r,
+        disabled: !can || !!blocked, title: blocked || null, "aria-pressed": isPicked ? "true" : "false", "data-round": r,
         onclick: () => tapVisit(p, r, f.groupId),
       },
       h("span", { className: "r" }, `Round ${r}${r <= s.finished ? " (done)" : ""}`),
@@ -747,6 +753,17 @@ async function tapVisit(p: EventPlan, r: number, famId: string): Promise<void> {
     changed = [];
     render();
   }
+}
+
+/** A reason the swap of these two seats breaks an alum's setting, or "" when it may fit. */
+function swapBlock(p: EventPlan, r: number, fromFam: string, toFam: string): string {
+  const a = p.assignments.find((x) => x.round === r && x.groupId === fromFam);
+  const b = p.assignments.find((x) => x.round === r && x.groupId === toFam);
+  const moves: [string, string][] = [];
+  if (a) moves.push([a.hostId, toFam]);
+  if (b) moves.push([b.hostId, fromFam]);
+  const why = refusal(p, r, moves);
+  return why.startsWith("That move doesn't fit") ? "" : why;
 }
 
 /** Why a hand move was refused, naming the setting when one alum's settings rule it out. */
@@ -823,8 +840,12 @@ function worthALook(p: EventPlan): HTMLElement[] {
   const reason = fair.map(shared).find((x) => x);
   if (fair.length > 2) {
     // Many fams at once usually means few shared interests, not a bad schedule.
-    out.push(h("div", { className: "g-item" }, `${fair.length} fams have two rounds with no alum, or one with nothing in common.`,
-      h("span", { className: "help" }, reason ? reason.trim() : " More interests on both lists give better matches.")));
+    const weak = p.assignments.filter((a) => a.score === 0).length;
+    const empty = p.fams.reduce((n, f) => n + Array.from({ length: p.rounds }, (_, k) => k + 1)
+      .filter((r) => !(p.famAway[f.groupId] ?? []).includes(r) && !p.assignments.some((a) => a.round === r && a.groupId === f.groupId)).length, 0);
+    const bits = [weak ? `${weak} of ${p.assignments.length} visits share no interest` : "", empty ? `${empty} fam round${empty !== 1 ? "s have" : " has"} no alum` : ""].filter(Boolean);
+    out.push(h("div", { className: "g-item" }, `${bits.join(", and ")}. That is normal when your two lists share few words.`,
+      h("span", { className: "help" }, reason ? reason.trim() : "Adding more interests to both lists gives better matches.")));
     out.push(h("details", { className: "g-rare" }, h("summary", {}, "Which fams"), lines.map((l) => h("p", {}, l))));
   } else if (fair.length) {
     for (const l of lines) out.push(h("div", { className: "g-item" }, l));
@@ -841,12 +862,18 @@ function field(label: string, input: HTMLElement, help?: string): HTMLElement {
   return h("label", { className: "field" }, h("span", { className: "label" }, label), input, help ? h("span", { className: "help" }, help) : null);
 }
 
+function titleInput(): HTMLInputElement {
+  const s = ev();
+  const name = h("input", { type: "text", value: s.title, placeholder: "Transfer Admit Dinner", "aria-label": "Event name" }) as HTMLInputElement;
+  name.addEventListener("input", () => { s.title = name.value; ctx.persist(); const t = document.querySelector(".g-title"); if (t) t.textContent = s.title || "Your dinner"; });
+  return name;
+}
+
 function printPage(): HTMLElement {
   const s = ev();
   const p = s.plan!;
   const loc = famLocations(s);
-  const name = h("input", { type: "text", value: s.title, placeholder: "Transfer Admit Dinner", "aria-label": "Event name" }) as HTMLInputElement;
-  name.addEventListener("input", () => { s.title = name.value; ctx.persist(); });
+  const name = titleInput();
   const doors = h("input", { type: "text", value: s.startTime, placeholder: "6:30 PM", "aria-label": "Doors open at" }) as HTMLInputElement;
   doors.addEventListener("input", () => { s.startTime = doors.value; ctx.persist(); });
   const minutes = h("select", { "aria-label": "Minutes per round" }, [10, 15, 20, 25, 30, 40].map((n) => h("option", { value: n, selected: n === s.roundMinutes }, `${n} minutes`))) as HTMLSelectElement;
@@ -909,7 +936,13 @@ async function applyChange(apply: () => string): Promise<void> {
   const err = await ctx.solve(true);
   busy = false;
   if (err) runProblem = plain(err);
-  else logChange(s, ctx.now(), "Re-planned.");
+  else {
+    logChange(s, ctx.now(), "Re-planned.");
+    const base = s.printed ?? beforeChange;
+    const m = base && s.plan ? movesBetween(base, s.plan, s.finished + 1) : null;
+    const n = m ? m.hosts.length + m.fams.length : 0;
+    say("ok", n ? `Re-planned. Only the ${n === 1 ? "one change" : `${n} changes`} below need telling; everyone else stays where their card says.` : "Re-planned. Nobody else moves, and nothing needs reprinting.");
+  }
   ctx.persist();
   render();
 }
@@ -1103,7 +1136,11 @@ function nextYearPage(): HTMLElement {
     h("p", { className: "lead" }, "Next year's coordinator starts from your alumni, fams, and notes instead of a blank page."),
     field("Notes for next year", notes, "No student names here, please."),
     h("div", { className: "row" },
-      h("button", { className: "button primary", onclick: () => ctx.handOff() }, "Download the hand-off folder"),
+      h("button", { className: "button primary", onclick: () => {
+        ctx.handOff();
+        say("ok", "Downloaded the hand-off folder as a .zip file. Give it to next year's coordinator: they unzip it, choose Open a saved event, and pick the file ending in .rotation.json.");
+        render();
+      } }, "Download the hand-off folder"),
       h("button", { className: "button", onclick: () => {
         if (!sure) { sure = true; render(); return; }
         sure = false; ctx.removeStudentNames(); say("ok", "Student names removed."); render();

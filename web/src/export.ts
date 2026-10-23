@@ -296,8 +296,9 @@ export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", 
   steps.push([t, "Closing", "Thank the hosts and the fams. Collect table tents and host cards."]);
   const when = (m: number) => { const c = clock(startTime, m); return c ? e(c) : '<span class="blank"></span>'; };
   const timeline = steps.map(([m, what, say]) => `<tr><td class="time">${when(m)}</td><td class="what">${e(what)}</td><td>${e(say)}</td></tr>`).join("");
-  const named = p.hosts.some((h) => h.person);
-  const hostRows = p.hosts.map((h) => `<tr><td class="box"></td>` + (named ? `<td>${e(h.person)}</td>` : "") + `<td>${e(h.name)}</td>` +
+  // A topic column only when some alum has a topic that is not just their name.
+  const named = p.hosts.some((h) => h.person && h.person !== h.name);
+  const hostRows = p.hosts.map((h) => `<tr><td class="box"></td>` + (named ? `<td>${e(h.person || h.name)}</td><td>${h.person && h.person !== h.name ? e(h.name) : ""}</td>` : `<td>${e(h.person || h.name)}</td>`) +
     `<td>${firstTable(p, h.hostId, tables, byHost)}</td></tr>`).join("");
   const famRows = ordered.map((f) => `<tr><td class="box"></td><td>Table ${tables[f.groupId]}</td><td>${e(f.name)}</td><td>${f.size || f.members.length || ""}</td></tr>`).join("");
   return `<!doctype html>
@@ -320,8 +321,8 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 <h2>MC timeline</h2>
 <table>${timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app's night mode, use Something changed?, then Update the schedule.
-Reprint only the pages the app lists under Reprint. Rounds already finished never change.</p>
+<p class="help">In the app, open Run the event, tap Someone changed?, then Re-plan.
+Tell the people it lists, and hand out change slips if you print them. Rounds already finished never change.</p>
 </section>
 <section>
 <h2>Check-in: alumni</h2>
