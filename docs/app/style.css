@@ -579,7 +579,7 @@ main.coord.stage {
 .c-ring-fill { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset .8s ease-out; }
 .c-timer.over .c-ring-fill { stroke: var(--amber); }
 .c-timer-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 !important; color: var(--ink-soft); font-size: var(--t-sm); }
-.c-timer-num { font-size: 64px; font-weight: 700; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.c-timer-num { font-size: 54px; font-weight: 700; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
 .c-timer.over .c-timer-num { color: var(--warning); }
 .center-text { text-align: center; }
 .c-next { color: var(--ink-soft); font-size: var(--t-sm); margin: 14px 0 0 !important; }
@@ -709,7 +709,7 @@ body.c-touring { overflow: hidden; }
 .c-tour-phone .c-button.primary { background: #6b9bff; color: #0b0d12; }
 .c-tour-phone-round { font-size: 22px; font-weight: 700; margin: 0; }
 .c-tour-ring { width: 120px; height: 120px; border-radius: 50%; margin: 0 auto; border: 8px solid #6b9bff; border-right-color: #262b36; display: flex; flex-direction: column; justify-content: center; }
-.c-tour-ring span { font-size: 36px; font-weight: 700; line-height: 1; }
+.c-tour-ring span { font-size: 30px; font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; }
 .c-tour-ring small { color: #a9b0bf; font-size: 12px; }
 .c-tour-tell, .c-tour-where { text-align: left; background: #151922; border-radius: 14px; padding: 12px; }
 .c-tour-tell { box-shadow: inset 4px 0 0 #fbbf24; }

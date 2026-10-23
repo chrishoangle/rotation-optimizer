@@ -136,7 +136,11 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     assert visible_controls(p) <= 7, "the night shows the round, one button, and Something came up"
     assert jargon(p) == []
     button(p, "Start round 1").click()
-    assert "minutes left" in words(p)
+    # The clock counts down to the second.
+    first = p.inner_text("#c-clock-num")
+    assert re.fullmatch(r"\d+:\d\d", first) and "left" in words(p)
+    p.wait_for_timeout(2100)
+    assert p.inner_text("#c-clock-num") != first
     button(p, "Something came up").click()
     button(p, "An alum left or didn't come").click()
     p.get_by_label("Alum who left").select_option(label="Alum B")
@@ -294,14 +298,19 @@ def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
     assert "Here's an example alumni dinner." in tour_text(p)
     assert "Welcome to Spring Alumni Dinner" in tour_text(p)
     seen = []
-    for step in range(1, 9):
+    for step in range(1, 8):
         p.wait_for_selector(f'.c-tour-scene[data-step="{step}"]')
         if step == 3:
             p.wait_for_selector("text=Schedule ready.")
-        if step in (4, 6):
-            p.wait_for_selector(".c-tour-matches, .c-tour-flow")
-        if step == 7:
-            assert "Tell these people where to go" in tour_text(p)
+        if step == 4:
+            p.wait_for_selector(".c-tour-matches")
+        if step == 6:
+            assert "Who is where, round 1" in tour_text(p)
+            clock = p.inner_text(".c-tour-ring span")
+            p.wait_for_timeout(1100)
+            assert p.inner_text(".c-tour-ring span") != clock, "the phone's clock ticks"
+            p.locator('[data-k="tour-end-round"]').click()
+            assert "Who is where, round 2" in tour_text(p)
         text = tour_text(p)
         seen.append(text)
         assert [j for j in COORD_JARGON if re.search(j, text, re.IGNORECASE)] == [], f"step {step}"
@@ -315,11 +324,11 @@ def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
             button(p, "Back").click()
             p.wait_for_selector('.c-tour-scene[data-step="4"]')
             p.locator('[data-k="tour-next"]').click()
-        if step < 8:
+        if step < 7:
             p.locator('[data-k="tour-next"]').click()
     assert "meets" in seen[3] and "because they share" in seen[3]
-    assert "couldn't make round 2?" in seen[5] and "Round 1 is done" in seen[5]
-    assert "Event complete" in seen[7]
+    assert not any("What if" in x or "couldn't make" in x for x in seen), "no made-up cancellations"
+    assert "Event complete" in seen[6]
     button(p, "Plan my dinner").click()
     assert p.locator(".c-tour").count() == 0
     p.wait_for_selector("text=Your dinner")
@@ -344,10 +353,9 @@ def test_the_tour_uses_the_coordinators_own_event(page):
     assert "Alum A" in tour_text(p) and "Fam Red" in tour_text(p)
     p.locator('[data-k="tour-next"]').click()
     p.wait_for_selector("text=Schedule ready.")
-    for _ in range(3):
-        p.locator('[data-k="tour-next"]').click()
-    p.wait_for_selector(".c-tour-flow")
-    assert re.search(r"Alum [A-F]( & Alum [A-F])? couldn't make round 2\?", tour_text(p))
+    p.locator('[data-k="tour-next"]').click()
+    p.wait_for_selector(".c-tour-matches")
+    assert re.search(r"meets Alum [A-F]", tour_text(p))
     button(p, "Skip tour").click()
     assert p.locator(".c-tour").count() == 0
     assert ev_plan_is_untouched(p)

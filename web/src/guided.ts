@@ -13,7 +13,7 @@
 import { h, openPage, readFile, replace } from "./dom";
 import { avatars, famHue, peopleIn } from "./faces";
 import { IconName, icon } from "./icons";
-import { openTour, tourSeen, tourStep } from "./tour";
+import { TOUR_STEPS, openTour, tourSeen, tourStep } from "./tour";
 import {
   EventState, FAM_COLUMNS, HOST_COLUMNS, applySpelling, checkInputs, famLocations, hasStarted, isCurrent, loadEvent,
   maxRounds, nearMisses, newEvent, normalizeState, normalizeTable, stepFreeFams,
@@ -34,7 +34,7 @@ import {
 } from "./printables";
 import { csvRecords } from "./py";
 import { CleanRow, dropExampleRows, groupStudentRows, matchColumns, renameColumns } from "./sheets";
-import { endRound, leftText, nowMinutes, shown, startRound, status, toMinutes } from "./timing";
+import { endRound, hhmm, nowMinutes, shown, startRound, status, toMinutes } from "./timing";
 
 /** What the coordinator's pages need from the app around them. */
 export interface GuidedCtx {
@@ -333,41 +333,60 @@ function render(newPlace = false): void {
   document.title = place === "home" ? "Rotation Dinner" : `${tab} · ${s.title || "Your dinner"}`;
   if (newPlace) (document.querySelector("#main h1") as HTMLElement | null)?.focus({ preventScroll: true });
   else restoreFocus(key);
-  if (running) clockTimer = window.setInterval(tick, 15000);
+  if (running) clockTimer = window.setInterval(tick, 1000);
 }
 
-/** Update only the clock on the Run screen, so nothing else moves under the coordinator's thumb. */
+/**
+ * Seconds left in round r. The event file keeps start times to the minute,
+ * so the exact moment the round was started on this device is kept too, and
+ * used while it agrees with the recorded start.
+ */
+function secondsLeft(s: EventState, r: number, minutesLeft: number): number {
+  const ms = s.night.startedAt?.[String(r)];
+  const start = s.night.roundTimes?.[String(r)]?.start;
+  if (ms && start) {
+    const d = new Date(ms);
+    if (hhmm(d.getHours() * 60 + d.getMinutes()) === start) return Math.round(s.roundMinutes * 60 - (Date.now() - ms) / 1000);
+  }
+  return minutesLeft * 60;
+}
+
+/** "19:42" for the big clock; past the end it counts up. */
+const mmss = (sec: number) => { const a = Math.abs(sec); return `${Math.floor(a / 60)}:${String(a % 60).padStart(2, "0")}`; };
+const clockWords = (sec: number) => (sec < 0 ? "over" : "left");
+
+/** Update only the clock on the Run screen, every second, so nothing else moves under the coordinator's thumb. */
 function tick(): void {
   const el = document.getElementById("c-clock");
   if (!el) return;
-  const st = status(ev(), nowMinutes());
+  const s = ev();
+  const st = status(s, nowMinutes());
   if (st.phase === "during" && st.minutesLeft !== null) {
+    const sec = secondsLeft(s, st.round, st.minutesLeft);
     const num = document.getElementById("c-clock-num");
-    if (num) num.textContent = String(Math.abs(st.minutesLeft));
-    el.textContent = clockWords(st.minutesLeft);
+    if (num) num.textContent = mmss(sec);
+    el.textContent = clockWords(sec);
     const ring = document.getElementById("c-ring");
-    if (ring) ring.setAttribute("stroke-dashoffset", String(ringOffset(ev().roundMinutes, st.minutesLeft)));
-    document.querySelector(".c-timer")?.classList.toggle("over", st.minutesLeft < 0);
+    if (ring) ring.setAttribute("stroke-dashoffset", String(ringOffset(s.roundMinutes, sec)));
+    document.querySelector(".c-timer")?.classList.toggle("over", sec < 0);
   }
 }
 
 const RING = 2 * Math.PI * 92;
-const ringOffset = (roundMinutes: number, minutesLeft: number) => (RING * elapsedShare(roundMinutes, minutesLeft)) / 100;
-/** "minutes left" under the big number: the number itself is drawn larger. */
-const clockWords = (min: number) => leftText(min).replace(/^-?\d+ /, "");
+const ringOffset = (roundMinutes: number, sec: number) => (RING * elapsedShare(roundMinutes, sec / 60)) / 100;
 
-/** The round as a ring that empties as time passes, with the minutes left in the middle. */
-function timer(roundMinutes: number, minutesLeft: number): HTMLElement {
-  const wrap = h("div", { className: `c-timer ${minutesLeft < 0 ? "over" : ""}` });
-  wrap.innerHTML = `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" class="c-ring-track"/><circle id="c-ring" cx="100" cy="100" r="92" class="c-ring-fill" stroke-dasharray="${RING}" stroke-dashoffset="${ringOffset(roundMinutes, minutesLeft)}" transform="rotate(-90 100 100)"/></svg>`;
-  wrap.append(h("p", { className: "c-timer-text" }, h("span", { id: "c-clock-num", className: "c-timer-num" }, String(Math.abs(minutesLeft))), " ", h("span", { id: "c-clock" }, clockWords(minutesLeft))));
+/** The round as a ring that empties as time passes, with the time left in the middle. */
+function timer(roundMinutes: number, sec: number): HTMLElement {
+  const wrap = h("div", { className: `c-timer ${sec < 0 ? "over" : ""}` });
+  wrap.innerHTML = `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" class="c-ring-track"/><circle id="c-ring" cx="100" cy="100" r="92" class="c-ring-fill" stroke-dasharray="${RING}" stroke-dashoffset="${ringOffset(roundMinutes, sec)}" transform="rotate(-90 100 100)"/></svg>`;
+  wrap.append(h("p", { className: "c-timer-text" }, h("span", { id: "c-clock-num", className: "c-timer-num" }, mmss(sec)), " ", h("span", { id: "c-clock" }, clockWords(sec))));
   return wrap;
 }
 
 /** How much of the round has gone, as a percentage for the progress bar. */
 function elapsedShare(roundMinutes: number, minutesLeft: number): number {
   if (!roundMinutes) return 0;
-  return Math.round(Math.min(100, Math.max(0, (1 - minutesLeft / roundMinutes) * 100)));
+  return Math.min(100, Math.max(0, (1 - minutesLeft / roundMinutes) * 100));
 }
 
 // ----------------------------------------------------------------------
@@ -402,7 +421,7 @@ function tourChoice(mine: boolean, primary: boolean): HTMLElement {
   const at = tourStep();
   return h("button", { className: `c-choice ${primary ? "primary" : ""}`, "data-k": "tour", onclick: startTour }, icon("play", "c-choice-icon"),
     h("span", { className: "c-choice-text" }, h("strong", {}, at ? "Continue the tour" : mine ? "Walk through your event" : "Take the 2-minute tour"),
-      h("span", {}, at ? `You stopped at step ${at} of 8.` : mine ? "Two minutes, with your own alumni and fams." : "See a whole dinner, from the lists to the last round.")),
+      h("span", {}, at ? `You stopped at step ${at} of ${TOUR_STEPS}.` : mine ? "Two minutes, with your own alumni and fams." : "See a whole dinner, from the lists to the last round.")),
     icon("chevron", "c-choice-go"));
 }
 
@@ -1366,7 +1385,7 @@ function roundCard(p: EventPlan): HTMLElement {
   const s = ev();
   const st = status(s, nowMinutes());
   const r = st.round;
-  const start = () => { startRound(s, r, nowMinutes()); logChange(s, ctx.now(), `Round ${r} started.`); runNote = ""; ctx.persist(); render(); };
+  const start = () => { startRound(s, r, nowMinutes()); s.night = { ...s.night, startedAt: { ...(s.night.startedAt ?? {}), [String(r)]: Date.now() } }; logChange(s, ctx.now(), `Round ${r} started.`); runNote = ""; ctx.persist(); render(); };
   let action: HTMLElement | null;
   if (st.phase === "before" || st.phase === "moving") action = h("button", { className: "c-button primary big wide", "data-k": "round-action", onclick: start }, `Start round ${r}`);
   else if (st.phase === "during") {
@@ -1383,7 +1402,7 @@ function roundCard(p: EventPlan): HTMLElement {
   return h("div", { className: "c-card c-now" },
     h("p", { className: "c-round" }, st.phase === "over" ? "All rounds done" : st.phase === "moving" ? `Alumni move to round ${r}` : `Round ${r} of ${p.rounds}`),
     st.phase === "during" && st.minutesLeft !== null ? h("div", {},
-      timer(s.roundMinutes, st.minutesLeft),
+      timer(s.roundMinutes, secondsLeft(s, r, st.minutesLeft)),
       startedAt !== null ? h("p", { className: "c-help center-text" }, `Ends at ${shown(startedAt + s.roundMinutes)}`) : null)
       : st.phase === "before" ? h("p", { className: "c-help" }, `${p.rounds} rounds of ${s.roundMinutes} minutes. Tap start when everyone is seated.`)
       : st.phase === "moving" ? h("p", { className: "c-help" }, "Alumni go to the table on their card. Start the round when they are seated.") : null,

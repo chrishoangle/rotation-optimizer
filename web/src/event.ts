@@ -48,6 +48,7 @@ export interface NightState {
   moved?: string[]; // "round|host id" for alumni who reached their table
   famArrived?: Record<string, number>; // students arrived per fam id
   wrapUp?: boolean; // the wrap-up question was answered or dismissed
+  startedAt?: Record<string, number>; // "1": when round 1 was started on this device, in ms, for a clock to the second
   date?: string; // the event's date, "2026-11-14", so lateness is only shown on the day
   tablesBefore?: Record<string, { table_number: string; location: string; step_free: string }>; // fam rows before a move on the night
 }

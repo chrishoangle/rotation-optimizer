@@ -2,7 +2,7 @@
 //
 // It plays on a copy of the coordinator's own event when one is open, so
 // they meet their own alumni and fams, or on an invented example dinner
-// otherwise. Nothing it does touches the real event. Eight short scenes,
+// otherwise. Nothing it does touches the real event. Seven short scenes,
 // each one picture and a line or two, with Back, Next, and Skip; the step
 // is remembered, so closing the tab and coming back resumes where it was.
 
@@ -12,11 +12,8 @@ import { loadEvent, newEvent, normalizeState, saveEvent } from "./event";
 import { tableNumbers } from "./export";
 import { avatars, famHue, peopleIn } from "./faces";
 import { icon } from "./icons";
-import { movesBetween } from "./moves";
-import { cancelHost } from "./night";
 import { hostSettings, setHostSettings, settingsWords } from "./people";
 import type { EventPlan } from "./planning";
-import { reprintList } from "./planning";
 
 export interface TourCtx {
   /** The coordinator's event, if they have one with people in it. */
@@ -30,7 +27,8 @@ export interface TourCtx {
 
 const STEP_KEY = "rotation-optimizer:tour";
 const SEEN_KEY = "rotation-optimizer:tour-seen";
-const TITLES = ["Meet the event", "See the lists", "Build the schedule", "Why it works", "Print the event", "When something changes", "Run the night", "Wrap up"];
+const TITLES = ["Meet the event", "See the lists", "Build the schedule", "Why it works", "Print the event", "Run the night", "Wrap up"];
+export const TOUR_STEPS = TITLES.length;
 
 interface Tour {
   step: number;
@@ -38,9 +36,7 @@ interface Tour {
   ev: EventState;
   plan: EventPlan | null; // the schedule, made in scene 3
   built: boolean; // scene 3's checklist has finished once
-  change: { who: string; round: number; after: EventPlan | null; problem: string } | null;
-  nightRound: number; // the round shown in scene 7's phone, 0 until it is first shown
-  told: Set<string>;
+  nightRound: number; // the round shown on the phone in "Run the night"
 }
 
 let ctx: TourCtx;
@@ -100,7 +96,7 @@ export function openTour(c: TourCtx, fromStep?: number): void {
   const ev = mine ? loadEvent(saveEvent(mine)) : exampleDinner();
   // The walkthrough starts the night fresh on its copy; the real event keeps its clock and notes.
   if (mine) { ev.finished = 0; ev.printed = null; ev.night = { ...ev.night, roundTimes: {}, told: [] }; }
-  t = { step: fromStep ?? tourStep() ?? 1, mode: mine ? "mine" : "example", ev, plan: ev.plan, built: false, change: null, nightRound: 0, told: new Set() };
+  t = { step: fromStep ?? tourStep() ?? 1, mode: mine ? "mine" : "example", ev, plan: ev.plan, built: false, nightRound: 1 };
   root?.remove();
   root = h("div", { className: "c-tour-backdrop" });
   root.addEventListener("keydown", (e) => {
@@ -158,7 +154,7 @@ function show(step: number): void {
 }
 
 function fill(scene: HTMLElement, n: number): void {
-  const scenes = [meet, lists, build, why, print, change, night, wrap];
+  const scenes = [meet, lists, build, why, print, night, wrap];
   scenes[n - 1](scene);
 }
 
@@ -348,93 +344,45 @@ function print(scene: HTMLElement): void {
 }
 
 // ----------------------------------------------------------------------
-// 6. When something changes.
+// 6. Run the night.
 // ----------------------------------------------------------------------
 
-async function change(scene: HTMLElement): Promise<void> {
-  replace(scene, heading("When something changes"), line("Preparing…"));
-  const problem = await ensurePlan();
-  const p = t?.plan;
-  if (!t || !p || problem) { replace(scene, heading("When something changes"), line("Once your schedule is made, this shows how a cancellation is handled.")); return; }
-  const round = p.rounds >= 2 ? 2 : 1;
-  if (!t.change) {
-    // Someone who hosts in that round, preferably alone, so the story is simple.
-    const inRound = p.assignments.filter((a) => a.round === round).map((a) => p.hosts.find((x) => x.hostId === a.hostId)!);
-    const solo = inRound.find((x) => who(x) === "Chris Johnson") ?? inRound.find((x) => peopleIn(who(x)).length === 1) ?? inRound[0];
-    t.change = { who: solo ? who(solo) : "", round, after: null, problem: "" };
-    if (solo) {
-      const copy = loadEvent(saveEvent(t.ev));
-      copy.plan = p;
-      copy.printed = p;
-      copy.finished = round - 1;
-      // Seats placed by hand from this round on would hold the absent alum in place; the what-if lets them go.
-      copy.rules = copy.rules.filter((x) => !(x.by === "grid" && Number(x.rounds) >= round));
-      cancelHost(copy, solo.hostId, round, ctx.now());
-      t.change.problem = await ctx.solveOn(copy, true);
-      t.change.after = copy.plan !== p ? copy.plan : null;
-    }
-    if (!t || !root || t.step !== 6) return;
-  }
-  const c = t.change!;
-  const moves = c.after ? movesBetween(p, c.after, round) : null;
-  const out = c.after ? reprintList(p, c.after) : null;
-  const pages = out ? [
-    out.hostIds.length ? `${out.hostIds.length} alumni card${out.hostIds.length !== 1 ? "s" : ""}` : "",
-    out.famIds.length ? `${out.famIds.length} table number${out.famIds.length !== 1 ? "s" : ""}` : "",
-    out.seatingRounds.length ? `the room chart for round${out.seatingRounds.length !== 1 ? "s" : ""} ${andList(out.seatingRounds.map(String))}` : "",
-  ].filter(Boolean) : [];
-  const n = moves ? moves.hosts.length + moves.fams.length : 0;
-  replace(scene,
-    heading("When something changes"),
-    line(t.mode === "mine" ? "A what-if, to show how the app handles it. Your event is not changed." : "Say someone cancels on the day."),
-    h("div", { className: "c-tour-card c-tour-cancel" }, avatars(c.who), h("strong", {}, `What if ${c.who} couldn't make round ${round}?`)),
-    h("ol", { className: "c-tour-flow" },
-      h("li", { style: "--i: 0" }, icon("bell"), round > 1 ? `Round 1 is done, so it stays exactly as it was.` : "Nothing has started yet."),
-      h("li", { style: "--i: 1" }, icon("swap"), c.after ? `The app re-plans from round ${round}, moving as few people as it can.` : c.problem || "Nobody else needs to move."),
-      h("li", { style: "--i: 2" }, icon("people"), n ? `${n === 1 ? "One person needs" : `${n} people need`} telling. Everyone else stays put.` : "Nobody else moves."),
-      h("li", { style: "--i: 3" }, icon("printer"), pages.length ? `Reprint only ${andList(pages)}.` : "Nothing needs reprinting.")),
-    h("p", { className: "c-tour-callout" }, icon("sparkle"), "In a spreadsheet, one cancellation means re-checking every row by hand. Here it takes one tap."));
-}
-
-// ----------------------------------------------------------------------
-// 7. Run the night.
-// ----------------------------------------------------------------------
+let phoneClock = 0;
 
 function night(scene: HTMLElement): void {
-  const p = t?.change?.after ?? t?.plan;
-  if (!t || !p) { replace(scene, heading("Run the night"), line("On the night, your phone shows the round, the clock, and who to tell.")); return; }
-  // Start where the change bites, so the "tell these people" list is the first thing seen.
-  if (!t.nightRound) t.nightRound = t.change?.after ? t.change.round : 1;
+  const p = t?.plan;
+  if (!t || !p) { replace(scene, heading("Run the night"), line("On the night, your phone shows the round, the clock, and who is where.")); return; }
   const r = Math.min(t.nightRound, p.rounds);
   const tables = tableNumbers(p);
-  const m = t.change?.after && t.plan ? movesBetween(t.plan, t.change.after, t.change.round) : null;
-  const moves = m ? [...m.hosts, ...m.fams].slice(0, 3) : [];
-  const where = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]).slice(0, 3).map((f) => {
+  const where = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]).slice(0, 4).map((f) => {
     const a = p.assignments.find((x) => x.round === r && x.groupId === f.groupId);
     const host = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
     return h("li", {}, h("span", { className: "c-tour-disc small", style: `--h: ${famHue(tables[f.groupId])}`, "aria-hidden": "true" }, String(tables[f.groupId])),
       h("span", {}, f.name), h("span", { className: "c-tour-who" }, host ? who(host) : "no alum"));
   });
+  // A real countdown, so the phone feels alive: it starts at 14:00 and ticks every second.
+  let left = 14 * 60;
+  const digits = h("span", {}, "14:00");
+  clearInterval(phoneClock);
+  phoneClock = window.setInterval(() => {
+    if (!digits.isConnected) { clearInterval(phoneClock); return; }
+    left = Math.max(0, left - 1);
+    digits.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  }, 1000);
   const phone = h("div", { className: "c-tour-phone" },
     h("p", { className: "c-tour-phone-round" }, `Round ${r} of ${p.rounds}`),
-    h("div", { className: "c-tour-ring", "aria-hidden": "true" }, h("span", {}, "14"), h("small", {}, "minutes left")),
-    h("button", { className: "c-button primary wide", "data-k": "tour-end-round", onclick: () => { if (r < p.rounds) { t!.nightRound = r + 1; show(7); } else show(8); } }, r < p.rounds ? `End round ${r}` : "End the last round"),
-    moves.length && r >= (t.change?.round ?? 2) ? h("div", { className: "c-tour-tell" }, h("strong", {}, "Tell these people where to go"),
-      h("ul", {}, moves.map((m, i) => {
-        const key = `${i}`;
-        const box = h("input", { type: "checkbox", checked: t!.told.has(key), "aria-label": `Told: ${m.text}` }) as HTMLInputElement;
-        box.addEventListener("change", () => { if (box.checked) t!.told.add(key); else t!.told.delete(key); box.closest("li")?.classList.toggle("told", box.checked); });
-        return h("li", { className: t!.told.has(key) ? "told" : "" }, h("label", {}, box, h("span", {}, m.text.replace(/\bhost\b/g, "alum"))));
-      }))) : null,
-    h("div", { className: "c-tour-where" }, h("strong", {}, "Who is where"), h("ul", {}, where)));
+    h("div", { className: "c-tour-ring", "aria-hidden": "true" }, digits, h("small", {}, "left")),
+    h("button", { className: "c-button primary wide", "data-k": "tour-end-round", onclick: () => { if (r < p.rounds) { t!.nightRound = r + 1; show(t!.step); } else show(t!.step + 1); } },
+      r < p.rounds ? `End round ${r}` : "End the last round"),
+    h("div", { className: "c-tour-where" }, h("strong", {}, `Who is where, round ${r}`), h("ul", {}, where)));
   replace(scene,
     heading("Run the night"),
-    line(moves.length && r >= (t.change?.round ?? 2) ? `Round ${r - 1 || 1} is over. Not the whole schedule: just the people who need to hear something.` : "Tap End round to move on. The phone tells you who to send where."),
+    line("Your phone runs the night: the round, the clock, and who sits where. Tap End round to move on."),
     phone);
 }
 
 // ----------------------------------------------------------------------
-// 8. Wrap up.
+// 7. Wrap up.
 // ----------------------------------------------------------------------
 
 function wrap(scene: HTMLElement): void {
