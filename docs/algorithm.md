@@ -85,6 +85,11 @@ staying host can raise the total score, because a good pairing then counts
 in every round. [`tests/test_stays.py`](../tests/test_stays.py) checks the
 rule, and the parity fixture includes seven staying-host cases.
 
+**(R6) Step-free access.** A host who needs step-free access never meets a
+group whose table is not marked step-free: R4 for each such group in every
+round that has not already happened. If no table is marked, the planner says
+so before solving. [`tests/test_room.py`](../tests/test_room.py) checks it.
+
 ### Uneven counts and cancellations
 
 `plan_event()` pads the problem to $N$ hosts and $N$ groups with

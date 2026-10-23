@@ -14,7 +14,7 @@ import type { GuestGroup, Host } from "./models";
 export const FILE_FORMAT = "rotation-optimizer-event";
 export const FILE_VERSION = 1;
 export const HOST_COLUMNS = ["host_id", "table_label", "host_name", "tags"];
-export const FAM_COLUMNS = ["fam_id", "table_number", "fam_label", "size", "interests", "students"];
+export const FAM_COLUMNS = ["fam_id", "table_number", "fam_label", "size", "interests", "students", "location", "step_free"];
 export const RULE_COLUMNS = ["rule", "host_table", "fam", "rounds"];
 
 export interface EventState {
@@ -37,13 +37,24 @@ export interface EventState {
   arrived: string[]; // host ids checked in on the night
   notes: string; // notes for next year's coordinator, kept in the hand-off
   nightLog: { at: string; text: string }[]; // each change on the night
+  night: NightState; // what happened in the room; never used for planning
+}
+
+/** Kept by night mode and saved in the event file. */
+export interface NightState {
+  roundTimes?: Record<string, { start?: string; end?: string }>; // "1": {start: "18:31"}; 24-hour clock times
+  setup?: string[]; // fam ids whose table was checked during setup
+  told?: string[]; // change keys passed on to the alum
+  moved?: string[]; // "round|host id" for alumni who reached their table
+  famArrived?: Record<string, number>; // students arrived per fam id
+  wrapUp?: boolean; // the wrap-up question was answered or dismissed
 }
 
 export function newEvent(p: Partial<EventState> = {}): EventState {
   return {
     title: "Alumni dinner", rounds: 2, hosts: [], fams: [], rules: [], finished: 0, cancelHosts: {}, cancelFams: {},
     plan: null, planInputs: null, printed: null, oneWeakRound: false, planTables: null, startTime: "", roundMinutes: 20,
-    printedAt: "", arrived: [], notes: "", nightLog: [], ...p,
+    printedAt: "", arrived: [], notes: "", nightLog: [], night: {}, ...p,
   };
 }
 
@@ -106,11 +117,28 @@ export function checkInputs(s: EventState): Inputs {
 }
 
 /** A hash of everything a plan depends on, identical to the Python app's, so saved files stay up to date across both. */
+/** A fam row without cells planning never reads (see event.py). */
+function planningCells(row: CleanRow): CleanRow {
+  const { location: _location, ...out } = row;
+  if (!out.step_free) delete out.step_free;
+  return out;
+}
+
+const STEP_FREE_NO = new Set(["", "no", "n", "false", "0", "not step-free"]);
+
+export function stepFreeFams(s: EventState): string[] {
+  return cleanRows(s.fams).filter((r) => r.fam_id && !STEP_FREE_NO.has((r.step_free ?? "").trim().toLowerCase())).map((r) => r.fam_id);
+}
+
+export function famLocations(s: EventState): Record<string, string> {
+  return Object.fromEntries(cleanRows(s.fams).filter((r) => r.fam_id && r.location).map((r) => [r.fam_id, r.location]));
+}
+
 export function fingerprint(s: EventState): string {
   const payload: Record<string, unknown> = {
     rounds: s.rounds,
     hosts: cleanRows(s.hosts),
-    fams: cleanRows(s.fams),
+    fams: cleanRows(s.fams).map(planningCells),
     rules: cleanRows(s.rules),
     cancel_hosts: s.cancelHosts,
     cancel_fams: s.cancelFams,
@@ -143,7 +171,7 @@ export function solveEvent(highs: HighsLike, s: EventState, keepPrinted = true):
   }
   const plan = planEvent(highs, inputs.hosts, inputs.fams, s.rounds, {
     rules: inputs.rules, hostAway, famAway, locked, keep, hostLimits: inputs.onlyInRounds,
-    weakLimit: s.oneWeakRound ? 1 : null,
+    weakLimit: s.oneWeakRound ? 1 : null, stepFreeFams: stepFreeFams(s),
   });
   plan.warnings = [...inputs.warnings, ...plan.warnings];
   s.plan = plan;
@@ -321,6 +349,7 @@ export function saveEvent(s: EventState): string {
     arrived: s.arrived,
     notes: s.notes,
     night_log: s.nightLog,
+    night: s.night,
   }, null, 2);
 }
 
@@ -342,6 +371,7 @@ export function loadEvent(text: string): EventState {
       roundMinutes: Number(d.round_minutes ?? 20), printedAt: String(d.printed_at ?? ""),
       arrived: (d.arrived ?? []).map(String), notes: String(d.notes ?? ""),
       nightLog: (d.night_log ?? []).map((e: any) => ({ at: String(e.at ?? ""), text: String(e.text ?? "") })),
+      night: d.night && typeof d.night === "object" && !Array.isArray(d.night) ? d.night : {},
     });
   } catch {
     throw new SheetError(["That saved event is incomplete or damaged, so it cannot be loaded."]);

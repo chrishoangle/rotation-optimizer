@@ -79,6 +79,14 @@ def page_y(p, name: str) -> float:
     return button(p, name).evaluate("b => b.getBoundingClientRect().top + window.scrollY")
 
 
+def start_round_1(p) -> None:
+    """Start the event in night mode, past the room setup warning."""
+    if button(p, "Start anyway").count():
+        button(p, "Start anyway").click()
+    button(p, "Start round 1").click()
+    p.wait_for_selector("text=minutes left")
+
+
 def set_number(p, label: str, value: int) -> None:
     box = p.get_by_label(label, exact=True)
     box.fill(str(value))
@@ -142,8 +150,8 @@ def test_typing_six_hosts_and_eight_fams_with_tab(page):
     for table, rows in (("hosts", hosts), ("fams", fams)):
         got = p.eval_on_selector_all(f'table[data-table="{table}"] tbody tr',
                                      "trs => trs.map(tr => [...tr.querySelectorAll('input')].map(i => i.value))")
-        assert [tuple(r) for r in got[: len(rows)]] == rows
-        assert got[len(rows)] == [""] * len(rows[0])  # one empty row is left for the next entry
+        assert [tuple(r[: len(rows[0])]) for r in got[: len(rows)]] == rows
+        assert set(got[len(rows)]) == {""}  # one empty row is left for the next entry
     find(p)
     assert "Planned for 2 rounds, 8 fams and 6 host tables." in text(p)
 
@@ -303,15 +311,16 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     assert "Changes are waiting" not in body
     p.get_by_label("Where is").fill("alum k")
     assert "Round 2: Table" in p.inner_text("#where-results")
+    start_round_1(p)
     button(p, "Round 1 is finished: hosts move now").click()
-    assert "Round 2 of 2" in text(p) and "Last round" in text(p)
+    assert "Moving to round 2 of 2" in text(p)
     p.get_by_text("Tonight's log").click()
     log = text(p)
     assert "did not show up, cancelled from round 1." in log and "Added Alum K (Real Estate) as a host from round 1." in log
     assert jargon(text(p)) == []
     # A reload during the event comes back to night mode.
     p.reload()
-    p.wait_for_selector("text=Round 2 of 2")
+    p.wait_for_selector("text=Moving to round 2 of 2")
     p.set_viewport_size({"width": 390, "height": 844})
     assert p.evaluate("document.documentElement.scrollWidth") <= 390
     button(p, "Back to planning").click()
@@ -416,3 +425,119 @@ def test_remove_student_names_and_team_pages(page):
     p.wait_for_selector("text=Student names removed.")
     saved = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
     assert "Student 01" not in json.dumps(json.loads(saved)["fams"])
+
+
+def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
+    p = page
+    find(p)
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.wait_for_selector("text=Room setup: 0 of 10 tables checked")
+    p.locator(".setup li").first.get_by_role("button", name="Check").click()
+    assert "Room setup: 1 of 10 tables checked" in text(p)
+    # The original incident: a fam sat down at another table before the tents went out.
+    p.locator(".setup li", has_text="Bio & Chem").get_by_role("button", name="Different table").click()
+    p.get_by_label("Table the fam is at").fill("2")
+    button(p, "They are at this table").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    tell = p.inner_text(".panel.tell")
+    assert re.search(r"Bio & Chem is at Table 2, not Table 10 as your card says\.", tell)
+    assert re.search(r"Cog Sci & Pre-Health is at Table 10, not Table 2 as your card says\.", tell)
+    # An expected alum misses round 1, then turns up.
+    button(p, "Didn't show").first.click()
+    button(p, "Yes, cancel").click()
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    start_round_1(p)
+    button(p, "Round 1 is finished: hosts move now").click()
+    if not p.eval_on_selector('[data-panel="checkin"]', "d => d.open"):
+        p.locator('[data-panel="checkin"] > summary').click()
+    p.locator(".checkin li.noshow").first.get_by_role("button", name="Arrived late").click()
+    button(p, "Add them back").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    p.get_by_text("Tonight's log").click()
+    assert "arrived late and hosts from round 2." in text(p)
+    assert jargon(text(p)) == []
+
+
+def test_rounds_on_a_clock_with_moves_ticked_and_changes_passed_on(page):
+    p = page
+    set_number(p, "Rounds", 3)
+    find(p)
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.wait_for_selector("text=Room setup is not finished")
+    assert "10 tables not checked in room setup" in p.inner_text(".now-board")
+    start_round_1(p)
+    assert "Round 1: 20 minutes left" in p.inner_text(".now-board")
+    # Two alumni ended up at the wrong tables: keep it, and re-plan the rest around it.
+    row = p.locator(".now-list li").first
+    row.get_by_role("button", name="Not right?").click()
+    pick = p.get_by_label("Who is actually at Table 1")
+    other = pick.evaluate("s => [...s.options].find(o => !o.selected).value")
+    pick.select_option(other)
+    button(p, "Keep it this way").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    assert "not told yet" in p.inner_text(".panel.tell")
+    first = p.locator(".panel.tell .told-list li").first
+    first.get_by_role("button", name="Not told").click()
+    assert p.locator(".panel.tell .told-list li").first.get_by_role("button", name="Told").count() == 1
+    button(p, "Round 1 is finished: hosts move now").click()
+    p.wait_for_selector("text=Moving to round 2 of 3")
+    moving = p.locator(".moves li")
+    n = moving.count()
+    assert n >= 9 and f"0 of {n} alumni at their tables" in p.inner_text(".now-board")
+    moving.first.get_by_role("button", name="Moving").click()
+    assert f"1 of {n} alumni at their tables" in p.inner_text(".now-board")
+    with p.expect_popup() as pop:
+        button(p, "Print the MC cue card with updated times").click()
+    assert "Round 2" in pop.value.inner_text("body") and "Round 3" in pop.value.inner_text("body")
+    pop.value.close()
+    button(p, "Start round 2").click()
+    p.wait_for_selector("text=Round 2 of 3")
+    assert "Round 1:" in text(p) and " to " in text(p)
+    assert jargon(text(p)) == []
+
+
+def test_volunteer_qr_view_students_runner_sheets_and_wrap_up(page):
+    p = page
+    find(p)
+    with p.expect_popup() as pop:
+        p.locator(".card", has_text="Runner sheets").get_by_role("button", name="Open to print").click()
+    assert "runner 2 of 2" in pop.value.inner_text("body")
+    pop.value.close()
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.locator('[data-panel="students"] > summary').click()
+    for _ in range(2):
+        p.get_by_label("One more at Bio & Chem").click()
+    assert "2 of 6" in p.inner_text('[data-panel="students"]')
+    assert "Few students yet at" in p.inner_text(".now-board")
+    p.locator('[data-panel="share"] > summary').click()
+    p.wait_for_selector(".qr svg")
+    p.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    button(p, "Copy the link").click()
+    link = p.evaluate("navigator.clipboard.readText()")
+    assert "/app/view.html#" in link
+    v = p.context.new_page()
+    v.goto(link)
+    v.wait_for_selector("text=Read only")
+    assert "Table 10" in v.inner_text("body") and "Student" not in v.inner_text("body")
+    v.get_by_label("Find an alum or a fam").fill("Pharmacy")
+    assert "Round 2:" in v.inner_text("body")
+    v.close()
+    start_round_1(p)
+    button(p, "Round 1 is finished: hosts move now").click()
+    button(p, "Start round 2").click()
+    button(p, "Round 2 is finished: the event is over").click()
+    p.wait_for_selector("text=what would you change next year?")
+    p.get_by_label("What would you change next year?").fill("Start check-in 15 minutes earlier.")
+    button(p, "Save to notes for next year").click()
+    button(p, "Back to planning").click()
+    assert "Start check-in 15 minutes earlier." in p.get_by_label("Notes for next year").input_value()

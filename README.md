@@ -83,23 +83,39 @@ be written.
    what; email and phone columns are always dropped), or paste rows copied
    from a spreadsheet.
 2. Add pairing rules if you need them: must meet, never meet, only in
-   rounds (an alum who comes late or leaves early), or stays with (an alum
-   who stays at one fam's table all night).
+   rounds (an alum who comes late or leaves early), stays with (an alum
+   who stays at one fam's table all night), or needs step-free (an alum who
+   only visits tables marked step-free).
 3. Find the schedule. The page says how many pairings share an interest,
    and Why? next to any pairing explains it and lets you choose a different
    host, which becomes a must meet rule you can undo.
 4. Print the seating chart, host cards, table tents, and run sheet, plus a
-   backup packet with the whole schedule on paper and a plan summary for a
-   director. Mark as printed also downloads a backup of the event file. The
+   backup packet with the whole schedule on paper, a plan summary for a
+   director, runner sheets (each runner's tables, split by part of the
+   room), and host badges. Fam tables can say where they are in the room
+   ("by the stage"), which is printed on host cards, and whether they are
+   step-free. Mark as printed also downloads a backup of the event file. The
    sidebar prints a two-page coordinator guide, volunteer role cards, and a
    privacy note.
 5. Rehearse with Practice the night, which runs night mode on a copy.
-6. On the night, open night mode: one screen that works on a phone, with
-   the round and a clock, who is where now and next, a search for any alum,
-   fam, or student, check-in with a Didn't show button, cancellations, and
-   late alumni. Re-plan now keeps finished rounds and the printed schedule
-   wherever it can, then says who to send where, prints a change slip per
-   alum, and lists exactly which pages to reprint.
+6. On the night, open night mode: one screen that works on a phone.
+   - Room setup: put the tents out, walk the room with the setup sheet, and
+     tick each table. If a fam is already sitting at another table, record
+     the number they are at instead of moving the students.
+   - Check-in for alumni (with Didn't show and Arrived late) and a count of
+     students per fam.
+   - Start and finish each round on a clock: time left, how late the night
+     is running, when it will end, and an MC cue card with new times.
+     Between rounds, tick each alum as they reach their table.
+   - Who is where now and next, a search for anyone, cancellations, late
+     alumni, and Not right? to keep an alum where they actually sat.
+   - Re-plan now keeps finished rounds and the printed schedule wherever it
+     can, then says who to send where (with a tick when each person is
+     told), prints change slips, and lists exactly which pages to reprint.
+   - A QR code opens a read-only "who is where" page on any volunteer's
+     phone. The schedule travels inside the link after "#", so there is
+     still no server, and it never includes student names.
+   - At the end it asks what to change next year and adds it to the notes.
 7. Hand off to next year downloads a folder with the event file (without
    student names or the night's changes), your notes for next year, and a
    log of what happened on the night.
@@ -120,7 +136,7 @@ host.
 
 The web app lives in [`web/`](web/) and is a TypeScript port of this
 package. Its tests check it against output written by the Python package
-(`scripts/export_parity_cases.py`): the same best score for each of 47
+(`scripts/export_parity_cases.py`): the same best score for each of 51
 scheduling cases, the same messages, and the same printouts byte for byte.
 To build it into `docs/app/`:
 

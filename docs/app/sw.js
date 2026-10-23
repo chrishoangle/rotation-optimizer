@@ -5,8 +5,8 @@
 // visit. Event data never passes
 // through here: it stays in the page and in the files you save.
 
-const CACHE = "rotation-optimizer-0.5.0-6c73898ad958";
-const FILES = ["./","index.html","app.js","style.css","highs.wasm"];
+const CACHE = "rotation-optimizer-0.6.0-007c27bae1c3";
+const FILES = ["./","index.html","app.js","style.css","highs.wasm","view.html","view.js"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

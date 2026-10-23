@@ -7,7 +7,7 @@ import practiceFams from "../../templates/practice_fams.csv";
 import practiceHosts from "../../templates/practice_hosts.csv";
 import { download, h, openPage, readFile, replace, rich } from "./dom";
 import {
-  EventState, FAM_COLUMNS, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
+  EventState, FAM_COLUMNS, famLocations, stepFreeFams, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
   handoffEvent, hasStarted, isCurrent, loadEvent, maxRounds, nearMisses, newEvent, normalizeState, normalizeTable,
   removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
 } from "./event";
@@ -21,9 +21,17 @@ import {
 import { explainPairing, sharedPairings } from "./explain";
 import { FIELDS, formsScript } from "./forms";
 import { changeSlipsHtml, movesBetween } from "./moves";
-import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
+import {
+  addLateHost, cancelFam, cancelHost, currentRound, finishRound, joinLate, logChange, moveFamTable, notArrived, openTables, recordActual,
+  roomTables, setupMissing, toggleMoved, toggleSetup, toggleTold, transitions, whereIs,
+} from "./night";
 import { parsePasted } from "./paste";
-import { backupPacketHtml, coordinatorGuideHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml } from "./printables";
+import {
+  backupPacketHtml, coordinatorGuideHtml, hostBadgesHtml, mcCueCardHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, runnerSheetsHtml,
+  setupSheetHtml,
+} from "./printables";
+import { encodeSnapshot, qrSvg, snapshot as snapshotFor } from "./share";
+import { endRound, leftText, nowMinutes, shown, startRound, status, toMinutes } from "./timing";
 import { csvRecords, sha256Hex } from "./py";
 import {
   CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
@@ -60,6 +68,7 @@ interface Ui {
   explain: { round: number; famId: string } | null;
   pinned: { rule: CleanRow; text: string } | null;
   confirmNames: boolean;
+  runners: number;
 }
 
 let ev: EventState;
@@ -69,7 +78,7 @@ let practiceOriginal: EventState | null = null;
 let highs: HighsLike | null = null;
 const ui: Ui = {
   savedHash: "", savedAt: "", notes: {}, pending: {}, undo: null, confirmStart: null, confirmCancel: null,
-  solveError: null, tab: 1, unfinish: null, restored: "", solving: false, explain: null, pinned: null, confirmNames: false,
+  solveError: null, tab: 1, unfinish: null, restored: "", solving: false, explain: null, pinned: null, confirmNames: false, runners: 2,
 };
 
 function practiceEvent(): EventState {
@@ -548,11 +557,13 @@ const HOST_TABLE: Column[] = [
   { key: "tags", label: "Tags", width: "54%" },
 ];
 const FAM_TABLE: Column[] = [
-  { key: "table_number", label: "Table #", width: "9%", help: "The number on the table in the room." },
-  { key: "fam_label", label: "Fam name", width: "24%" },
-  { key: "size", label: "Size", width: "7%", help: "How many students sit at this fam." },
-  { key: "interests", label: "Interests", width: "30%" },
-  { key: "students", label: "Students", width: "30%" },
+  { key: "table_number", label: "Table #", width: "7%", help: "The number on the table in the room." },
+  { key: "fam_label", label: "Fam name", width: "19%" },
+  { key: "size", label: "Size", width: "6%", help: "How many students sit at this fam." },
+  { key: "interests", label: "Interests", width: "24%" },
+  { key: "students", label: "Students", width: "22%" },
+  { key: "location", label: "Location", width: "13%", help: "Where the table is in the room, for example by the stage. Printed on host cards." },
+  { key: "step_free", label: "Step-free", width: "9%", help: "yes if the table can be reached without steps." },
 ];
 const RULE_TABLE: Column[] = [
   { key: "rule", label: "Rule", width: "24%", kind: "rule" },
@@ -884,8 +895,8 @@ function renderSchedule(): void {
       h("button", { role: "tab", "aria-selected": ui.tab === i + 1 ? "true" : "false", className: "tab", onclick: () => { ui.tab = i + 1; steady(renderSchedule); } }, label)));
   const tabBody = ui.tab <= p.rounds ? roundTable(p, ui.tab, current) : dataTable(hostViewRows(p), NAMES);
   const printouts: [string, string, () => string, string][] = [
-    ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title), "One page per round for the room, then a find-your-table page."],
-    ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title), "Half a page per host: where to go each round and what to talk about."],
+    ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title, null, true, "", famLocations(ev)), "One page per round for the room, then a find-your-table page."],
+    ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title, "", famLocations(ev)), "Half a page per host: where to go each round and what to talk about."],
     ["Table tents", "table tents", () => tableTentsHtml(p), "A big table number to fold and stand on each fam's table."],
     ["Run sheet", "run sheet", () => runSheetHtml(p, ev.title, ev.startTime, ev.roundMinutes), "For you and the MC: a timeline for the night and check-in lists."],
   ];
@@ -929,16 +940,25 @@ function renderSchedule(): void {
       h("h3", {}, "For your team"),
       h("div", { className: "cards" },
         printCard("Backup packet", "backup packet", () => backupPacketHtml(p, ev.title, ev.printedAt), "The whole schedule on paper, for the coordinator, in case every device fails."),
-        printCard("Plan summary", "plan summary", () => planSummaryHtml(p, ev.title, rulesInWords(), ev.notes), "One or two pages for a director: how good the plan is, the rules, and every pairing.")),
+        printCard("Plan summary", "plan summary", () => planSummaryHtml(p, ev.title, rulesInWords(), ev.notes), "One or two pages for a director: how good the plan is, the rules, and every pairing."),
+        printCard("Runner sheets", "runner sheets", () => runnerSheetsHtml(p, ev.title, ui.runners, famLocations(ev)), `One page per runner (${ui.runners}): their tables, and who arrives at each one every round.`,
+          runnersPicker()),
+        printCard("Host badges", "host badges", () => hostBadgesHtml(p, ev.title, famLocations(ev)), "A card for each alum to slip behind their name badge, with their table every round.")),
     ] : null,
   );
 }
 
-function printCard(label: string, file: string, make: () => string, help: string): HTMLElement {
-  return h("div", { className: "card" }, h("strong", {}, label), h("p", { className: "help" }, help),
+function printCard(label: string, file: string, make: () => string, help: string, extra: HTMLElement | null = null): HTMLElement {
+  return h("div", { className: "card" }, h("strong", {}, label), h("p", { className: "help" }, help), extra,
     h("div", { className: "row" },
       h("button", { className: "button primary", onclick: () => openPage(make()) }, "Open to print"),
       h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download")));
+}
+
+function runnersPicker(): HTMLElement {
+  const sel = h("select", { "aria-label": "Runners" }, [1, 2, 3, 4].map((n) => h("option", { value: n, selected: n === ui.runners }, `${n} runner${n !== 1 ? "s" : ""}`))) as HTMLSelectElement;
+  sel.addEventListener("change", () => { ui.runners = Number(sel.value); night.on ? nightRefresh() : steady(renderSchedule); });
+  return sel;
 }
 
 function rulesInWords(): string[] {
@@ -1168,8 +1188,8 @@ function reprintPanel(p: EventPlan, printed: EventPlan): HTMLElement {
   if (isCurrent(ev)) {
     const stamp = now();
     const buttons: HTMLElement[] = [];
-    if (out.hostIds.length) buttons.push(reprintButton("Reprint host cards", "host cards reprint", () => hostCardsHtml(p, out.hostIds, ev.title, stamp)));
-    if (out.seatingChart) buttons.push(reprintButton("Reprint seating chart pages", "seating chart reprint", () => seatingChartHtml(p, ev.title, out.seatingRounds, out.finderPage, stamp)));
+    if (out.hostIds.length) buttons.push(reprintButton("Reprint host cards", "host cards reprint", () => hostCardsHtml(p, out.hostIds, ev.title, stamp, famLocations(ev))));
+    if (out.seatingChart) buttons.push(reprintButton("Reprint seating chart pages", "seating chart reprint", () => seatingChartHtml(p, ev.title, out.seatingRounds, out.finderPage, stamp, famLocations(ev))));
     if (out.famIds.length) buttons.push(reprintButton("Reprint table tents", "table tents reprint", () => tableTentsHtml(p, out.famIds, stamp)));
     if (buttons.length) {
       box.appendChild(h("div", { className: "cards" }, buttons));
@@ -1184,14 +1204,29 @@ function tellPeople(p: EventPlan, printed: EventPlan): HTMLElement | null {
   const m = movesBetween(printed, p, ev.finished + 1);
   if (!m.hosts.length && !m.fams.length) return null;
   const at = now();
+  const told = new Set(ev.night.told ?? []);
+  const again = () => (night.on ? nightRefresh() : (persist(), steady(renderNight)));
+  const item = (key: string, text: string) => h("li", { className: told.has(key) ? "told" : "" },
+    h("button", { className: `button small ${told.has(key) ? "primary" : ""}`, "aria-pressed": told.has(key) ? "true" : "false",
+      onclick: () => { toggleTold(ev, key); again(); } }, told.has(key) ? "Told" : "Not told"),
+    h("span", {}, text));
+  const left = untold(m).length;
   return h("div", { className: "panel tell" },
-    h("h3", {}, "What to tell people"),
-    m.hosts.length ? h("ul", {}, m.hosts.map((x) => h("li", {}, x.text))) : null,
-    m.fams.length ? h("ul", {}, m.fams.map((x) => h("li", {}, x.text))) : null,
+    h("h3", {}, "What to tell people" + (left ? ` (${left} not told yet)` : ": everyone told")),
+    m.hosts.length ? h("ul", { className: "told-list" }, m.hosts.map((x) => item(moveKey(x), x.text))) : null,
+    m.fams.length ? h("ul", { className: "told-list" }, m.fams.map((x) => item(`fam|${x.round}|${x.famId}`, x.text))) : null,
     m.mc.length ? [h("p", { className: "help" }, "For the MC to read out:"), h("ul", {}, m.mc.map((x) => h("li", {}, x)))] : null,
     m.hosts.length ? h("div", { className: "row" },
       h("button", { className: "button primary", onclick: () => openPage(changeSlipsHtml(p, m.hosts, ev.title, at)) }, "Print change slips"),
       h("span", { className: "help" }, "One slip per alum, quicker than reprinting a whole card.")) : null);
+}
+
+const moveKey = (x: { round: number; hostId: string; now: string }) => `${x.round}|${x.hostId}|${x.now}`;
+
+/** Changes from the printed plan nobody has been told about yet. */
+function untold(m: ReturnType<typeof movesBetween>): string[] {
+  const told = new Set(ev.night.told ?? []);
+  return [...m.hosts.map(moveKey), ...m.fams.map((x) => `fam|${x.round}|${x.famId}`)].filter((k) => !told.has(k));
 }
 
 function reprintButton(label: string, file: string, make: () => string): HTMLElement {
@@ -1212,8 +1247,16 @@ interface NightUi {
   confirm: { kind: "host" | "fam"; id: string; label: string; first: number; noShow: boolean } | null;
   justFinished: number | null;
   before: EventPlan | null; // the plan before the last re-plan, when nothing is marked printed
+  renumber: string | null; // fam id whose table number is being corrected
+  lateJoin: string | null; // host id joining late
+  problem: string; // the last room action's problem, in plain words
+  actual: string | null; // fam id whose table is being corrected to what actually happened
+  startAnyway: boolean; // start round 1 although setup is not finished
 }
-const night: NightUi = { on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null };
+const night: NightUi = {
+  on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null,
+  renumber: null, lateJoin: null, problem: "", actual: null, startAnyway: false,
+};
 let clockTimer = 0;
 
 function setNightMode(on: boolean): void {
@@ -1234,6 +1277,16 @@ function setNightMode(on: boolean): void {
   }
 }
 
+// Night mode re-renders after every tap, so remember which panels are open.
+const nightOpen = new Map<string, boolean>();
+function panel(key: string, openByDefault: boolean, summary: string, ...body: Parameters<typeof h>[2][]): HTMLElement {
+  // Only a tap on the summary counts: the browser also fires "toggle" for panels drawn open.
+  const head = h("summary", {}, summary);
+  const el = h("details", { className: "panel", open: nightOpen.get(key) ?? openByDefault, "data-panel": key }, head, ...body) as HTMLDetailsElement;
+  head.addEventListener("click", () => nightOpen.set(key, !el.open));
+  return el;
+}
+
 function nightRefresh(): void {
   persist();
   const y = window.scrollY;
@@ -1244,6 +1297,172 @@ function nightRefresh(): void {
 function hostLabelRow(id: string): string {
   const r = ev.hosts.find((x) => x.host_id === id);
   return r ? (r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label) : id;
+}
+
+/** The few things a coordinator needs at a glance, at the top of night mode. */
+function nowBoard(p: EventPlan, current: boolean): HTMLElement {
+  const st = status(ev, nowMinutes());
+  const r = st.round;
+  const items: [string, string, string][] = []; // [kind, text, panel to open]
+  if (st.phase === "during" && st.minutesLeft !== null) items.push([st.minutesLeft < 0 ? "warn" : st.minutesLeft <= 3 ? "info" : "ok", `Round ${r}: ${leftText(st.minutesLeft)}`, ""]);
+  if (st.phase === "moving") {
+    const moving = transitions(p, r).filter((t) => t.toTable !== null);
+    const done = moving.filter((t) => (ev.night.moved ?? []).includes(t.key)).length;
+    items.push([done === moving.length ? "ok" : "warn", `Moving to round ${r}: ${done} of ${moving.length} alumni at their tables`, ""]);
+  }
+  if (st.lateBy >= 5 && st.phase !== "over") items.push(["warn", `Running ${st.lateBy} minutes late` + (st.projectedEnd !== null ? `, ending about ${shown(st.projectedEnd)}` : ""), ""]);
+  const open = current && st.phase !== "over" ? openTables(p, r) : [];
+  if (open.length) items.push(["warn", `No host in round ${r}: ${open.join(", ")}`, ""]);
+  const missing = notArrived(ev);
+  if (missing.length && ev.finished === 0) items.push(["warn", `${missing.length} alum${missing.length !== 1 ? "ni" : ""} not checked in`, "checkin"]);
+  const setupLeft = setupMissing(ev).length;
+  if (setupLeft && st.phase === "before") items.push(["warn", `${setupLeft} table${setupLeft !== 1 ? "s" : ""} not checked in room setup`, "room"]);
+  const base = ev.printed ?? night.before;
+  const notTold = current && base ? untold(movesBetween(base, p, ev.finished + 1)).length : 0;
+  if (notTold) items.push(["warn", `${notTold} change${notTold !== 1 ? "s" : ""} not passed on yet`, ""]);
+  const short = st.phase === "before" || (st.phase === "during" && r === 1) ? shortFams(p) : [];
+  if (short.length) items.push(["warn", `Few students yet at ${short.slice(0, 3).join(", ")}${short.length > 3 ? "…" : ""}`, "students"]);
+  if (!current) items.push(["error", "Changes are waiting: re-plan now", ""]);
+  if (!items.length) items.push(["ok", "All good.", ""]);
+  return h("section", { className: "now-board", "aria-label": "Right now" }, items.map(([kind, text, key]) =>
+    h("button", { className: `chip ${kind}`, onclick: () => {
+      if (!key) return;
+      nightOpen.set(key, true);
+      nightRefresh();
+      document.querySelector(`[data-panel="${key}"]`)?.scrollIntoView({ block: "start" });
+    } }, text)));
+}
+
+/** The round, its clock, and the one button that moves the night forward. */
+function roundSection(p: EventPlan): HTMLElement {
+  const st = status(ev, nowMinutes());
+  const r = st.round;
+  const t = ev.night.roundTimes ?? {};
+  const setupLeft = setupMissing(ev);
+  const start = () => { startRound(ev, r, nowMinutes()); logChange(ev, now(), `Round ${r} started.`); night.startAnyway = false; nightRefresh(); };
+  let action: HTMLElement;
+  if (st.phase === "before") {
+    action = setupLeft.length && !night.startAnyway
+      ? h("div", { className: "msg warn" }, `Room setup is not finished: ${setupLeft.length} table${setupLeft.length !== 1 ? "s" : ""} not checked (${setupLeft.slice(0, 4).join(", ")}${setupLeft.length > 4 ? "…" : ""}).`,
+        h("div", { className: "row" },
+          h("button", { className: "button", onclick: () => { nightOpen.set("room", true); nightRefresh(); document.querySelector('[data-panel="room"]')?.scrollIntoView({ block: "start" }); } }, "Check the tables"),
+          h("button", { className: "button primary", onclick: () => { night.startAnyway = true; nightRefresh(); } }, "Start anyway")))
+      : h("button", { className: "button primary big wide", onclick: start }, "Start round 1");
+  } else if (st.phase === "moving") {
+    action = h("button", { className: "button primary big wide", onclick: start }, `Start round ${r}`);
+  } else if (st.phase === "during") {
+    action = h("button", { className: "button primary big wide", onclick: () => {
+      endRound(ev, r, nowMinutes());
+      if (r < p.rounds) { finishRound(ev, now()); night.justFinished = ev.finished; }
+      else logChange(ev, now(), `Round ${r} finished. The event is over.`);
+      nightRefresh();
+    } }, r < p.rounds ? `Round ${r} is finished: hosts move now` : `Round ${r} is finished: the event is over`);
+  } else {
+    action = h("p", {}, "The event is over. Thank the hosts and the fams.");
+  }
+  const timesLine = Object.keys(t).length ? h("p", { className: "help" }, Object.entries(t).sort(([a], [b]) => Number(a) - Number(b)).map(([k, v]) =>
+    `Round ${k}: ${v.start ? shown(toMinutes(v.start)!) : "?"}${v.end ? ` to ${shown(toMinutes(v.end)!)}` : ""}`).join(" · ")) : null;
+  const moving = st.phase === "moving" ? transitions(p, r) : [];
+  const moved = new Set(ev.night.moved ?? []);
+  return h("section", { className: "panel round-now" },
+    h("p", { className: "big-round" }, st.phase === "moving" ? `Moving to round ${r} of ${p.rounds}` : st.phase === "over" ? "Finished" : `Round ${r} of ${p.rounds}`),
+    st.phase === "during" && st.minutesLeft !== null ? h("p", { className: `clock-left ${st.minutesLeft < 0 ? "over" : ""}` }, leftText(st.minutesLeft)) : null,
+    st.lateBy >= 5 && st.phase !== "over" ? h("p", { className: "warn-text" }, `Running ${st.lateBy} minutes late.` +
+      (st.projectedEnd !== null ? ` At this pace the event ends about ${shown(st.projectedEnd)}` + (st.plannedEnd !== null ? `, not ${shown(st.plannedEnd)}.` : ".") : "") +
+      (st.catchUp ? ` To finish on time, make the remaining rounds ${st.catchUp} minutes and tell the MC.` : "")) : null,
+    action,
+    night.justFinished === ev.finished && st.phase === "moving" && ev.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "help" }, `Round ${ev.finished} marked finished. `,
+      h("button", { className: "button link", onclick: () => {
+        ev.finished -= 1; night.justFinished = null;
+        const k = String(ev.finished + 1);
+        const rt = ev.night.roundTimes ?? {};
+        if (rt[k]) ev.night = { ...ev.night, roundTimes: { ...rt, [k]: { start: rt[k].start } } };
+        logChange(ev, now(), `Round ${ev.finished + 1} un-finished.`);
+        nightRefresh();
+      } }, "Undo")) : null,
+    moving.length ? h("div", { className: "transition" },
+      h("p", { className: "help" }, "Tick each alum when they reach their table. Two runners: one takes the top half of the list, the other the bottom half."),
+      h("ul", { className: "moves" }, moving.map((m) => h("li", { className: moved.has(m.key) ? "done" : "" },
+        h("button", { className: `button small ${moved.has(m.key) ? "primary" : ""}`, "aria-pressed": moved.has(m.key) ? "true" : "false",
+          onclick: () => { toggleMoved(ev, m.key); nightRefresh(); } }, moved.has(m.key) ? "There" : "Moving"),
+        h("span", { className: "who" }, m.who), h("span", { className: "help" }, `${m.from} to ${m.to}`))))) : null,
+    timesLine,
+    st.phase !== "before" ? h("button", { className: "button small", onclick: () => openPage(mcCueCardHtml(ev, p, nowMinutes())) }, "Print the MC cue card with updated times") : null);
+}
+
+
+/** Fams with fewer than half their students checked in, by table. */
+function shortFams(p: EventPlan): string[] {
+  const got = ev.night.famArrived ?? {};
+  if (!Object.keys(got).length) return [];
+  const tables = tableNumbers(p);
+  return p.fams.filter((f) => (f.size || f.members.length) > 0 && (got[f.groupId] ?? 0) < (f.size || f.members.length) / 2)
+    .sort((a, b) => tables[a.groupId] - tables[b.groupId]).map((f) => `Table ${tables[f.groupId]}`);
+}
+
+function studentsPanel(p: EventPlan): HTMLElement {
+  const tables = tableNumbers(p);
+  const got = ev.night.famArrived ?? {};
+  const fams = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
+  const total = fams.reduce((n, f) => n + (got[f.groupId] ?? 0), 0);
+  const expected = fams.reduce((n, f) => n + (f.size || f.members.length), 0);
+  const bump = (id: string, d: number) => {
+    ev.night = { ...ev.night, famArrived: { ...got, [id]: Math.max(0, (got[id] ?? 0) + d) } };
+    nightRefresh();
+  };
+  return panel("students", false, `Students: ${total}${expected ? ` of ${expected}` : ""} here`,
+    h("p", { className: "help" }, "Count students as they sit down at each table. A fam that is mostly missing at the start may need a host moved, or two fams merged."),
+    h("ul", { className: "counts" }, fams.map((f) => {
+      const n = got[f.groupId] ?? 0, want = f.size || f.members.length;
+      return h("li", { className: want && n < want / 2 ? "short" : "" },
+        h("span", { className: "tn" }, `Table ${tables[f.groupId]}`), h("span", {}, f.name),
+        h("span", { className: "n" }, want ? `${n} of ${want}` : String(n)),
+        h("button", { className: "button small", "aria-label": `One fewer at ${f.name}`, onclick: () => bump(f.groupId, -1) }, "−"),
+        h("button", { className: "button small", "aria-label": `One more at ${f.name}`, onclick: () => bump(f.groupId, 1) }, "+"));
+    })));
+}
+
+let shareCache: { key: string; link: string } | null = null;
+
+function sharePanel(p: EventPlan, current: boolean): HTMLElement {
+  const box = h("div", { id: "share-box" });
+  const base = location.protocol.startsWith("http") ? new URL("view.html", location.href).href : "https://chrishoangle.github.io/rotation-optimizer/app/view.html";
+  const key = fingerprint(ev) + "|" + currentRound(ev);
+  const show = (link: string) => replace(box,
+    h("div", { className: "qr" }),
+    h("p", { className: "help" }, "Volunteers scan this with their phone camera to see who is where, round by round. It works offline once opened. It never shows student names."),
+    h("div", { className: "row" },
+      h("button", { className: "button", onclick: async () => { try { await navigator.clipboard.writeText(link); night.problem = ""; } catch { /* the QR code still works */ } } }, "Copy the link"),
+      h("button", { className: "button", onclick: () => openPage(runnerSheetsHtml(p, ev.title, ui.runners, famLocations(ev))) }, `Print runner sheets (${ui.runners})`)));
+  const paint = (link: string) => { show(link); const q = box.querySelector(".qr"); if (q) q.innerHTML = qrSvg(link); };
+  if (shareCache && shareCache.key === key) paint(shareCache.link);
+  else if (current) {
+    encodeSnapshot(snapshotFor(p, ev.title, now(), currentRound(ev), famLocations(ev))).then((data) => {
+      shareCache = { key, link: `${base}#${data}` };
+      paint(shareCache.link);
+    }).catch(() => replace(box, h("p", { className: "help" }, "This browser cannot make the code. Print the runner sheets instead.")));
+  } else replace(box, h("p", { className: "help" }, "Re-plan first, then show the new code: an old code shows the old schedule."));
+  return panel("share", false, "Show volunteers who is where (QR code)", box,
+    h("p", { className: "help" }, "After every re-plan the code changes. Ask volunteers to scan it again."));
+}
+
+function wrapUpPanel(): HTMLElement | null {
+  const st = status(ev, nowMinutes());
+  if (st.phase !== "over" || ev.night.wrapUp) return null;
+  const box = h("textarea", { rows: 4, "aria-label": "What would you change next year?", placeholder: "For example: start check-in 15 minutes earlier; Table 7 is too loud." }) as HTMLTextAreaElement;
+  return h("section", { className: "panel wrap" },
+    h("h2", {}, "Before you go: what would you change next year?"),
+    h("p", { className: "help" }, "Two minutes now saves next year's coordinator an evening. This goes into Notes for next year and the hand-off."),
+    box,
+    h("div", { className: "row" },
+      h("button", { className: "button primary", onclick: () => {
+        const text = box.value.trim();
+        if (text) ev.notes = (ev.notes.trim() ? ev.notes.trim() + "\n\n" : "") + `After the event (${new Date().toLocaleDateString()}): ${text}`;
+        ev.night = { ...ev.night, wrapUp: true };
+        logChange(ev, now(), text ? "Notes for next year added." : "Wrap-up skipped.");
+        nightRefresh();
+      } }, "Save to notes for next year"),
+      h("button", { className: "button", onclick: () => { ev.night = { ...ev.night, wrapUp: true }; nightRefresh(); } }, "Skip")));
 }
 
 function renderNightMode(): void {
@@ -1266,10 +1485,24 @@ function renderNightMode(): void {
     const a = p.assignments.find((x) => x.round === showRound && x.groupId === f.groupId);
     const host = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
     const gone = (p.famAway[f.groupId] ?? []).includes(showRound);
+    const fixing = night.actual === f.groupId && showRound === cur;
     return h("li", { className: host ? "" : "empty" },
       h("span", { className: "tn" }, `Table ${tables[f.groupId]}`),
       h("span", { className: "fam" }, f.name),
-      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"));
+      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"),
+      showRound === cur && !gone && current ? h("button", { className: "button small", onclick: () => { night.actual = fixing ? null : f.groupId; nightRefresh(); } }, fixing ? "Close" : "Not right?") : null,
+      fixing ? (() => {
+        const pick = h("select", { "aria-label": `Who is actually at Table ${tables[f.groupId]}` },
+          p.hosts.filter((x) => !(p.hostAway[x.hostId] ?? []).includes(cur)).map((x) => h("option", { value: x.hostId, selected: x.hostId === host?.hostId }, x.person ? `${x.person} (${x.name})` : x.name))) as HTMLSelectElement;
+        return h("div", { className: "row actual" },
+          h("span", { className: "help" }, "Who is actually there? If moving them would be worse, keep it, and the rest of the night is re-planned around it."),
+          pick,
+          h("button", { className: "button primary", onclick: () => {
+            night.problem = recordActual(ev, f.groupId, pick.value, cur, now());
+            night.actual = null;
+            nightRefresh();
+          } }, "Keep it this way"));
+      })() : null);
   });
 
   // Where is...
@@ -1283,10 +1516,21 @@ function renderNightMode(): void {
 
   // Check-in.
   const expected = ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts));
+  const noShows = ev.hosts.filter((r) => r.host_id && r.table_label && r.host_id in ev.cancelHosts && !ev.arrived.includes(r.host_id));
   const here = expected.filter((r) => ev.arrived.includes(r.host_id)).length;
+  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
+  const lateRow = (id: string) => {
+    const from = h("select", { "aria-label": "Hosts from round" }, openRounds.map((r) => h("option", { value: r, selected: r === Math.min(p.rounds, ev.finished > 0 ? cur + 1 : cur) }, `hosts from round ${r}`))) as HTMLSelectElement;
+    return h("div", { className: "row" }, from,
+      h("button", { className: "button primary", onclick: () => {
+        night.problem = joinLate(ev, id, Number(from.value), now());
+        night.lateJoin = null;
+        nightRefresh();
+      } }, "Add them back"),
+      h("button", { className: "button", onclick: () => { night.lateJoin = null; nightRefresh(); } }, "Cancel"));
+  };
   const missing = notArrived(ev);
-  const checkIn = h("details", { className: "panel", open: ev.finished === 0 },
-    h("summary", {}, `Check-in: ${here} of ${expected.length} alumni here`),
+  const checkIn = panel("checkin", ev.finished === 0 || night.lateJoin !== null, `Check-in: ${here} of ${expected.length} alumni here`,
     h("ul", { className: "checkin" }, expected.map((r) => {
       const isHere = ev.arrived.includes(r.host_id);
       return h("li", {},
@@ -1298,13 +1542,19 @@ function renderNightMode(): void {
         !isHere ? h("button", { className: "button small", onclick: () => {
           night.confirm = { kind: "host", id: r.host_id, label: hostLabelRow(r.host_id), first: cur, noShow: true };
           nightRefresh();
-        } }, "Didn't show") : null);
-    })),
+        } }, "Didn't show") : null,
+        !isHere && ev.finished > 0 ? h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "Arrived late") : null,
+        night.lateJoin === r.host_id ? lateRow(r.host_id) : null);
+    }),
+    noShows.map((r) => h("li", { className: "noshow" },
+      h("span", { className: "tag-out" }, "Didn't show"),
+      h("span", {}, hostLabelRow(r.host_id)),
+      h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "Arrived late"),
+      night.lateJoin === r.host_id ? lateRow(r.host_id) : null))),
     missing.length && ev.finished === 0 ? h("p", { className: "help" }, `${missing.length} not here yet. If someone doesn't come, tap Didn't show next to their name, then Re-plan now.`) : null,
     h("p", { className: "help" }, "A student who walks in just joins a fam: nothing to change here."));
 
   // Someone has to leave.
-  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
   const leave = (kind: "host" | "fam") => {
     const options = kind === "host"
       ? ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts)).map((r) => [r.host_id, hostLabelRow(r.host_id)])
@@ -1332,6 +1582,39 @@ function renderNightMode(): void {
       } }, "Yes, cancel"),
       h("button", { className: "button big", onclick: () => { night.confirm = null; nightRefresh(); } }, "No"))) : null;
 
+  // The room: tents on the right tables, and fams sitting somewhere else.
+  const setupDone = new Set(ev.night.setup ?? []);
+  const located = famLocations(ev);
+  const stepFree = new Set(stepFreeFams(ev));
+  const renumberRow = (famId: string) => {
+    const box = h("input", { type: "number", min: 1, step: 1, "aria-label": "Table the fam is at", placeholder: "Table number" }) as HTMLInputElement;
+    return h("div", { className: "row" }, box,
+      h("button", { className: "button primary", onclick: () => {
+        night.problem = moveFamTable(ev, famId, Number(box.value), now());
+        if (!night.problem) night.renumber = null;
+        nightRefresh();
+      } }, "They are at this table"),
+      h("button", { className: "button", onclick: () => { night.renumber = null; night.problem = ""; nightRefresh(); } }, "Cancel"));
+  };
+  const room = roomTables(ev);
+  const famsByTable = [...p.fams].filter((f) => f.groupId in room).sort((a, b) => room[a.groupId] - room[b.groupId]);
+  const setupLeft = famsByTable.filter((f) => !setupDone.has(f.groupId)).length;
+  const roomPanel = panel("room", (ev.finished === 0 && setupLeft > 0) || night.renumber !== null,
+    setupLeft ? `Room setup: ${famsByTable.length - setupLeft} of ${famsByTable.length} tables checked` : "Room setup: every table checked",
+    h("p", { className: "help" }, "Before doors open, put each tent on its table, walk the room, and tap Checked. If a fam is already sitting at a different table, don't move the students: tap Different table and type the number they are at."),
+    h("ul", { className: "setup" }, famsByTable.map((f) => {
+      const ok = setupDone.has(f.groupId);
+      return h("li", {},
+        h("button", { className: `button ${ok ? "primary" : ""}`, "aria-pressed": ok ? "true" : "false", onclick: () => { toggleSetup(ev, f.groupId); night.problem = ""; nightRefresh(); } }, ok ? "Checked" : "Check"),
+        h("span", { className: "tn" }, `Table ${room[f.groupId]}`),
+        h("span", {}, f.name, located[f.groupId] ? h("span", { className: "help" }, ` · ${located[f.groupId]}`) : null, stepFree.has(f.groupId) ? h("span", { className: "help" }, " · step-free") : null),
+        h("button", { className: "button small", onclick: () => { night.renumber = f.groupId; night.problem = ""; nightRefresh(); } }, "Different table"),
+        night.renumber === f.groupId ? renumberRow(f.groupId) : null);
+    })),
+    h("button", { className: "button", onclick: () => openPage(setupSheetHtml(famsByTable.map((f) => ({
+      table: room[f.groupId], fam: f.name, location: located[f.groupId] ?? "", stepFree: stepFree.has(f.groupId), students: f.size || f.members.length,
+    })), ev.title)) }, "Print the setup sheet"));
+
   // A late alum.
   const lateBox = night.late ? (() => {
     const table = h("input", { type: "text", "aria-label": "Host table name", placeholder: "Host table name, for example Real Estate" }) as HTMLInputElement;
@@ -1356,20 +1639,8 @@ function renderNightMode(): void {
       h("div", {}, h("strong", {}, ev.title), " ", h("span", { id: "night-clock", className: "help" }, now())),
       exit),
     practiceBanner(),
-    h("section", { className: "panel round-now" },
-      h("p", { className: "big-round" }, `Round ${cur} of ${p.rounds}`),
-      last ? h("p", { className: "help" }, "Last round. Nobody moves after this one.")
-        : h("button", { className: "button primary big wide", onclick: () => {
-          finishRound(ev, now());
-          night.justFinished = ev.finished;
-          nightRefresh();
-        } }, `Round ${cur} is finished: hosts move now`),
-      night.justFinished === ev.finished && ev.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "help" }, `Round ${ev.finished} marked finished. `,
-        h("button", { className: "button link", onclick: () => {
-          ev.finished -= 1; night.justFinished = null;
-          logChange(ev, now(), `Round ${ev.finished + 1} un-finished.`);
-          nightRefresh();
-        } }, "Undo")) : null),
+    nowBoard(p, current),
+    roundSection(p),
     !current || err ? h("section", { className: "panel stale-panel" },
       h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
       h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {
@@ -1387,6 +1658,8 @@ function renderNightMode(): void {
       return tell ? [tell, ev.printed ? h("section", { className: "panel" }, reprintPanel(p, ev.printed)) : null] : null;
     })() : null,
     confirm,
+    night.problem ? h("div", { className: "msg error", role: "alert" }, night.problem) : null,
+    ev.finished === 0 ? roomPanel : null,
     h("section", { className: "panel" },
       h("div", { className: "row spread" },
         h("h2", {}, showRound === cur ? `Round ${cur}: who is where` : `Next, round ${showRound}`),
@@ -1396,12 +1669,16 @@ function renderNightMode(): void {
       h("ul", { className: "now-list" }, rows)),
     h("section", { className: "panel" }, h("h2", {}, "Where is…"), search, results),
     checkIn,
+    ev.finished > 0 ? roomPanel : null,
     h("section", { className: "panel" },
       h("h2", {}, "Someone has to leave"),
       openRounds.length ? [leave("host"), leave("fam")] : h("p", { className: "help" }, "Every round is finished."),
       h("p", { className: "help" }, "Then tap Re-plan now at the top. Finished rounds never change.")),
     h("section", { className: "panel" }, lateBox),
-    h("details", { className: "panel" }, h("summary", {}, `Tonight's log (${ev.nightLog.length})`),
+    studentsPanel(p),
+    sharePanel(p, current),
+    wrapUpPanel(),
+    panel("log", false, `Tonight's log (${ev.nightLog.length})`,
       ev.nightLog.length ? h("ul", {}, [...ev.nightLog].reverse().map((e) => h("li", {}, `${e.at}  ${e.text}`))) : h("p", { className: "help" }, "Nothing yet.")),
     h("p", { className: "help" }, "Everything you do here is saved in this browser as you go. Keep the event file too: Back to planning, then Save event file."),
   ));
@@ -1417,7 +1694,7 @@ const START_HERE = [
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
-  "**6. On the night.** Click **Open night mode** (under the schedule). It shows the round, who is where, and check-in, and works on a phone. When someone cancels, doesn't show, or arrives late, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint.",
+  "**6. On the night.** Click **Open night mode** (under the schedule). It works on a phone: check the room setup, check people in, start and finish each round, and see who is where. When someone cancels, doesn't show, arrives late, or sits at the wrong table, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint, and a QR code shows volunteers the schedule on their phones.",
   "**7. Next year.** Click **Hand off to next year** for a copy without student names or the night's changes.",
 ];
 
@@ -1461,11 +1738,11 @@ function renderShell(): void {
       h("p", { className: "help" }, "One row per host table. Tags are keywords separated by commas or semicolons. Blank tags are fine while a host has not replied. Type in the empty last row to add a host table; press Enter to move down. You can also copy rows from Google Sheets or Excel and paste them into a cell."),
       h("div", { id: "hosts-table" }),
       h("h2", {}, "2. Fams"),
-      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. You can paste rows copied from a spreadsheet."),
+      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. Location says where the table is in the room, and is printed on host cards so alumni find it. Step-free is yes for tables reachable without steps. You can paste rows copied from a spreadsheet."),
       h("div", { id: "fams-table" }),
       h("p", { id: "fam-totals", className: "help" }),
       h("h2", {}, "3. Pairing rules (optional)"),
-      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. Write rounds as 1 or 1, 2."),
+      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. needs step-free: the alum only visits tables marked Step-free in the fams table; leave Fam and Rounds blank. Write rounds as 1 or 1, 2."),
       h("div", { id: "rules-table" }),
       h("p", { className: "help" }, "Your changes are checked as you type and kept in this browser."),
       h("div", { className: "row" }, find, h("span", { id: "find-status", className: "help" })),

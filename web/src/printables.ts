@@ -4,9 +4,11 @@
 // these replace a training meeting.
 
 import { sharedPairings } from "./explain";
-import { hostViewRows, scheduleRows } from "./export";
+import { hostViewRows, scheduleRows, tableNumbers } from "./export";
 import { EventPlan, provenOptimal } from "./planning";
+import type { EventState } from "./event";
 import { htmlEscape as e } from "./py";
+import { SWITCH, plannedStart, shown, status, toMinutes } from "./timing";
 
 const APP_URL = "https://chrishoangle.github.io/rotation-optimizer/app/";
 
@@ -44,7 +46,12 @@ export function coordinatorGuideHtml(title: string): string {
     ["An alum arrives late, or an extra one comes", "Night mode, tap An alum arrived late, fill in their table name and fields, choose the round they join, then Re-plan now. If every fam already has a host, seat them with a host table that shares their fields."],
     ["A student walks in", "Nothing to change: they join any fam with space."],
     ["A whole fam leaves", "Night mode, Someone has to leave, choose the fam, then Re-plan now."],
-    ["A round runs long", "Nothing to change in the tool. Tap Round finished only when hosts actually move."],
+    ["A round runs long, or the night is late", "Tap Start and Finished as rounds really happen. Night mode shows how late you are, when the night will now end, and how short the remaining rounds would need to be. Print the MC cue card with the new times."],
+    ["Students sit at the wrong table, or tents are misplaced", "Don't move the students. In Room setup, tap Different table next to the fam and type the number they are at, then Re-plan now. Every alum whose table changed is listed."],
+    ["Two alumni end up at the same table", "Who is where shows who should be there. If moving them would be worse, tap Not right? on that table, choose who is really there, then Re-plan now."],
+    ["A table can't be reached without steps", "Mark tables in the Step-free column, and give the alum a needs step-free rule. On the night, a fam can move to a step-free table with Different table."],
+    ["A volunteer disappears", "Hand their role card and runner sheet to someone else, or let anyone scan the QR code under Show volunteers who is where."],
+    ["An alum who didn't show turns up later", "Under Check-in, tap Arrived late next to them, choose the round they join, then Re-plan now."],
     ["The wifi is down", "The page still opens on any device that visited it before. If not, open the offline copy file you downloaded, then Open a saved event file."],
     ["The laptop dies", "Use the backup packet on paper to run the night, or open the printed backup event file on a phone or a second laptop."],
     ["Something looks wrong in the schedule", "Click Why? next to the pairing. To change it, choose a different host there; it becomes a rule, and Undo puts it back."],
@@ -58,13 +65,14 @@ export function coordinatorGuideHtml(title: string): string {
 <li><strong>Upload or paste.</strong> Upload each form's CSV, or paste rows from a spreadsheet into the tables. Check the warnings under the tables.</li>
 <li><strong>Add rules if needed.</strong> must meet, never meet, only in rounds (for alumni who come late or leave early), or stays with (for an alum who cannot move between tables).</li>
 <li><strong>Find the best schedule.</strong> Read the fairness notes. Click Why? on anything that looks odd, and choose a different host there if you know better.</li>
-<li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, and the backup packet. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
+<li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, backup packet, runner sheets, and host badges. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
 <li><strong>Brief volunteers.</strong> Print the volunteer role cards and hand one to each person.</li>
+<li><strong>Set up the room.</strong> Before doors open, open night mode, put each tent on its table, walk the room with the setup sheet, and tap Checked for each table.</li>
 </ol>
 <h2>The 30-second explanation for staff</h2>
 <p>Students stay seated with their fam. Alumni move tables every round. The tool picks who goes where so every fam meets people in their fields and nobody meets the same alum twice. If someone cancels, we press one button and it tells us who to send where and what to reprint.</p>
 <h2 class="break">On the night: if this happens, do this</h2>
-<p>Open the event and click <strong>Open night mode</strong>. It works on a phone. Tap <strong>Round finished</strong> each time hosts move.</p>
+<p>Open the event and click <strong>Open night mode</strong>. It works on a phone. Tap <strong>Start round 1</strong> when the first round begins, then <strong>Finished</strong> and <strong>Start</strong> for each round as it really happens. The chips at the top say what needs you. Show the QR code to volunteers so they can see who is where.</p>
 ${ifs.map(([when, what]) => `<div class="if"><strong>${e(when)}</strong>${e(what)}</div>`).join("\n")}
 <h2>After the night</h2>
 <p>Write what you learned in Notes for next year (sidebar), then click Hand off to next year and pass the folder on.</p>
@@ -77,11 +85,13 @@ export function roleCardsHtml(title: string): string {
     ["Check-in (door)", [
       "Greet alumni and send students to sit with their fam. Students stay at that table all night.",
       "Tell the coordinator each alum who arrives, or tick them in night mode, Check-in.",
+      "Count students into each fam in night mode, Students, so short fams show up early.",
       "At the start of round 1, tell the coordinator who has not arrived.",
       "A student without a fam: point them to the find-your-table page, or any fam with space.",
     ]],
     ["Runner", [
-      "Move alumni between rounds. Each alum's host card says their table for every round.",
+      "Move alumni between rounds. Each alum's host card and badge say their table for every round. Your runner sheet lists who arrives at your tables.",
+      "Scan the coordinator's QR code to see who is where on your phone.",
       "When the coordinator re-plans, hand out the change slips, or tell each alum the sentence on the page.",
       "Keep spare host cards and the seating chart with you.",
       "If an alum is lost, ask the coordinator to search Where is in night mode.",
@@ -184,5 +194,107 @@ export function privacyNoteHtml(): string {
 </ul>
 <h2>Network</h2>
 <p>The page loads its own files from GitHub Pages. It makes no other network requests. The offline copy makes none at all.</p>
+<h2>The volunteer QR code</h2>
+<p>Night mode can show a QR code so volunteers see who is where. The schedule is packed into the link itself, after the # sign, which browsers never send to any server. It holds host table names, alumni names, fam names, and table locations, never student names. Anyone who has the link can read that schedule, so show it only to your volunteers.</p>
+`);
+}
+
+export interface SetupRow { table: number; fam: string; location: string; stepFree: boolean; students: number }
+
+/** A walk-the-room sheet: tick each table once its tent is on it, before doors open. */
+export function setupSheetHtml(rows: SetupRow[], title: string): string {
+  const sorted = [...rows].sort((a, b) => a.table - b.table);
+  return page(`${title}: room setup`, `
+<h1>${e(title)}: room setup</h1>
+<p class="meta">Do this before doors open, so students sit at the right table. If students are already seated, do not move them: find which table each fam is at, then use night mode, A fam is at a different table.</p>
+<ol>
+<li>Put each table tent on its table. The tent shows the table number and the fam name.</li>
+<li>Walk the room with this sheet. Tick a table when the right tent is on it and the table is where it says.</li>
+<li>Check that the step-free tables can be reached without steps.</li>
+<li>In night mode, tap Checked for each table, so the tool knows the room is ready.</li>
+</ol>
+<table><tr><th>Done</th><th>Table</th><th>Fam</th><th>Where</th><th>Step-free</th><th>Students</th></tr>
+${sorted.map((r) => `<tr><td class="box"></td><td><b>${r.table}</b></td><td>${e(r.fam)}</td><td>${e(r.location)}</td><td>${r.stepFree ? "Yes" : ""}</td><td>${r.students || ""}</td></tr>`).join("\n")}
+</table>
+`, ".box { width: 28px; } td.box::before { content: ''; display: inline-block; width: 14px; height: 14px; border: 1.5px solid #1c1c1e; }");
+}
+
+/** For the MC: when to call each remaining round, from where the night really is. */
+export function mcCueCardHtml(s: EventState, p: EventPlan, now: number): string {
+  const st = status(s, now);
+  const len = st.catchUp ?? s.roundMinutes;
+  const rows: string[] = [];
+  let t = st.phase === "during" ? toMinutes(s.night.roundTimes?.[String(st.round)]?.start ?? "") ?? now : Math.max(now, plannedStart(s, st.round) ?? now);
+  for (let r = st.round; r <= p.rounds; r++) {
+    const say = r === 1 ? "Hosts, go to the table on your host card for round 1." : `Thank your table. Hosts, move to the table on your host card for round ${r}.`;
+    const started = st.phase === "during" && r === st.round;
+    rows.push(`<tr><td class="t">${started ? "now" : e(shown(t))}</td><td><b>Round ${r}</b>${started ? " (under way)" : ""}</td><td>${started ? "" : e(say)}</td></tr>`);
+    rows.push(`<tr><td class="t">${e(shown(t + len))}</td><td>End of round ${r}</td><td>${r < p.rounds ? "Ask hosts to say goodbye; they move in a minute." : "Thank the hosts and the fams. Closing."}</td></tr>`);
+    t += len + SWITCH;
+  }
+  return page(`${s.title}: MC cue card`, `
+<h1>${e(s.title)}: MC cue card</h1>
+<p class="meta">Printed at ${e(shown(now))}. ${st.lateBy >= 5 ? `Running ${st.lateBy} minutes late. ` : ""}${st.catchUp ? `Rounds shortened to ${len} minutes to finish on time.` : `Rounds are ${len} minutes, with ${SWITCH} minutes to move.`}</p>
+<table class="cues">${rows.join("\n")}</table>
+<p class="meta">Students stay seated all night. Alumni move.</p>
+`, ".cues td { font-size: 16px; padding: 8px; } .cues .t { font-weight: 800; white-space: nowrap; width: 1.2in; }");
+}
+
+/**
+ * Split the tables between runners: by location when tables have one (so a
+ * runner keeps to one part of the room), otherwise in number order.
+ */
+export function runnerGroups(p: EventPlan, runners: number, locations: Record<string, string>): string[][] {
+  const tables = tableNumbers(p);
+  const fams = [...p.fams].sort((a, b) => (locations[a.groupId] ?? "").localeCompare(locations[b.groupId] ?? "") || tables[a.groupId] - tables[b.groupId]);
+  const n = Math.max(1, Math.min(runners, fams.length));
+  const size = Math.ceil(fams.length / n);
+  return Array.from({ length: n }, (_, i) => fams.slice(i * size, (i + 1) * size).map((f) => f.groupId)).filter((g) => g.length);
+}
+
+/** One page per runner: their tables, and for each round who walks to them and from where. */
+export function runnerSheetsHtml(p: EventPlan, title: string, runners: number, locations: Record<string, string>): string {
+  const tables = tableNumbers(p);
+  const famName = (id: string) => p.fams.find((f) => f.groupId === id)!.name;
+  const label = (hostId: string) => { const x = p.hosts.find((y) => y.hostId === hostId)!; return x.person ? `${x.person} (${x.name})` : x.name; };
+  const pages = runnerGroups(p, runners, locations).map((group, i) => {
+    const mine = new Set(group);
+    const list = group.map((id) => `Table ${tables[id]} ${famName(id)}` + (locations[id] ? ` (${locations[id]})` : "")).join("; ");
+    const rounds = Array.from({ length: p.rounds }, (_, k) => k + 1).map((r) => {
+      const rows = p.assignments.filter((a) => a.round === r && mine.has(a.groupId))
+        .sort((a, b) => tables[a.groupId] - tables[b.groupId])
+        .map((a) => {
+          const prev = r > 1 ? p.assignments.find((x) => x.round === r - 1 && x.hostId === a.hostId) : undefined;
+          const from = r === 1 ? "check-in" : prev ? `Table ${tables[prev.groupId]}` : "no table";
+          return `<tr><td class="box"></td><td><b>Table ${tables[a.groupId]}</b></td><td>${e(label(a.hostId))}</td><td>from ${e(from)}</td></tr>`;
+        });
+      const empty = group.filter((id) => !p.assignments.some((a) => a.round === r && a.groupId === id) && !(p.famAway[id] ?? []).includes(r));
+      return `<h3>Round ${r}</h3><table><tr><th></th><th>Table</th><th>Host arriving</th><th></th></tr>${rows.join("")}</table>` +
+        (empty.length ? `<p class="meta">No host this round at ${empty.map((id) => `Table ${tables[id]}`).join(", ")}: send a floater.</p>` : "");
+    }).join("");
+    return `<section class="${i ? "break" : ""}"><h1>${e(title)}: runner ${i + 1} of ${runners}</h1><p class="meta">Your tables: ${e(list)}.</p>
+<p>Before each round, check that each host below reaches your table. Tick them off. If someone is missing, tell the coordinator.</p>${rounds}</section>`;
+  });
+  return page(`${title}: runner sheets`, pages.join("\n"), ".box { width: 28px; } td.box::before { content: ''; display: inline-block; width: 14px; height: 14px; border: 1.5px solid #1c1c1e; }");
+}
+
+/** Credit-card sized badges for alumni: their table for every round, to slip behind a name badge. */
+export function hostBadgesHtml(p: EventPlan, title: string, locations: Record<string, string>): string {
+  const tables = tableNumbers(p);
+  const badges = p.hosts.map((x) => {
+    const rows = Array.from({ length: p.rounds }, (_, k) => k + 1).map((r) => {
+      const a = p.assignments.find((y) => y.round === r && y.hostId === x.hostId);
+      const f = a ? p.fams.find((y) => y.groupId === a.groupId)! : null;
+      const what = f ? `<b>Table ${tables[f.groupId]}</b> ${e(f.name)}${locations[f.groupId] ? ` <i>${e(locations[f.groupId])}</i>` : ""}`
+        : (p.hostAway[x.hostId] ?? []).includes(r) ? "Cancelled" : (p.hostLimits[x.hostId] ?? []).includes(r) ? "Not hosting" : "Break";
+      return `<div class="r"><span>Round ${r}</span>${what}</div>`;
+    }).join("");
+    return `<div class="badge"><div class="ev">${e(title)}</div><div class="nm">${e(x.person || x.name)}</div>${x.person ? `<div class="tb">${e(x.name)}</div>` : ""}${rows}</div>`;
+  }).join("\n");
+  return page(`${title}: host badges`, `<p class="meta">Cut along the borders and slip each card behind the alum's name badge.</p><div class="badges">${badges}</div>`, `
+.badges { display: grid; grid-template-columns: repeat(2, 3.375in); gap: 0.15in; }
+.badge { width: 3.375in; height: 2.125in; border: 1px dashed #8a8780; border-radius: 6px; padding: 8px 10px; overflow: hidden; break-inside: avoid; }
+.ev { font-size: 9px; color: #5c5c63; text-transform: uppercase; letter-spacing: .05em; } .nm { font-size: 15px; font-weight: 800; } .tb { font-size: 11px; color: #3a3a3f; margin-bottom: 4px; }
+.r { font-size: 11px; line-height: 1.35; } .r span { display: inline-block; width: 52px; color: #5c5c63; } .r i { color: #5c5c63; }
 `);
 }

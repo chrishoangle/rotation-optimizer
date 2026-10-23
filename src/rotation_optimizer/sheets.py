@@ -294,7 +294,10 @@ def load_schedule(
     return slots
 
 
-RULE_KINDS = {"must meet": "must", "never meet": "never", "only in rounds": "only", "stays with": "stays"}
+RULE_KINDS = {
+    "must meet": "must", "never meet": "never", "only in rounds": "only", "stays with": "stays",
+    "needs step-free": "access",
+}
 
 
 def parse_rounds(text: str, rounds: int) -> tuple[int, ...]:
@@ -340,7 +343,7 @@ def parse_rule_rows(rows: Iterable[dict], hosts: list[Host], fams: list[GuestGro
     for i, row in enumerate(clean_rows(rows), start=1):
         kind = RULE_KINDS.get(row.get("rule", "").lower())
         if kind is None:
-            problems.append(f"Pairing rule {i}: choose must meet, never meet, only in rounds, or stays with.")
+            problems.append(f"Pairing rule {i}: choose must meet, never meet, only in rounds, stays with, or needs step-free.")
             continue
         try:
             h = host_id_by_label(hosts, row.get("host_table", ""))
@@ -357,6 +360,12 @@ def parse_rule_rows(rows: Iterable[dict], hosts: list[Host], fams: list[GuestGro
                 problems.append(f"Pairing rule {i}: only in rounds needs at least one round.")
                 continue
             host_away[h] = sorted(set(range(1, rounds + 1)) - set(rs))
+            continue
+        if kind == "access":
+            if rs or row.get("fam", "").strip():
+                problems.append(f"Pairing rule {i}: needs step-free applies to every table, so leave Fam and Rounds blank.")
+                continue
+            rules.append(Rule("access", h, "", ()))
             continue
         if kind == "stays":
             if rs:
@@ -403,10 +412,12 @@ FRIENDLY = {
     "size": "Size",
     "interests": "Interests",
     "students": "Students",
+    "location": "Location in the room",
+    "step_free": "Step-free access",
 }
 FILE_COLUMNS = {
     "hosts": ["table_label", "host_name", "tags"],
-    "fams": ["table_number", "fam_label", "size", "interests", "students"],
+    "fams": ["table_number", "fam_label", "size", "interests", "students", "location", "step_free"],
 }
 REQUIRED = {"hosts": ["table_label"], "fams": ["fam_label"]}
 EXAMPLE_MARK = "(example)"
@@ -421,6 +432,8 @@ _SYNONYMS = {
     "table_number": ["table", "table no", "table #", "number"],
     "students": ["student", "student name", "names", "members", "admits", "student names", "name", "your name", "full name"],
     "size": ["count", "students count", "number of students", "how many"],
+    "location": ["location", "where", "where in the room", "zone", "spot", "room location"],
+    "step_free": ["step free", "stepfree", "accessible", "wheelchair accessible", "access", "accessibility"],
 }
 
 # Words inside a longer header, such as a Google Forms question
@@ -523,7 +536,7 @@ def column_report(columns: Iterable[str], kind: str, mapping: dict[str, str] | N
         "size": "fam sizes will be counted from the students, or left blank",
     }
     for col in FILE_COLUMNS[kind]:
-        if col not in mapping and col not in REQUIRED[kind]:
+        if col not in mapping and col not in REQUIRED[kind] and col in what:  # location and step-free are rarely in a file
             notices.append(f"No {FRIENDLY[col].lower()} column, so {what[col]}.")
     return problems, notices, mapping
 
@@ -593,7 +606,7 @@ def template_csv(kind: str) -> str:
     """A template with friendly headers and one example row, which uploading skips."""
     example = {
         "hosts": ["(example) Physician (MD)", "Alum A", "medicine; healthcare; pre-med"],
-        "fams": ["1", "(example) Bio & Chem", "6", "biology; chemistry; pre-med", "Student 01; Student 02"],
+        "fams": ["1", "(example) Bio & Chem", "6", "biology; chemistry; pre-med", "Student 01; Student 02", "by the stage", "yes"],
     }[kind]
     buf = io.StringIO()
     writer = csv.writer(buf)

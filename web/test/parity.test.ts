@@ -116,8 +116,15 @@ describe("messages and helpers match Python", () => {
       const again = loadEvent(saveEvent(s));
       expect([again.arrived, again.notes, again.nightLog]).toEqual([c.arrived, c.notes, c.night_log]);
       const hand = handoffEvent(s);
-      expect({ arrived: hand.arrived, notes: hand.notes, night_log: hand.nightLog }).toEqual(c.handoff);
+      expect(s.night).toEqual(c.night);
+      expect(loadEvent(saveEvent(s)).night).toEqual(c.night);
+      expect({ arrived: hand.arrived, notes: hand.notes, night_log: hand.nightLog, night: hand.night }).toEqual(c.handoff);
     }
+  });
+  it("location does not put a schedule out of date", () => {
+    const f = m.fingerprint_location;
+    expect(f.same).toBe(true);
+    expect(fingerprint(loadEvent(JSON.stringify(f.plain))) === fingerprint(loadEvent(JSON.stringify(f.located)))).toBe(true);
   });
   it("before the night", () => {
     for (const c of m.before_the_night) {
@@ -139,6 +146,8 @@ describe("printouts match Python byte for byte", () => {
       expect(runSheetHtml(p, "Example dinner")).toBe(c.run_sheet_blank);
       expect(scheduleCsv(p)).toBe(c.schedule_csv);
       expect(hostViewRows(p)).toEqual(c.host_view);
+      expect(seatingChartHtml(p, "Example dinner", null, true, "", c.locations)).toBe(c.seating_chart_located);
+      expect(hostCardsHtml(p, null, "Example dinner", "", c.locations)).toBe(c.host_cards_located);
       if (c.reprint) {
         const printed = loadEvent(JSON.stringify(c.event)).printed!;
         expect(describeReprint(reprintList(printed, p), p)).toEqual(c.reprint);

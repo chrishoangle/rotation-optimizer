@@ -33,7 +33,7 @@ FILE_FORMAT = "rotation-optimizer-event"
 FILE_VERSION = 1
 
 HOST_COLUMNS = ["host_id", "table_label", "host_name", "tags"]
-FAM_COLUMNS = ["fam_id", "table_number", "fam_label", "size", "interests", "students"]
+FAM_COLUMNS = ["fam_id", "table_number", "fam_label", "size", "interests", "students", "location", "step_free"]
 RULE_COLUMNS = ["rule", "host_table", "fam", "rounds"]
 
 
@@ -60,6 +60,10 @@ class EventState:
     arrived: list[str] = field(default_factory=list)  # host ids checked in on the night
     notes: str = ""  # notes for next year's coordinator, kept in the hand-off
     night_log: list[dict] = field(default_factory=list)  # {"at": "7:42 PM", "text": "..."} for each change on the night
+    # What happened in the room, kept by the web app's night mode: round start and
+    # end times, tables checked during setup, alumni told about a change and moved
+    # between rounds, and students arrived per fam. Never used for planning.
+    night: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -129,7 +133,7 @@ def fingerprint(state: EventState) -> str:
     payload = {
         "rounds": state.rounds,
         "hosts": clean_rows(state.hosts),
-        "fams": clean_rows(state.fams),
+        "fams": [_planning_cells(r) for r in clean_rows(state.fams)],
         "rules": clean_rows(state.rules),
         "cancel_hosts": state.cancel_hosts,
         "cancel_fams": state.cancel_fams,
@@ -138,6 +142,32 @@ def fingerprint(state: EventState) -> str:
         # Added only when on, so event files saved before this setting existed stay up to date.
         payload["one_weak_round"] = True
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _planning_cells(row: dict) -> dict:
+    """A fam row without the cells planning never reads, so editing them keeps a schedule up to date.
+
+    Location only changes printouts. Step-free access matters only when a
+    needs step-free rule exists, and an empty cell is left out so event files
+    saved before the column existed stay up to date.
+    """
+    out = {k: v for k, v in row.items() if k != "location"}
+    if not out.get("step_free"):
+        out.pop("step_free", None)
+    return out
+
+
+STEP_FREE_NO = {"", "no", "n", "false", "0", "not step-free"}
+
+
+def step_free_fams(state: EventState) -> list[str]:
+    """Fam ids whose table is marked as having step-free access."""
+    return [r["fam_id"] for r in clean_rows(state.fams) if r.get("fam_id") and r.get("step_free", "").strip().lower() not in STEP_FREE_NO]
+
+
+def fam_locations(state: EventState) -> dict[str, str]:
+    """{fam id: where the table is in the room}, for printouts."""
+    return {r["fam_id"]: r["location"] for r in clean_rows(state.fams) if r.get("fam_id") and r.get("location")}
 
 
 def is_current(state: EventState) -> bool:
@@ -185,6 +215,7 @@ def solve_event(state: EventState, *, keep_printed: bool = True) -> EventPlan:
         keep=keep,
         host_limits=inputs.only_in_rounds,
         weak_limit=1 if state.one_weak_round else None,
+        step_free_fams=step_free_fams(state),
     )
     plan.warnings = inputs.warnings + plan.warnings
     state.plan = plan
@@ -403,6 +434,7 @@ def save_event(state: EventState) -> str:
             "arrived": state.arrived,
             "notes": state.notes,
             "night_log": state.night_log,
+            "night": state.night,
         },
         indent=2,
     )
@@ -439,6 +471,7 @@ def load_event(text: str | bytes) -> EventState:
             arrived=[str(x) for x in d.get("arrived", [])],
             notes=str(d.get("notes", "")),
             night_log=[{"at": str(e.get("at", "")), "text": str(e.get("text", ""))} for e in d.get("night_log", [])],
+            night=d.get("night", {}) if isinstance(d.get("night", {}), dict) else {},
         )
     except (KeyError, TypeError, ValueError):
         raise SheetError(["That saved event is incomplete or damaged, so it cannot be loaded."]) from None

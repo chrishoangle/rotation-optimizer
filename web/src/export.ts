@@ -75,14 +75,19 @@ export function findYourTableRows(p: EventPlan): [string, number, string][] {
   });
 }
 
-export function seatingChartHtml(p: EventPlan, title = "Rotation schedule", rounds: number[] | null = null, finder = true, updated = ""): string {
+export function seatingChartHtml(
+  p: EventPlan, title = "Rotation schedule", rounds: number[] | null = null, finder = true, updated = "",
+  locations: Record<string, string> = {},
+): string {
   const rows = scheduleRows(p);
+  const where = Object.fromEntries(p.fams.map((f) => [f.name, locations[f.groupId] ?? ""]));
   const hosts = Object.fromEntries(p.hosts.map((h) => [h.hostId, h.name]));
   const sections: string[] = [];
   const st = stamp(updated);
   for (const r of rounds && rounds.length ? rounds : range(p.rounds)) {
     const cards = rows.filter((row) => row.round === r).map((row) =>
       `<div class="card"><div class="num">Table ${row.table}</div><div class="fam">${e(row.fam)}</div>` +
+      (where[row.fam] ? `<div class="loc">${e(where[row.fam])}</div>` : "") +
       `<div class="host${row.score || ![NO_HOST, FAM_ABSENT].includes(row.host_table) ? "" : " open"}">` +
       `${e(String(row.host_table))}</div></div>`).join("");
     const breaks = Object.entries(p.hostBreaks).filter(([h, rs]) => rs.includes(r) && !has(p.hostAway, h, r) && !has(p.hostLimits, h, r)).map(([h]) => hosts[h]);
@@ -109,7 +114,7 @@ h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 20px; margin: 18px 0 10
 .card { border: 1px solid #c9c6bf; border-radius: 8px; padding: 8px 10px; break-inside: avoid; }
 .num { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5c5c63; }
 .fam { font-size: 13px; color: #3a3a3f; } .host { font-weight: 700; font-size: 15px; }
-.host.open { color: #b4530a; } .note { color: #5c5c63; font-size: 13px; }
+.host.open { color: #b4530a; } .note { color: #5c5c63; font-size: 13px; } .loc { font-size: 12px; color: #5c5c63; }
 section { break-before: page; } section:first-of-type { break-before: auto; }
 .finder { border-collapse: collapse; width: 100%; columns: 2; } .finder td { border-bottom: 1px solid #e3e0d9; padding: 4px 6px; font-size: 13px; }
 .finder td.tn { font-weight: 700; white-space: nowrap; }
@@ -132,7 +137,9 @@ function cardInches(person: string, rows: string[]): number {
   return 0.6 + 0.75 + (person ? 0.25 : 0) + rowsHeight + 0.3;
 }
 
-export function hostCardsHtml(p: EventPlan, hostIds: string[] | null = null, title = "Host cards", updated = ""): string {
+export function hostCardsHtml(
+  p: EventPlan, hostIds: string[] | null = null, title = "Host cards", updated = "", locations: Record<string, string> = {},
+): string {
   const tables = tableNumbers(p);
   const fams = Object.fromEntries(p.fams.map((f) => [f.groupId, f]));
   const byHost = new Map(p.assignments.map((a) => [`${a.hostId}\u0000${a.round}`, a.groupId]));
@@ -149,7 +156,8 @@ export function hostCardsHtml(p: EventPlan, hostIds: string[] | null = null, tit
         let pts = "";
         if (shared.length) pts += `<div class="pts"><b>You share:</b> ${e(shared.map(tagWords).join(", "))}</div>`;
         if (other.length) pts += `<div class="pts">${shared.length ? "Also interested in" : "Interested in"}: ${e(other.map(tagWords).join(", "))}</div>`;
-        lines.push(`<tr><td class="r">Round ${r}</td><td class="t">Table ${tables[fId]}</td><td><div class="fam">${e(f.name)}</div>${pts}</td></tr>`);
+        lines.push(`<tr><td class="r">Round ${r}</td><td class="t">Table ${tables[fId]}</td><td><div class="fam">${e(f.name)}</div>` +
+          (locations[fId] ? `<div class="loc">${e(locations[fId])}</div>` : "") + `${pts}</td></tr>`);
       } else if (has(p.hostAway, h.hostId, r)) {
         lines.push(`<tr><td class="r">Round ${r}</td><td class="t"></td><td><div class="fam">Cancelled for this round</div></td></tr>`);
       } else if (has(p.hostLimits, h.hostId, r)) {
@@ -178,7 +186,7 @@ h2 { font-size: 26px; margin: 2px 0 2px; }
 table { border-collapse: collapse; width: 100%; }
 td { border-top: 1px solid #d6d3cc; padding: 9px 6px; vertical-align: top; }
 td.r { width: 1.0in; font-weight: 600; } td.t { width: 1.1in; font-size: 22px; font-weight: 800; }
-.fam { font-weight: 700; font-size: 16px; } .pts { font-size: 12.5px; color: #3a3a3f; margin-top: 2px; }
+.fam { font-weight: 700; font-size: 16px; } .pts { font-size: 12.5px; color: #3a3a3f; margin-top: 2px; } .loc { font-size: 12.5px; color: #5c5c63; }
 .foot { margin-top: auto; font-size: 11px; color: #5c5c63; }
 ${STAMP_CSS}
 </style></head><body>

@@ -2,7 +2,7 @@ import highsLoader from "highs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { isCurrent, newEvent, normalizeState, solveEvent } from "../src/event";
 import { movesBetween } from "../src/moves";
-import { addLateHost, cancelHost, currentRound, finishRound, notArrived, whereIs } from "../src/night";
+import { addLateHost, cancelHost, currentRound, finishRound, joinLate, moveFamTable, notArrived, setupMissing, toggleSetup, whereIs } from "../src/night";
 import type { HighsLike } from "../src/solver";
 
 let highs: HighsLike;
@@ -78,5 +78,46 @@ describe("night mode actions", () => {
     expect(s.nightLog.at(-1)!.text).toBe("Alum C (Data) did not show up, cancelled from round 1.");
     solveEvent(highs, s, true);
     expect(s.plan!.assignments.some((a) => a.hostId === "h03")).toBe(false);
+  });
+
+  it("a fam sitting at another table swaps numbers, and the alumni are told", () => {
+    const s = dinner();
+    const tables = s.plan!.fams.map((f) => [f.groupId, f.tableNumber]);
+    expect(moveFamTable(s, "fam_01", 0, "6:10 PM")).toMatch(/^Type the number/);
+    expect(moveFamTable(s, "fam_01", 3, "6:10 PM")).toBe("");
+    expect(s.fams.find((r) => r.fam_id === "fam_01")!.table_number).toBe("3");
+    expect(s.fams.find((r) => r.fam_id === "fam_03")!.table_number).toBe("1");
+    expect(s.nightLog.at(-1)!.text).toBe("Fam Red is at Table 3, not 1; Fam Gold moves to Table 1.");
+    solveEvent(highs, s, true);
+    expect(s.plan!.keptSlots).toBe(12); // nobody's pairing changed
+    const m = movesBetween(s.printed!, s.plan!, 1);
+    const red = m.hosts.filter((x) => x.text.includes("Fam Red is at Table 3, not Table 1 as your card says."));
+    expect(red.length).toBe(3);
+    void tables;
+  });
+
+  it("setup counts tables until each is checked", () => {
+    const s = dinner();
+    expect(setupMissing(s)).toHaveLength(4);
+    toggleSetup(s, "fam_02");
+    expect(setupMissing(s)).toEqual(["Table 1 (Fam Red)", "Table 3 (Fam Gold)", "Table 4 (Fam Teal)"]);
+    toggleSetup(s, "fam_02");
+    expect(setupMissing(s)).toHaveLength(4);
+  });
+
+  it("an alum who didn't show can join from a later round", () => {
+    const s = dinner();
+    cancelHost(s, "h02", 1, "6:30 PM", true);
+    solveEvent(highs, s, true);
+    finishRound(s, "6:50 PM");
+    expect(joinLate(s, "h02", 1, "6:55 PM")).toBe("Choose a round from 2 to 3.");
+    expect(joinLate(s, "h02", 2, "6:55 PM")).toBe("");
+    expect(s.cancelHosts).toEqual({});
+    expect(s.rules.at(-1)).toEqual({ rule: "only in rounds", host_table: "Art", fam: "", rounds: "2, 3" });
+    const round1 = s.plan!.assignments.filter((a) => a.round === 1);
+    solveEvent(highs, s, true);
+    expect(s.plan!.assignments.filter((a) => a.round === 1)).toEqual(round1);
+    expect(s.plan!.assignments.filter((a) => a.hostId === "h02").map((a) => a.round)).toEqual([2, 3]);
+    expect(s.nightLog.at(-1)!.text).toBe("Alum B (Art) arrived late and hosts from round 2.");
   });
 });

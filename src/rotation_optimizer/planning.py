@@ -15,6 +15,8 @@ Coordinator rules, all by id, with rounds numbered from 1:
               when given, otherwise in any round.
   never       Rule("never", host, fam, rounds): never meet in `rounds`, or
               never at all when rounds is empty.
+  access      Rule("access", host, ""): the host needs a table with step-free
+              access, so never meets a fam whose table is not marked step-free.
   stays       Rule("stays", host, fam): the host stays with one fam all
               night instead of moving, for example an alum who cannot
               move between tables. An empty fam lets the planner choose.
@@ -181,8 +183,8 @@ def _check_rules(
     musts = [r for r in rules if r.kind == "must"]
     nevers = [r for r in rules if r.kind == "never"]
     for rule in rules:
-        if rule.kind not in ("must", "never", "stays"):
-            problems.append(f"Unknown rule type {rule.kind!r}. Use must, never, or stays.")
+        if rule.kind not in ("must", "never", "stays", "access"):
+            problems.append(f"Unknown rule type {rule.kind!r}. Use must, never, stays, or access.")
             continue
         if not known(f"A {rule.kind} rule", rule.host_id, rule.fam_id or None):
             continue
@@ -284,6 +286,7 @@ def plan_event(
     keep: Iterable[tuple[int, str, str]] = (),
     host_limits: Mapping[str, Iterable[int]] | None = None,
     weak_limit: int | None = None,
+    step_free_fams: Iterable[str] | None = None,
     _diagnose: bool = True,
 ) -> EventPlan:
     """Pad, solve, and strip placeholders.
@@ -297,6 +300,9 @@ def plan_event(
 
     weak_limit, when set, allows each fam at most that many rounds with a
     host who scores 0 with it or an open table.
+
+    step_free_fams lists fams whose table has step-free access; a host with
+    an "access" rule never meets any other fam.
 
     When host tables and fams are uneven, empty rounds are spread evenly
     before score is maximized: every host table gets a fam when there is
@@ -365,6 +371,18 @@ def plan_event(
 
     required = [(m.host_id, m.fam_id, m.rounds) for m in rules if m.kind == "must"]
     forbidden_pairs = [(n_.host_id, n_.fam_id) for n_ in rules if n_.kind == "never" and not n_.rounds]
+    reachable = set(step_free_fams or ())
+    for a in rules:
+        if a.kind == "access" and not reachable & fam_ids:
+            raise RuleConflictError(
+                f"{next(x.name for x in hosts if x.host_id == a.host_id)} needs a step-free table, but no fam table is "
+                "marked as step-free. Mark the tables with step-free access in the fams table."
+            )
+    for a in rules:
+        if a.kind == "access":
+            # Finished rounds stay as they happened, even if the rule came later.
+            done = {r for r, _, _ in locked}
+            forbidden_slots.update((r, a.host_id, f) for f in fam_ids - reachable for r in range(1, rounds + 1) if r not in done)
     for n_ in rules:
         if n_.kind == "never" and n_.rounds:
             forbidden_slots.update((r, n_.host_id, n_.fam_id) for r in n_.rounds)
@@ -407,7 +425,8 @@ def plan_event(
         if not _diagnose:
             raise RuleConflictError("No schedule satisfies every rule.") from err
         raise RuleConflictError(
-            _explain_conflict(hosts, fams, rounds, rules, cancelled_only, fam_away, locked, host_limits, weak_limit)
+            _explain_conflict(hosts, fams, rounds, rules, cancelled_only, fam_away, locked, host_limits, weak_limit,
+                              step_free_fams)
         ) from err
 
     real: list[Assignment] = []
@@ -452,7 +471,8 @@ def plan_event(
     )
 
 
-def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, host_limits, weak_limit) -> str:
+def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, host_limits, weak_limit,
+                      step_free_fams=None) -> str:
     """Find the few rules, cancellations, or settings that cannot hold together, and name them.
 
     Starts from everything in force and drops each item in turn; an item
@@ -468,6 +488,9 @@ def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, h
         key = ("rule", str(i))
         items.append(key)
         when = f" in {_round_text(rule.rounds)}" if rule.rounds else ""
+        if rule.kind == "access":
+            words[key] = f"{hname[rule.host_id]} needs a step-free table"
+            continue
         if rule.kind == "stays":
             words[key] = f"{hname[rule.host_id]} stays with " + (fname[rule.fam_id] if rule.fam_id else "one fam") + " all night"
             continue
@@ -504,6 +527,7 @@ def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, h
                 host_limits={h: rs for h, rs in host_limits.items() if ("limit", h) in k},
                 locked=locked if ("locked", "") in k else (),
                 weak_limit=weak_limit if ("weak", "") in k else None,
+                step_free_fams=step_free_fams,
                 _diagnose=False,
             )
             return True

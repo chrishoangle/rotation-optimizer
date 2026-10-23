@@ -59,12 +59,16 @@ export function movesBetween(before: EventPlan, after: EventPlan, from: number):
       const known = before.hosts.some((x) => x.hostId === h.hostId);
       const was = known && r <= before.rounds ? seatOf(before, h.hostId, r) : null;
       const now = seatOf(after, h.hostId, r);
-      if (was === now) continue;
-      const who = hostLabel(after, h.hostId);
       const nowText = now ? tableText(after, now) : "";
       const wasText = was ? tableText(before, was) : "";
+      // Same fam at a renumbered table still means walking somewhere else.
+      if (was === now && wasText === nowText) continue;
+      const who = hostLabel(after, h.hostId);
       let text: string;
-      if (now && was) text = `${who}: in round ${r}, go to ${nowText} instead of ${wasText}.`;
+      if (now && was === now) {
+        const f = after.fams.find((x) => x.groupId === now)!;
+        text = `${who}: in round ${r}, ${f.name} is at Table ${tableNumbers(after)[now]}, not Table ${tableNumbers(before)[was!]} as your card says.`;
+      } else if (now && was) text = `${who}: in round ${r}, go to ${nowText} instead of ${wasText}.`;
       else if (now && !known) text = `${who}: new host. In round ${r}, go to ${nowText}.`;
       else if (now) text = `${who}: in round ${r}, go to ${nowText}. Your card said you had no table that round.`;
       else if (has(after.hostLimits, h.hostId, r)) continue;

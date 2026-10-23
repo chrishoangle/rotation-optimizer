@@ -100,22 +100,25 @@ def availability_text(plan: EventPlan, host_id: str) -> str:
 
 def seating_chart_html(
     plan: EventPlan, title: str = "Rotation schedule", rounds: list[int] | None = None, finder: bool = True,
-    updated: str = "",
+    updated: str = "", locations: dict[str, str] | None = None,
 ) -> str:
     """One section per round, then a find-your-table page. Each starts on a new printed page.
 
     rounds and finder limit the output to some pages, for reprinting after a re-plan.
     updated, such as "7:42 PM", marks every page as a replacement.
+    locations, {fam id: "by the stage"}, says where each table is in the room.
     """
     e = html.escape
     rows = schedule_rows(plan)
+    where = {f.name: (locations or {}).get(f.group_id, "") for f in plan.fams}
     hosts = {h.host_id: h.name for h in plan.hosts}
     sections = []
     stamp = _stamp(updated)
     for r in (rounds or range(1, plan.rounds + 1)):
         cards = "".join(
             f'<div class="card"><div class="num">Table {row["table"]}</div><div class="fam">{e(row["fam"])}</div>'
-            f'<div class="host{"" if row["score"] or row["host_table"] not in (NO_HOST, FAM_ABSENT) else " open"}">'
+            + (f'<div class="loc">{e(where[row["fam"]])}</div>' if where.get(row["fam"]) else "")
+            + f'<div class="host{"" if row["score"] or row["host_table"] not in (NO_HOST, FAM_ABSENT) else " open"}">'
             f'{e(str(row["host_table"]))}</div></div>'
             for row in rows if row["round"] == r
         )
@@ -146,7 +149,7 @@ h1 {{ font-size: 22px; margin: 0 0 4px; }} h2 {{ font-size: 20px; margin: 18px 0
 .card {{ border: 1px solid #c9c6bf; border-radius: 8px; padding: 8px 10px; break-inside: avoid; }}
 .num {{ font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5c5c63; }}
 .fam {{ font-size: 13px; color: #3a3a3f; }} .host {{ font-weight: 700; font-size: 15px; }}
-.host.open {{ color: #b4530a; }} .note {{ color: #5c5c63; font-size: 13px; }}
+.host.open {{ color: #b4530a; }} .note {{ color: #5c5c63; font-size: 13px; }} .loc {{ font-size: 12px; color: #5c5c63; }}
 section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }}
 .finder {{ border-collapse: collapse; width: 100%; columns: 2; }} .finder td {{ border-bottom: 1px solid #e3e0d9; padding: 4px 6px; font-size: 13px; }}
 .finder td.tn {{ font-weight: 700; white-space: nowrap; }}
@@ -159,7 +162,10 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 """
 
 
-def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: str = "Host cards", updated: str = "") -> str:
+def host_cards_html(
+    plan: EventPlan, host_ids: list[str] | None = None, title: str = "Host cards", updated: str = "",
+    locations: dict[str, str] | None = None,
+) -> str:
     """One half-page card per host: table number, fam, and talking points for every round.
 
     Cards grow to fit and never clip. Two short cards share a page; a card
@@ -167,6 +173,7 @@ def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: s
     after it, so the halves still line up for cutting.
 
     host_ids limits the output to those hosts, for reprinting after a re-plan.
+    locations, {fam id: "by the stage"}, adds where each table is.
     """
     e = html.escape
     tables = _table_numbers(plan)
@@ -189,7 +196,9 @@ def host_cards_html(plan: EventPlan, host_ids: list[str] | None = None, title: s
                     pts += f'<div class="pts">{"Also interested in" if shared else "Interested in"}: {e(", ".join(map(_tag_words, other)))}</div>'
                 lines.append(
                     f'<tr><td class="r">Round {r}</td><td class="t">Table {tables[f_id]}</td>'
-                    f'<td><div class="fam">{e(f.name)}</div>{pts}</td></tr>'
+                    f'<td><div class="fam">{e(f.name)}</div>'
+                    + (f'<div class="loc">{e(locations[f_id])}</div>' if (locations or {}).get(f_id) else "")
+                    + f'{pts}</td></tr>'
                 )
             elif r in plan.host_away.get(h.host_id, []):
                 lines.append(f'<tr><td class="r">Round {r}</td><td class="t"></td><td><div class="fam">Cancelled for this round</div></td></tr>')
@@ -217,7 +226,7 @@ h2 {{ font-size: 26px; margin: 2px 0 2px; }}
 table {{ border-collapse: collapse; width: 100%; }}
 td {{ border-top: 1px solid #d6d3cc; padding: 9px 6px; vertical-align: top; }}
 td.r {{ width: 1.0in; font-weight: 600; }} td.t {{ width: 1.1in; font-size: 22px; font-weight: 800; }}
-.fam {{ font-weight: 700; font-size: 16px; }} .pts {{ font-size: 12.5px; color: #3a3a3f; margin-top: 2px; }}
+.fam {{ font-weight: 700; font-size: 16px; }} .pts {{ font-size: 12.5px; color: #3a3a3f; margin-top: 2px; }} .loc {{ font-size: 12.5px; color: #5c5c63; }}
 .foot {{ margin-top: auto; font-size: 11px; color: #5c5c63; }}
 {_STAMP_CSS}
 </style></head><body>
