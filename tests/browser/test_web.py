@@ -503,3 +503,41 @@ def test_rounds_on_a_clock_with_moves_ticked_and_changes_passed_on(page):
     p.wait_for_selector("text=Round 2 of 3")
     assert "Round 1:" in text(p) and " to " in text(p)
     assert jargon(text(p)) == []
+
+
+def test_volunteer_qr_view_students_runner_sheets_and_wrap_up(page):
+    p = page
+    find(p)
+    with p.expect_popup() as pop:
+        p.locator(".card", has_text="Runner sheets").get_by_role("button", name="Open to print").click()
+    assert "runner 2 of 2" in pop.value.inner_text("body")
+    pop.value.close()
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.locator('[data-panel="students"] > summary').click()
+    for _ in range(2):
+        p.get_by_label("One more at Bio & Chem").click()
+    assert "2 of 6" in p.inner_text('[data-panel="students"]')
+    assert "Few students yet at" in p.inner_text(".now-board")
+    p.locator('[data-panel="share"] > summary').click()
+    p.wait_for_selector(".qr svg")
+    p.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    button(p, "Copy the link").click()
+    link = p.evaluate("navigator.clipboard.readText()")
+    assert "/app/view.html#" in link
+    v = p.context.new_page()
+    v.goto(link)
+    v.wait_for_selector("text=Read only")
+    assert "Table 10" in v.inner_text("body") and "Student" not in v.inner_text("body")
+    v.get_by_label("Find an alum or a fam").fill("Pharmacy")
+    assert "Round 2:" in v.inner_text("body")
+    v.close()
+    start_round_1(p)
+    button(p, "Round 1 is finished: hosts move now").click()
+    button(p, "Start round 2").click()
+    button(p, "Round 2 is finished: the event is over").click()
+    p.wait_for_selector("text=what would you change next year?")
+    p.get_by_label("What would you change next year?").fill("Start check-in 15 minutes earlier.")
+    button(p, "Save to notes for next year").click()
+    button(p, "Back to planning").click()
+    assert "Start check-in 15 minutes earlier." in p.get_by_label("Notes for next year").input_value()

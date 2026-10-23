@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "highs": "1.15.3"
+    "highs": "1.15.3",
+    "qrcode-generator": "2.0.4"
   },
   "devDependencies": {
     "@types/node": "22.20.4",

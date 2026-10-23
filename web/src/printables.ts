@@ -4,7 +4,7 @@
 // these replace a training meeting.
 
 import { sharedPairings } from "./explain";
-import { hostViewRows, scheduleRows } from "./export";
+import { hostViewRows, scheduleRows, tableNumbers } from "./export";
 import { EventPlan, provenOptimal } from "./planning";
 import type { EventState } from "./event";
 import { htmlEscape as e } from "./py";
@@ -186,6 +186,8 @@ export function privacyNoteHtml(): string {
 </ul>
 <h2>Network</h2>
 <p>The page loads its own files from GitHub Pages. It makes no other network requests. The offline copy makes none at all.</p>
+<h2>The volunteer QR code</h2>
+<p>Night mode can show a QR code so volunteers see who is where. The schedule is packed into the link itself, after the # sign, which browsers never send to any server. It holds host table names, alumni names, fam names, and table locations, never student names. Anyone who has the link can read that schedule, so show it only to your volunteers.</p>
 `);
 }
 
@@ -228,4 +230,63 @@ export function mcCueCardHtml(s: EventState, p: EventPlan, now: number): string 
 <table class="cues">${rows.join("\n")}</table>
 <p class="meta">Students stay seated all night. Alumni move.</p>
 `, ".cues td { font-size: 16px; padding: 8px; } .cues .t { font-weight: 800; white-space: nowrap; width: 1.2in; }");
+}
+
+/**
+ * Split the tables between runners: by location when tables have one (so a
+ * runner keeps to one part of the room), otherwise in number order.
+ */
+export function runnerGroups(p: EventPlan, runners: number, locations: Record<string, string>): string[][] {
+  const tables = tableNumbers(p);
+  const fams = [...p.fams].sort((a, b) => (locations[a.groupId] ?? "").localeCompare(locations[b.groupId] ?? "") || tables[a.groupId] - tables[b.groupId]);
+  const n = Math.max(1, Math.min(runners, fams.length));
+  const size = Math.ceil(fams.length / n);
+  return Array.from({ length: n }, (_, i) => fams.slice(i * size, (i + 1) * size).map((f) => f.groupId)).filter((g) => g.length);
+}
+
+/** One page per runner: their tables, and for each round who walks to them and from where. */
+export function runnerSheetsHtml(p: EventPlan, title: string, runners: number, locations: Record<string, string>): string {
+  const tables = tableNumbers(p);
+  const famName = (id: string) => p.fams.find((f) => f.groupId === id)!.name;
+  const label = (hostId: string) => { const x = p.hosts.find((y) => y.hostId === hostId)!; return x.person ? `${x.person} (${x.name})` : x.name; };
+  const pages = runnerGroups(p, runners, locations).map((group, i) => {
+    const mine = new Set(group);
+    const list = group.map((id) => `Table ${tables[id]} ${famName(id)}` + (locations[id] ? ` (${locations[id]})` : "")).join("; ");
+    const rounds = Array.from({ length: p.rounds }, (_, k) => k + 1).map((r) => {
+      const rows = p.assignments.filter((a) => a.round === r && mine.has(a.groupId))
+        .sort((a, b) => tables[a.groupId] - tables[b.groupId])
+        .map((a) => {
+          const prev = r > 1 ? p.assignments.find((x) => x.round === r - 1 && x.hostId === a.hostId) : undefined;
+          const from = r === 1 ? "check-in" : prev ? `Table ${tables[prev.groupId]}` : "no table";
+          return `<tr><td class="box"></td><td><b>Table ${tables[a.groupId]}</b></td><td>${e(label(a.hostId))}</td><td>from ${e(from)}</td></tr>`;
+        });
+      const empty = group.filter((id) => !p.assignments.some((a) => a.round === r && a.groupId === id) && !(p.famAway[id] ?? []).includes(r));
+      return `<h3>Round ${r}</h3><table><tr><th></th><th>Table</th><th>Host arriving</th><th></th></tr>${rows.join("")}</table>` +
+        (empty.length ? `<p class="meta">No host this round at ${empty.map((id) => `Table ${tables[id]}`).join(", ")}: send a floater.</p>` : "");
+    }).join("");
+    return `<section class="${i ? "break" : ""}"><h1>${e(title)}: runner ${i + 1} of ${runners}</h1><p class="meta">Your tables: ${e(list)}.</p>
+<p>Before each round, check that each host below reaches your table. Tick them off. If someone is missing, tell the coordinator.</p>${rounds}</section>`;
+  });
+  return page(`${title}: runner sheets`, pages.join("\n"), ".box { width: 28px; } td.box::before { content: ''; display: inline-block; width: 14px; height: 14px; border: 1.5px solid #1c1c1e; }");
+}
+
+/** Credit-card sized badges for alumni: their table for every round, to slip behind a name badge. */
+export function hostBadgesHtml(p: EventPlan, title: string, locations: Record<string, string>): string {
+  const tables = tableNumbers(p);
+  const badges = p.hosts.map((x) => {
+    const rows = Array.from({ length: p.rounds }, (_, k) => k + 1).map((r) => {
+      const a = p.assignments.find((y) => y.round === r && y.hostId === x.hostId);
+      const f = a ? p.fams.find((y) => y.groupId === a.groupId)! : null;
+      const what = f ? `<b>Table ${tables[f.groupId]}</b> ${e(f.name)}${locations[f.groupId] ? ` <i>${e(locations[f.groupId])}</i>` : ""}`
+        : (p.hostAway[x.hostId] ?? []).includes(r) ? "Cancelled" : (p.hostLimits[x.hostId] ?? []).includes(r) ? "Not hosting" : "Break";
+      return `<div class="r"><span>Round ${r}</span>${what}</div>`;
+    }).join("");
+    return `<div class="badge"><div class="ev">${e(title)}</div><div class="nm">${e(x.person || x.name)}</div>${x.person ? `<div class="tb">${e(x.name)}</div>` : ""}${rows}</div>`;
+  }).join("\n");
+  return page(`${title}: host badges`, `<p class="meta">Cut along the borders and slip each card behind the alum's name badge.</p><div class="badges">${badges}</div>`, `
+.badges { display: grid; grid-template-columns: repeat(2, 3.375in); gap: 0.15in; }
+.badge { width: 3.375in; height: 2.125in; border: 1px dashed #8a8780; border-radius: 6px; padding: 8px 10px; overflow: hidden; break-inside: avoid; }
+.ev { font-size: 9px; color: #5c5c63; text-transform: uppercase; letter-spacing: .05em; } .nm { font-size: 15px; font-weight: 800; } .tb { font-size: 11px; color: #3a3a3f; margin-bottom: 4px; }
+.r { font-size: 11px; line-height: 1.35; } .r span { display: inline-block; width: 52px; color: #5c5c63; } .r i { color: #5c5c63; }
+`);
 }

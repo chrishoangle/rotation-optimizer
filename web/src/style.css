@@ -196,3 +196,13 @@ ol.steps li { padding: .1rem 0; }
 .moves li.done .who, .told-list li.told span { color: var(--muted); }
 .now-list li .row.actual { grid-column: 1 / -1; }
 .now-list li > .button { justify-self: start; }
+.counts { list-style: none; margin: .4rem 0; padding: 0; }
+.counts li { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) 4.5rem auto auto; gap: .4rem; align-items: center; padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.counts li .button { margin-left: 0; min-width: 2.4rem; font-size: 1.05rem; }
+.counts li.short .n { color: var(--warn); font-weight: 700; }
+.counts .tn { font-weight: 700; }
+.qr { width: min(260px, 70vw); background: #fff; padding: 8px; border-radius: 8px; }
+.qr svg { width: 100%; height: auto; display: block; }
+.panel.wrap { border-color: var(--accent); }
+.panel.wrap textarea { width: 100%; }
+.card select { margin: .2rem 0 .4rem; }
