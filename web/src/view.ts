@@ -9,7 +9,7 @@ let round = 1;
 let query = "";
 
 function who(x: [string, string, number[]]): string {
-  return x[1] ? `${x[1]} (${x[0]})` : x[0];
+  return x[1] && x[1] !== x[0] ? `${x[1]} (${x[0]})` : x[0];
 }
 
 function render(): void {

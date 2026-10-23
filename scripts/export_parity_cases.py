@@ -269,12 +269,16 @@ def main() -> None:
                                           "out": host_warnings(hosts, [Assignment(1, "h1", "f0", 5), Assignment(2, "h2", "f0", 5)], 2, away)})
 
     st = event(practice_h, practice_f, 2, arrived=["h01", "h03"], notes="Table 7 is by the kitchen.",
+               rules=[{"rule": "only in rounds", "host_table": "Pharmacy", "fam": "", "rounds": "2"},
+                      {"rule": "never meet", "host_table": "Pharmacy", "fam": "Bio & Chem", "rounds": ""},
+                      {"rule": "must meet", "host_table": "Law", "fam": "Bio & Chem", "rounds": "1", "by": "grid"}],
                night_log=[{"at": "7:42 PM", "text": "Pharmacy cancelled from round 2."}],
                night={"roundTimes": {"1": {"start": "18:31", "end": "18:52"}}, "told": ["2|h03|fam_04"], "famArrived": {"fam_01": 5}})
     hand = handoff_event(st)
     messages["event_file"].append({"text": save_event(st), "arrived": st.arrived, "notes": st.notes, "night_log": st.night_log,
                                    "night": st.night,
-                                   "handoff": {"arrived": hand.arrived, "notes": hand.notes, "night_log": hand.night_log, "night": hand.night}})
+                                   "handoff": {"arrived": hand.arrived, "notes": hand.notes, "night_log": hand.night_log, "night": hand.night,
+                                               "rules": hand.rules}})
     # Location never changes whether a schedule is up to date; step-free access only when filled in.
     base = event(practice_h, practice_f, 2)
     located = event(practice_h, [{**r, "Location in the room": "by the stage"} for r in practice_f], 2)

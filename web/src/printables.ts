@@ -5,7 +5,7 @@
 
 import { sharedPairings } from "./explain";
 import { hostViewRows, scheduleRows, tableNumbers } from "./export";
-import { EventPlan, provenOptimal } from "./planning";
+import { EventPlan, hostLabel, provenOptimal } from "./planning";
 import type { EventState } from "./event";
 import { htmlEscape as e } from "./py";
 import { SWITCH, plannedStart, shown, status, toMinutes } from "./timing";
@@ -256,7 +256,7 @@ export function runnerGroups(p: EventPlan, runners: number, locations: Record<st
 export function runnerSheetsHtml(p: EventPlan, title: string, runners: number, locations: Record<string, string>): string {
   const tables = tableNumbers(p);
   const famName = (id: string) => p.fams.find((f) => f.groupId === id)!.name;
-  const label = (hostId: string) => { const x = p.hosts.find((y) => y.hostId === hostId)!; return x.person ? `${x.person} (${x.name})` : x.name; };
+  const label = (hostId: string) => { const x = p.hosts.find((y) => y.hostId === hostId)!; return hostLabel(x); };
   const pages = runnerGroups(p, runners, locations).map((group, i) => {
     const mine = new Set(group);
     const list = group.map((id) => `Table ${tables[id]} ${famName(id)}` + (locations[id] ? ` (${locations[id]})` : "")).join("; ");
@@ -289,7 +289,7 @@ export function hostBadgesHtml(p: EventPlan, title: string, locations: Record<st
         : (p.hostAway[x.hostId] ?? []).includes(r) ? "Cancelled" : (p.hostLimits[x.hostId] ?? []).includes(r) ? "Not hosting" : "Break";
       return `<div class="r"><span>Round ${r}</span>${what}</div>`;
     }).join("");
-    return `<div class="badge"><div class="ev">${e(title)}</div><div class="nm">${e(x.person || x.name)}</div>${x.person ? `<div class="tb">${e(x.name)}</div>` : ""}${rows}</div>`;
+    return `<div class="badge"><div class="ev">${e(title)}</div><div class="nm">${e(x.person || x.name)}</div>${x.person && x.person !== x.name ? `<div class="tb">${e(x.name)}</div>` : ""}${rows}</div>`;
   }).join("\n");
   return page(`${title}: host badges`, `<p class="meta">Cut along the borders and slip each card behind the alum's name badge.</p><div class="badges">${badges}</div>`, `
 .badges { display: grid; grid-template-columns: repeat(2, 3.375in); gap: 0.15in; }

@@ -380,10 +380,17 @@ export function loadEvent(text: string): EventState {
 }
 
 /** Next year's copy: the same tables and rules, without student names or the night. */
+/** A rule worth keeping for next year (see event.py). */
+function lasts(r: CleanRow): boolean {
+  const kind = (r.rule ?? "").toLowerCase();
+  if (r.by === "grid" || kind === "only in rounds") return false;
+  return !((kind === "must meet" || kind === "never meet") && (r.rounds ?? "").trim());
+}
+
 export function handoffEvent(s: EventState): EventState {
   return newEvent({
     title: s.title, rounds: s.rounds, hosts: structuredClone(s.hosts), fams: s.fams.map((r) => ({ ...r, students: "" })),
-    rules: structuredClone(s.rules), oneWeakRound: s.oneWeakRound, startTime: s.startTime, roundMinutes: s.roundMinutes,
+    rules: structuredClone(s.rules.filter(lasts)), oneWeakRound: s.oneWeakRound, startTime: s.startTime, roundMinutes: s.roundMinutes,
     notes: s.notes,
   });
 }

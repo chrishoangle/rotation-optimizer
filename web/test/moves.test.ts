@@ -1,6 +1,7 @@
 import highsLoader from "highs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { newEvent, normalizeState, solveEvent } from "../src/event";
+import { tableNumbers } from "../src/export";
 import { changeSlipsHtml, movesBetween } from "../src/moves";
 import type { HighsLike } from "../src/solver";
 
@@ -39,6 +40,24 @@ describe("what to tell people after a re-plan", () => {
     expect(m.fams[0].text).toMatch(/^Table \d+ \(Fam \d\) has no host in round [23]\./);
     for (const x of m.hosts) expect(x.text).toMatch(/^Alum [A-E] \(Host \d\): in round [23], go to Table \d+ \(Fam \d\) instead of Table \d+ \(Fam \d\)\.$/);
     expect(m.mc.every((l) => l.startsWith("Before round "))).toBe(true);
+  });
+
+  it("says the table is the same when only the fam sitting there changed", () => {
+    const s = dinner(5, 5, 3);
+    const before = s.printed!;
+    const after = structuredClone(before);
+    // Two fams trade tables, and in round 2 their hosts trade fams, so each host stays at the same table.
+    const [f1, f2] = after.fams;
+    const t = tableNumbers(before);
+    [f1.tableNumber, f2.tableNumber] = [t[f2.groupId], t[f1.groupId]];
+    for (const a of after.assignments) {
+      if (a.round !== 2) continue;
+      if (a.groupId === f1.groupId) a.groupId = f2.groupId;
+      else if (a.groupId === f2.groupId) a.groupId = f1.groupId;
+    }
+    const lines = movesBetween(before, after, 2).hosts.filter((x) => x.round === 2).map((x) => x.text);
+    expect(lines.length).toBe(2);
+    for (const l of lines) expect(l).toMatch(/: in round 2, still Table (\d+)\. Fam \d is sitting there now, not Fam \d as your card says\.$/);
   });
 
   it("introduces a host added late", () => {

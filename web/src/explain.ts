@@ -3,7 +3,7 @@
 
 import { tableNumbers } from "./export";
 import { pairKey, scoreMatrix } from "./models";
-import { EventPlan } from "./planning";
+import { EventPlan, hostLabel } from "./planning";
 
 export interface HostOption { hostId: string; label: string; score: number; where: string; current: boolean }
 export interface Explanation { lines: string[]; options: HostOption[] }
@@ -61,7 +61,7 @@ export function explainPairing(p: EventPlan, round: number, famId: string): Expl
     .filter((h) => !has(p.hostAway, h.hostId, round) && !has(p.hostLimits, h.hostId, round))
     .map((h) => {
       const s = seat(h.hostId, round);
-      const label = h.person ? `${h.person} (${h.name})` : h.name;
+      const label = hostLabel(h);
       return {
         hostId: h.hostId, label, score: scores.get(pairKey(h.hostId, famId)) ?? 0, current: h.hostId === host?.hostId,
         where: s ? (s.groupId === famId ? "here now" : `now at Table ${tables[s.groupId]}`) : "no table this round",

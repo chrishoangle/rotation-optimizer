@@ -15,7 +15,7 @@ import {
   hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, seatingChartHtml, tableNumbers, tableTentsHtml,
 } from "./export";
 import {
-  EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
+  EventPlan, InfeasibleProblemError, describeReprint, hostLabel, famName, openSlots, planChanges, provenOptimal,
   reprintList, slotText, weakCount,
 } from "./planning";
 import { explainPairing, sharedPairings } from "./explain";
@@ -26,7 +26,7 @@ import {
   roomTables, setupMissing, toggleMoved, toggleSetup, toggleTold, transitions, whereIs,
 } from "./night";
 import { GuidedCtx, renderGuided } from "./guided";
-import { parsePasted } from "./paste";
+import { looksLikeHeader, parsePasted } from "./paste";
 import {
   backupPacketHtml, coordinatorGuideHtml, hostBadgesHtml, mcCueCardHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, runnerSheetsHtml,
   setupSheetHtml,
@@ -680,7 +680,7 @@ function pasteRows(name: "hosts" | "fams", grid: string[][], startRow: number, s
   // A header row from the sheet places each column by its name, in any order.
   const mapping = matchColumns(grid[0], name);
   const required = name === "hosts" ? "table_label" : "fam_label";
-  const byHeader = required in mapping && Object.keys(mapping).length >= 2;
+  const byHeader = looksLikeHeader(grid[0]) && required in mapping;
   const body = byHeader ? grid.slice(1) : grid;
   const place = (cells: string[]): [string, string][] => byHeader
     ? Object.entries(mapping).map(([ours, theirs]) => [ours, cells[grid[0].indexOf(theirs)] ?? ""])
@@ -1364,7 +1364,7 @@ function nightRefresh(): void {
 
 function hostLabelRow(id: string): string {
   const r = ev.hosts.find((x) => x.host_id === id);
-  return r ? (r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label) : id;
+  return r ? ((r.host_name && r.host_name !== r.table_label ? `${r.host_name} (${r.table_label})` : r.table_label)) : id;
 }
 
 /** The few things a coordinator needs at a glance, at the top of night mode. */
@@ -1376,7 +1376,7 @@ function nowBoard(p: EventPlan, current: boolean): HTMLElement {
   if (st.phase === "moving") {
     const moving = transitions(p, r).filter((t) => t.toTable !== null);
     const done = moving.filter((t) => (ev.night.moved ?? []).includes(t.key)).length;
-    items.push([done === moving.length ? "ok" : "warn", `Moving to round ${r}: ${done} of ${moving.length} alumni at their tables`, ""]);
+    items.push([done === moving.length ? "ok" : "warn", `Moving to round ${r}: ${done} of ${moving.length} alumni ticked off at their tables`, ""]);
   }
   if (st.lateBy >= 5 && st.phase !== "over") items.push(["warn", `Running ${st.lateBy} minutes late` + (st.projectedEnd !== null ? `, ending about ${shown(st.projectedEnd)}` : ""), ""]);
   const open = current && st.phase !== "over" ? openTables(p, r) : [];
@@ -1558,11 +1558,11 @@ function renderNightMode(): void {
     return h("li", { className: host ? "" : "empty" },
       h("span", { className: "tn" }, `Table ${tables[f.groupId]}`),
       h("span", { className: "fam" }, f.name),
-      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"),
+      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (hostLabel(host)) : "No host"),
       showRound === cur && !gone && current ? h("button", { className: "button small", onclick: () => { night.actual = fixing ? null : f.groupId; nightRefresh(); } }, fixing ? "Close" : "Not right?") : null,
       fixing ? (() => {
         const pick = h("select", { "aria-label": `Who is actually at Table ${tables[f.groupId]}` },
-          p.hosts.filter((x) => !(p.hostAway[x.hostId] ?? []).includes(cur)).map((x) => h("option", { value: x.hostId, selected: x.hostId === host?.hostId }, x.person ? `${x.person} (${x.name})` : x.name))) as HTMLSelectElement;
+          p.hosts.filter((x) => !(p.hostAway[x.hostId] ?? []).includes(cur)).map((x) => h("option", { value: x.hostId, selected: x.hostId === host?.hostId }, hostLabel(x)))) as HTMLSelectElement;
         return h("div", { className: "row actual" },
           h("span", { className: "help" }, "Who is actually there? If moving them would be worse, keep it, and the rest of the night is re-planned around it."),
           pick,
@@ -1693,7 +1693,7 @@ function renderNightMode(): void {
   const roomPanelBody = h("ul", { className: "setup" }, famsByTable.map((f) => roomRow(f.groupId, f.name)));
   const roomPanel = panel("room", true,
     setupLeft ? `Room setup: ${famsByTable.length - setupLeft} of ${famsByTable.length} tables checked` : "Room setup: every table checked",
-    h("p", { className: "help" }, "Before doors open, put each tent on its table, walk the room, and tap Checked. If a fam is already sitting at a different table, don't move the students: tap Different table and type the number they are at."),
+    h("p", { className: "help" }, "Before doors open, put each tent on its table, walk the room, and tap Check for each one. If a fam is already sitting at a different table, don't move the students: tap Different table and type the number they are at."),
     h("ul", { className: "setup" }, famsByTable.map((f) => roomRow(f.groupId, f.name))),
     h("button", { className: "button", onclick: () => openPage(setupSheetHtml(famsByTable.map((f) => ({
       table: room[f.groupId], fam: f.name, location: located[f.groupId] ?? "", stepFree: stepFree.has(f.groupId), students: f.size || f.members.length,
@@ -1748,7 +1748,7 @@ function renderNightMode(): void {
         h("h2", {}, showRound === cur ? `Round ${cur}: who is where` : `Next, round ${showRound}`),
         last ? null : h("button", { className: "button small", onclick: () => { night.showNext = !night.showNext; nightRefresh(); } },
           night.showNext ? `Show round ${cur}` : `Show round ${cur + 1}`)),
-      current ? null : h("p", { className: "help warn-text" }, "Old schedule: re-plan to see the changes."),
+      current ? null : h("p", { className: "help warn-text" }, "This is the old schedule. Tap Update the schedule at the top to see the changes."),
       h("ul", { className: "now-list" }, rows)),
     h("section", { className: "panel changed" },
       h("h2", {}, "Something changed?"),
@@ -1764,12 +1764,16 @@ function renderNightMode(): void {
     wrapUpPanel(),
     h("section", { className: "tools" }, h("span", { className: "help" }, "Tools: "), TOOLS.map(([key, label]) =>
       h("button", { className: `button small ${nightOpen.get(key) ? "primary" : ""}`, "aria-expanded": nightOpen.get(key) ? "true" : "false",
-        onclick: () => { nightOpen.set(key, !nightOpen.get(key)); nightRefresh(); } }, label))),
-    nightOpen.get("room") ? roomPanel : null,
-    nightOpen.get("checkin") ? checkIn : null,
-    nightOpen.get("students") ? studentsPanel(p) : null,
-    nightOpen.get("where") ? h("section", { className: "panel" }, h("h2", {}, "Where is…"), search, results) : null,
-    nightOpen.get("share") ? sharePanel(p, current) : null,
+        onclick: () => {
+          nightOpen.set(key, !nightOpen.get(key));
+          nightRefresh();
+          if (nightOpen.get(key)) document.querySelector(`[data-tool="${key}"]`)?.scrollIntoView({ block: "start" });
+        } }, label))),
+    nightOpen.get("room") ? h("div", { "data-tool": "room" }, roomPanel) : null,
+    nightOpen.get("checkin") ? h("div", { "data-tool": "checkin" }, checkIn) : null,
+    nightOpen.get("students") ? h("div", { "data-tool": "students" }, studentsPanel(p)) : null,
+    nightOpen.get("where") ? h("section", { className: "panel", "data-tool": "where" }, h("h2", {}, "Where is…"), search, results) : null,
+    nightOpen.get("share") ? h("div", { "data-tool": "share" }, sharePanel(p, current)) : null,
     nightOpen.get("log") ? panel("log", true, `What happened tonight (${ev.nightLog.length})`,
       ev.nightLog.length ? h("ul", {}, [...ev.nightLog].reverse().map((e) => h("li", {}, `${e.at}  ${e.text}`))) : h("p", { className: "help" }, "Nothing yet.")) : null,
     h("p", { className: "help" }, "Everything you do here is saved in this browser as you go."),

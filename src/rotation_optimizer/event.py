@@ -477,12 +477,21 @@ def load_event(text: str | bytes) -> EventState:
         raise SheetError(["That saved event is incomplete or damaged, so it cannot be loaded."]) from None
 
 
+def _lasts(rule: dict) -> bool:
+    """A rule worth keeping for next year: not about this year's timing or this year's schedule."""
+    if rule.get("by") == "grid" or str(rule.get("rule", "")).lower() == "only in rounds":
+        return False
+    return not (str(rule.get("rule", "")).lower() in ("must meet", "never meet") and str(rule.get("rounds", "")).strip())
+
+
 def handoff_event(state: EventState) -> EventState:
     """A copy for next year's coordinator: same tables and rules, no students and no night.
 
     Keeps the event name, rounds, host tables (names, alums, tags), fam
-    names, sizes, and interests, rules, settings, and the notes for next
-    year. Clears student names, cancellations, finished rounds, check-in,
+    names, sizes, and interests, the rules that last (never meet, must meet
+    in any round, stays with, needs step-free), settings, and the notes for
+    next year. Drops this year's arrival times ("only in rounds"), rules
+    tied to one round, and moves made by hand in the schedule. Clears student names, cancellations, finished rounds, check-in,
     the night's log, and every schedule.
     """
     fams = [{**r, "students": ""} for r in state.fams]
@@ -491,7 +500,7 @@ def handoff_event(state: EventState) -> EventState:
         rounds=state.rounds,
         hosts=[dict(r) for r in state.hosts],
         fams=fams,
-        rules=[dict(r) for r in state.rules],
+        rules=[dict(r) for r in state.rules if _lasts(r)],
         one_weak_round=state.one_weak_round,
         start_time=state.start_time,
         round_minutes=state.round_minutes,

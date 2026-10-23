@@ -13,7 +13,7 @@ import { explainPairing, sharedPairings } from "./explain";
 import { hostCardsHtml, runSheetHtml, seatingChartHtml, tableNumbers, tableTentsHtml } from "./export";
 import { FIELDS } from "./forms";
 import { movesBetween } from "./moves";
-import { parsePasted } from "./paste";
+import { looksLikeHeader, parsePasted } from "./paste";
 import { HostSettings, clearGrid, gridChanges, hostSettings, placeInGrid, renameInRules, setHostSettings, settingsWords } from "./people";
 import type { EventPlan } from "./planning";
 import { provenOptimal } from "./planning";
@@ -353,7 +353,7 @@ function pasteInto(kind: "hosts" | "fams", cols: Col[], grid: string[][], startR
   const list = kind === "hosts" ? s.hosts : s.fams;
   const mapping = matchColumns(grid[0], kind);
   const required = kind === "hosts" ? "table_label" : "fam_label";
-  const byHeader = (required in mapping || "host_name" in mapping) && Object.keys(mapping).length >= 2;
+  const byHeader = looksLikeHeader(grid[0]) && (required in mapping || "host_name" in mapping);
   const body = byHeader ? grid.slice(1) : grid;
   const blank = (): CleanRow => Object.fromEntries((kind === "hosts" ? HOST_COLUMNS : FAM_COLUMNS).map((k) => [k, ""]));
   const first = byHeader ? Math.min(startRow, list.length) : startRow;
@@ -614,11 +614,15 @@ async function tapCell(p: EventPlan, r: number, famId: string): Promise<void> {
   picked = null;
   ctx.persist();
   await update(true);
+  if (isCurrent(s) && changed.length) {
+    const elsewhere = changed.filter((c) => !c.includes(`in round ${r},`)).length;
+    if (elsewhere) changed = [...changed.filter((c) => c.includes(`in round ${r},`)), `To keep every fam from meeting the same alum twice, ${elsewhere} change${elsewhere !== 1 ? "s were" : " was"} also needed in other rounds:`, ...changed.filter((c) => !c.includes(`in round ${r},`))];
+  }
   if (!isCurrent(s)) {
     // The swap broke a setting: put everything back as it was.
     s.rules = rulesBefore;
     ctx.persist();
-    message = ["error", "That swap doesn't fit the settings (someone's arrival time, a must meet, or meeting the same fam twice). Nothing was changed."];
+    message = ["error", "That move doesn't fit: it would break someone's settings (arrival time, can't use stairs, stays at one table, must or never meet) or make a fam meet the same alum twice. Nothing was changed."];
     changed = [];
     render();
   }
@@ -633,9 +637,22 @@ function whyBox(p: EventPlan): HTMLElement {
     const m = l.match(/^The best match for .+ is (.+?) \(score/);
     return !(m && limited(m[1]));
   });
+  const fam = p.fams.find((f) => f.groupId === why!.famId)!;
+  const reasons: string[] = [];
+  for (const r of s.rules) {
+    const who = s.hosts.find((x) => (x.table_label ?? "").toLowerCase() === (r.host_table ?? "").toLowerCase());
+    if (!who) continue;
+    const name = who.host_name || who.table_label;
+    const shares = (who.tags ?? "").toLowerCase().split(/[;,]/).map((t) => t.trim()).some((t) => t && fam.interests.includes(t));
+    if (!shares) continue;
+    if (r.rule === "needs step-free") reasons.push(`${name} would be a good match but can't use stairs, so only visits step-free tables.`);
+    else if (r.rule === "stays with") reasons.push(`${name} would be a good match but stays at one table all night.`);
+    else if (r.rule === "never meet" && (r.fam ?? "").toLowerCase() === fam.name.toLowerCase()) reasons.push(`${name} would be a good match but is set to never meet ${fam.name}.`);
+  }
   return h("div", { className: "panel g-why-box" }, h("strong", {}, `Round ${why!.round}, ${p.fams.find((f) => f.groupId === why!.famId)!.name}`),
     lines.map((l) => h("p", {}, plain(l.replace(/ \(score \d+\)/, "").replace(/, so the pairing scores \d+\./, ".").replace(/ shares none of (.+)'s fields, so the pairing scores 0\./, " has nothing in common with $1.")
       .replace(/ shares none of (.+)'s interests, so the pairing scores 0\./, " has nothing in common with $1.")))),
+    reasons.map((x) => h("p", {}, x)),
     lines.some((l) => l.startsWith("The best match")) ? h("p", { className: "help" }, "The schedule balances every fam at once, so a fam sometimes gets its second choice. To change it, tap names in the grid.") : null,
     h("button", { className: "button small", onclick: () => { why = null; render(); } }, "Close"));
 }

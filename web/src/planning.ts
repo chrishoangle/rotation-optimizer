@@ -267,7 +267,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
   }
   const warnings = [
     ...vocabularyWarnings(hosts, fams),
-    ...fairnessWarnings(fams, real, rounds, famAway, Object.fromEntries(hosts.map((h) => [h.hostId, h.name]))),
+    ...fairnessWarnings(fams, real, rounds, famAway, Object.fromEntries(hosts.map((h) => [h.hostId, hostLabel(h)]))),
     ...hostWarnings(hosts, real, rounds, hostAway),
   ];
   if (result.status !== "optimal") warnings.push(`The solver stopped at the ${Math.round(timeLimitS)} s limit before proving this is the best schedule.`);
@@ -356,7 +356,7 @@ export function hostWarnings(hosts: Host[], real: Assignment[], rounds: number, 
   const hosted = new Set(real.map((a) => a.hostId));
   return hosts
     .filter((h) => range(rounds).some((r) => !(hostAway[h.hostId] ?? []).includes(r)) && !hosted.has(h.hostId))
-    .map((h) => `Fairness check: ${h.name} has no table in any round, because there are more host tables than places at the fams. Seat two alums at one host table, or add a round.`);
+    .map((h) => `Fairness check: ${hostLabel(h)} has no table in any round, because there are more host tables than places at the fams. Seat two alums at one host table, or add a round.`);
 }
 
 export function fairnessWarnings(
@@ -420,8 +420,11 @@ export function slotText(p: EventPlan, round: number, famId: string): string {
 
 export interface Reprint { hostIds: string[]; famIds: string[]; seatingChart: boolean; seatingRounds: number[]; finderPage: boolean }
 
+/** The alum and their topic, "Alum A (Pharmacy)", or just one when they are the same or there is no alum. */
+export const hostLabel = (h: Host) => (h.person && h.person !== h.name ? `${h.person} (${h.name})` : h.name);
+
 export function describeReprint(out: Reprint, p: EventPlan): string[] {
-  const items = out.hostIds.map((h) => `host card for ${hostName(p, h)}`);
+  const items = out.hostIds.map((h) => `host card for ${hostLabel(p.hosts.find((x) => x.hostId === h)!)}`);
   items.push(...out.famIds.map((f) => `table tent for ${famName(p, f)}`));
   const pages = out.seatingRounds.map((r) => `round ${r} page`).concat(out.finderPage ? ["find-your-table page"] : []);
   if (pages.length) items.push("seating chart, " + pages.join(" and "));

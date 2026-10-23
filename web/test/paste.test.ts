@@ -28,3 +28,14 @@ describe("pasting from a spreadsheet", () => {
     expect(parsePasted("Red\nBlue\nGold")).toEqual([["Red"], ["Blue"], ["Gold"]]);
   });
 });
+
+import { looksLikeHeader } from "../src/paste";
+describe("is the first pasted row a header?", () => {
+  it("tells headers from data", () => {
+    expect(looksLikeHeader(["Alum's name", "Topic", "Can talk about"])).toBe(true);
+    expect(looksLikeHeader(["Table", "Fam name", "Interested in", "Students"])).toBe(true);
+    expect(looksLikeHeader(["1", "Fam Red", "biology"])).toBe(false);
+    expect(looksLikeHeader(["Fam Red", "biology", "Student 01"])).toBe(false);
+    expect(looksLikeHeader(["Alum A", "Medicine", "medicine; biology"])).toBe(false);
+  });
+});

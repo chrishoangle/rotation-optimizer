@@ -4,7 +4,7 @@
 // per alum, so a runner can hand them out instead of reprinting whole pages.
 
 import { tableNumbers } from "./export";
-import { EventPlan } from "./planning";
+import { EventPlan, hostLabel as labelOf } from "./planning";
 import { htmlEscape as e } from "./py";
 
 export interface Move {
@@ -35,7 +35,7 @@ function hostOf(p: EventPlan, famId: string, round: number): string | null {
 /** "Alum C (Tech)", or just "Tech" without an alum name. */
 export function hostLabel(p: EventPlan, hostId: string): string {
   const h = p.hosts.find((x) => x.hostId === hostId)!;
-  return h.person ? `${h.person} (${h.name})` : h.name;
+  return labelOf(h);
 }
 
 function tableText(p: EventPlan, famId: string): string {
@@ -65,7 +65,10 @@ export function movesBetween(before: EventPlan, after: EventPlan, from: number):
       if (was === now && wasText === nowText) continue;
       const who = hostLabel(after, h.hostId);
       let text: string;
-      if (now && was === now) {
+      if (now && was && was !== now && tableNumbers(after)[now] === tableNumbers(before)[was]) {
+        const f = after.fams.find((x) => x.groupId === now)!;
+        text = `${who}: in round ${r}, still Table ${tableNumbers(after)[now]}. ${f.name} is sitting there now, not ${before.fams.find((x) => x.groupId === was)!.name} as your card says.`;
+      } else if (now && was === now) {
         const f = after.fams.find((x) => x.groupId === now)!;
         text = `${who}: in round ${r}, ${f.name} is at Table ${tableNumbers(after)[now]}, not Table ${tableNumbers(before)[was!]} as your card says.`;
       } else if (now && was) text = `${who}: in round ${r}, go to ${nowText} instead of ${wasText}.`;
@@ -74,7 +77,7 @@ export function movesBetween(before: EventPlan, after: EventPlan, from: number):
       else if (has(after.hostLimits, h.hostId, r)) continue;
       else text = `${who}: no table in round ${r}. Your card said ${wasText}. Take a break, and thank you.`;
       hosts.push({ hostId: h.hostId, round: r, text, now: now ? nowText : "No table this round", was: was ? wasText : known ? "No table" : "New host" });
-      if (now) lines.push(`${h.person ? `${h.person} (${h.name})` : h.name} goes to Table ${tableNumbers(after)[now]}`);
+      if (now) lines.push(`${labelOf(h)} goes to Table ${tableNumbers(after)[now]}`);
     }
     for (const f of after.fams) {
       if (has(after.famAway, f.groupId, r)) continue;

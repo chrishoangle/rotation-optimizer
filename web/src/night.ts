@@ -5,7 +5,7 @@
 import { EventState, normalizeState } from "./event";
 import type { CleanRow } from "./sheets";
 import { tableNumbers } from "./export";
-import { EventPlan } from "./planning";
+import { EventPlan, hostLabel } from "./planning";
 
 /** The round happening now, or about to start: the first one not finished. */
 export const currentRound = (s: EventState) => Math.min(s.finished + 1, s.plan?.rounds ?? s.rounds);
@@ -38,7 +38,7 @@ export function whereIs(p: EventPlan, query: string, round: number): Found[] {
       else if ((p.hostLimits[h.hostId] ?? []).includes(r)) lines.push(`Round ${r}: not hosting`);
       else lines.push(`Round ${r}: no table this round`);
     }
-    out.push({ kind: "host", title: h.person ? `${h.person} (${h.name})` : h.name, lines });
+    out.push({ kind: "host", title: hostLabel(h), lines });
   }
   for (const f of p.fams) {
     const students = f.members.filter((m) => norm(m).includes(q));
@@ -51,7 +51,7 @@ export function whereIs(p: EventPlan, query: string, round: number): Found[] {
     for (let r = round; r <= p.rounds; r++) {
       const a = p.assignments.find((x) => x.round === r && x.groupId === f.groupId);
       const h = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
-      lines.push(`Round ${r}: ` + (h ? (h.person ? `${h.person} (${h.name})` : h.name) : (p.famAway[f.groupId] ?? []).includes(r) ? "cancelled" : "no host"));
+      lines.push(`Round ${r}: ` + (h ? (hostLabel(h)) : (p.famAway[f.groupId] ?? []).includes(r) ? "cancelled" : "no host"));
     }
     out.push({ kind: "fam", title: f.name, lines });
   }
@@ -112,7 +112,7 @@ export function finishRound(s: EventState, at: string): void {
 export function notArrived(s: EventState): { id: string; label: string }[] {
   return s.hosts
     .filter((r) => r.host_id && r.table_label && !(r.host_id in s.cancelHosts) && !s.arrived.includes(r.host_id))
-    .map((r) => ({ id: r.host_id, label: r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label }));
+    .map((r) => ({ id: r.host_id, label: (r.host_name && r.host_name !== r.table_label ? `${r.host_name} (${r.table_label})` : r.table_label) }));
 }
 
 // ----------------------------------------------------------------------
@@ -229,7 +229,7 @@ export function transitions(p: EventPlan, round: number): Transition[] {
     if (away || (!to && !from)) continue;
     const fam = (id: string) => p.fams.find((f) => f.groupId === id)!.name;
     out.push({
-      hostId: h.hostId, who: h.person ? `${h.person} (${h.name})` : h.name,
+      hostId: h.hostId, who: hostLabel(h),
       from: from ? `Table ${tables[from]}` : round === 1 ? "check-in" : "no table",
       to: to ? `Table ${tables[to]} (${fam(to)})` : "no table this round",
       toTable: to ? tables[to] : null, key: `${round}|${h.hostId}`,

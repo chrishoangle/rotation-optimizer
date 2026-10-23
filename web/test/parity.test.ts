@@ -118,7 +118,7 @@ describe("messages and helpers match Python", () => {
       const hand = handoffEvent(s);
       expect(s.night).toEqual(c.night);
       expect(loadEvent(saveEvent(s)).night).toEqual(c.night);
-      expect({ arrived: hand.arrived, notes: hand.notes, night_log: hand.nightLog, night: hand.night }).toEqual(c.handoff);
+      expect({ arrived: hand.arrived, notes: hand.notes, night_log: hand.nightLog, night: hand.night, rules: hand.rules }).toEqual(c.handoff);
     }
   });
   it("location does not put a schedule out of date", () => {

@@ -36,3 +36,20 @@ export function parsePasted(text: string): string[][] | null {
   const kept = rows.filter((r) => r.some((c) => c));
   return kept.length ? kept : null;
 }
+
+const HEADER_WORDS = [
+  "alum", "alums", "alumni", "alum's name", "alum name", "name", "your name", "full name", "host", "host name", "host table", "host table name",
+  "topic", "topic (optional)", "table", "table #", "table number", "table name", "fam", "fam name", "family", "group", "students",
+  "students (optional)", "student names", "size", "how many students", "tags", "interests", "fields", "can talk about", "interested in",
+  "location", "location in the room", "where in the room", "step-free", "step-free?", "step-free access", "timestamp", "email", "email address",
+];
+const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ").replace(/[:.]$/, "");
+
+/**
+ * Whether a pasted first row is a header, not data: no cell is a number, and
+ * at least two cells are column names a spreadsheet would use.
+ */
+export function looksLikeHeader(cells: string[]): boolean {
+  if (cells.some((c) => /^\d+$/.test(c.trim()))) return false;
+  return cells.filter((c) => HEADER_WORDS.includes(norm(c))).length >= 2;
+}

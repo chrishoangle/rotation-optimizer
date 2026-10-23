@@ -106,6 +106,10 @@ class EventPlan:
     def host_name(self, host_id: str) -> str:
         return next(h.name for h in self.hosts if h.host_id == host_id)
 
+    def host_label(self, host_id: str) -> str:
+        """The alum and their topic, "Alum A (Pharmacy)", or just one when they are the same."""
+        return host_label(next(h for h in self.hosts if h.host_id == host_id))
+
     def fam_name(self, fam_id: str) -> str:
         return next(f.name for f in self.fams if f.group_id == fam_id)
 
@@ -443,7 +447,7 @@ def plan_event(
             real.append(a)
 
     warnings = vocabulary_warnings(hosts, fams)
-    warnings += fairness_warnings(fams, real, rounds, fam_away, {h.host_id: h.name for h in hosts})
+    warnings += fairness_warnings(fams, real, rounds, fam_away, {h.host_id: host_label(h) for h in hosts})
     warnings += host_warnings(hosts, real, rounds, host_away)
     if not schedule.proven_optimal:
         warnings.append(
@@ -564,6 +568,11 @@ OPEN_TABLES_SHARED = (
 )
 
 
+def host_label(h: Host) -> str:
+    """The alum and their topic, "Alum A (Pharmacy)", or just one when they are the same or there is no alum."""
+    return f"{h.person} ({h.name})" if h.person and h.person != h.name else h.name
+
+
 def host_warnings(
     hosts: list[Host],
     real: list[Assignment],
@@ -581,7 +590,7 @@ def host_warnings(
         there = [r for r in range(1, rounds + 1) if r not in set(host_away.get(h.host_id, []))]
         if there and h.host_id not in hosted:
             out.append(
-                f"Fairness check: {h.name} has no table in any round, because there are more host tables "
+                f"Fairness check: {host_label(h)} has no table in any round, because there are more host tables "
                 "than places at the fams. Seat two alums at one host table, or add a round."
             )
     return out
@@ -739,7 +748,7 @@ class Reprint:
 
     def describe(self, plan: "EventPlan") -> list[str]:
         """Each thing to reprint, in the words a coordinator uses."""
-        out = [f"host card for {plan.host_name(h)}" for h in self.host_ids]
+        out = [f"host card for {plan.host_label(h)}" for h in self.host_ids]
         out += [f"table tent for {plan.fam_name(f)}" for f in self.fam_ids]
         pages = [f"round {r} page" for r in self.seating_rounds] + (["find-your-table page"] if self.finder_page else [])
         if pages:

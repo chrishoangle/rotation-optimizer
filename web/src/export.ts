@@ -171,7 +171,7 @@ export function hostCardsHtml(
     }
     cards.push(
       `<article class="hc${cardInches(h.person, lines) > 4.9 ? " full" : ""}"><div class="head">${stamp(updated)}<span class="lbl">Host table</span><h2>${e(h.name)}</h2>` +
-      (h.person ? `<div class="person">${e(h.person)}</div>` : "") + "</div>" +
+      (h.person && h.person !== h.name ? `<div class="person">${e(h.person)}</div>` : "") + "</div>" +
       `<table>${lines.join("")}</table><p class="foot">${e(title)}. Move when the MC calls the round.</p></article>`,
     );
   }
@@ -320,7 +320,7 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 <h2>MC timeline</h2>
 <table>${timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app, set Rounds already finished, use Cancel a host or Cancel a fam, then click Re-plan.
+<p class="help">In the app's night mode, use Something changed?, then Update the schedule.
 Reprint only the pages the app lists under Reprint. Rounds already finished never change.</p>
 </section>
 <section>

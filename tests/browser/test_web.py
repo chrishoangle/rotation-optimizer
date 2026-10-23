@@ -505,9 +505,9 @@ def test_rounds_on_a_clock_with_moves_ticked_and_changes_passed_on(page):
     p.wait_for_selector("text=Moving to round 2 of 3")
     moving = p.locator(".moves li")
     n = moving.count()
-    assert n >= 9 and f"0 of {n} alumni at their tables" in p.inner_text(".now-board")
+    assert n >= 9 and f"0 of {n} alumni ticked off at their tables" in p.inner_text(".now-board")
     moving.first.get_by_role("button", name="Moving").click()
-    assert f"1 of {n} alumni at their tables" in p.inner_text(".now-board")
+    assert f"1 of {n} alumni ticked off at their tables" in p.inner_text(".now-board")
     with p.expect_popup() as pop:
         button(p, "Print the MC cue card with updated times").click()
     assert "Round 2" in pop.value.inner_text("body") and "Round 3" in pop.value.inner_text("body")

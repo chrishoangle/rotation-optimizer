@@ -170,6 +170,6 @@ def test_a_swap_that_breaks_a_setting_changes_nothing(page):
     before = p.inner_text(".g-grid")
     grid.nth(alum_a).locator("td:nth-of-type(1) .g-name").click()
     grid.filter(has_text="Bio & Chem").locator("td:nth-of-type(1) .g-name").click()
-    p.wait_for_selector("text=doesn't fit the settings")
+    p.wait_for_selector("text=Nothing was changed")
     assert p.inner_text(".g-grid") == before
     assert "You changed something" not in words(p)

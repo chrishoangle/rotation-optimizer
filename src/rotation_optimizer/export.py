@@ -212,7 +212,7 @@ def host_cards_html(
                              '<div class="pts">More hosts than fams this round. Please wait near the front for the next round.</div></td></tr>')
         cards.append(
             f'<article class="hc{" full" if _card_inches(h, lines) > 4.9 else ""}"><div class="head">{_stamp(updated)}<span class="lbl">Host table</span><h2>{e(h.name)}</h2>'
-            + (f'<div class="person">{e(h.person)}</div>' if h.person else "")
+            + (f'<div class="person">{e(h.person)}</div>' if h.person and h.person != h.name else "")
             + "</div>"
             f'<table>{"".join(lines)}</table><p class="foot">{e(title)}. Move when the MC calls the round.</p></article>'
         )
@@ -406,7 +406,7 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 <h2>MC timeline</h2>
 <table>{timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app, set Rounds already finished, use Cancel a host or Cancel a fam, then click Re-plan.
+<p class="help">In the app's night mode, use Something changed?, then Update the schedule.
 Reprint only the pages the app lists under Reprint. Rounds already finished never change.</p>
 </section>
 <section>
