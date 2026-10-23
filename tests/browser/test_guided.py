@@ -165,10 +165,11 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
         button(p, "Save for next year").click()
     assert d.value.suggested_filename.endswith("handoff.zip")
 
-    # A reload comes back to where the coordinator was.
+    # Opening the app again starts on the event's home page, with the next step.
     p.reload()
-    p.wait_for_selector("text=What would you change next year?")
-    assert "Transfer Admit Dinner" in p.inner_text(".c-title")
+    p.wait_for_selector(".c-hero")
+    assert p.locator("h1").inner_text() == "Transfer Admit Dinner"
+    assert p.locator('[data-k="next-step"]').count() == 1
 
 
 def test_the_example_is_a_sandbox(page):

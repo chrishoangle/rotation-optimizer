@@ -296,11 +296,13 @@ document.addEventListener("keydown", (e) => {
 export function renderGuided(c: GuidedCtx): void {
   ctx = c;
   if (practiceReturn !== null && !ctx.inPractice()) { place = practiceReturn; practiceReturn = null; remember(); }
-  if (place === "home" && hasPeople(ev())) {
+  // Opening the app starts on the event's home page, which says what is next.
+  // Only the night itself comes straight back: a round under way, or the wrap-up after it.
+  if (place === "home" && hasPeople(ev()) && ev().plan) {
     try {
       const saved = localStorage.getItem(STEP_KEY) as Place | null;
-      if (saved && ["setup", "schedule", "print", "run", "wrap"].includes(saved)) place = saved === "setup" || saved === "wrap" || stateOf(saved) !== "locked" ? saved : "setup";
-      if (place === "wrap" && !ev().plan) place = "setup";
+      if (saved === "run" && ev().night.roundTimes?.["1"]?.start) place = "run";
+      if (saved === "wrap" && eventOver(ev())) place = "wrap";
     } catch { /* home */ }
   }
   render(true);

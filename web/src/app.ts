@@ -1903,7 +1903,9 @@ function boot(): void {
   try { uiMode = localStorage.getItem(UI_KEY) === "full" ? "full" : "guided"; } catch { /* guided */ }
   // The full planner, with every option, is at the address ending in #full.
   if (location.hash === "#full") uiMode = "full";
-  if (!restored && uiMode === "guided") ev = newEvent({ title: "", rounds: 2 }); // the guided start page offers the example instead
+  // Older versions saved their built-in example as if it were the coordinator's own dinner. Untouched, it is not.
+  const oldExample = (x: EventState) => x.title === "Example dinner" && !x.printed && !x.night.roundTimes?.["1"] && x.hosts.length > 0 && x.hosts.every((r) => /^Alum [A-Z]$/.test((r.host_name ?? "").trim()));
+  if (uiMode === "guided" && (!restored || oldExample(ev))) ev = newEvent({ title: "", rounds: 2 }); // the guided start page offers the example instead
   if (mode === "night" && ev.plan) setNightMode(true);
   else showPlanner();
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
