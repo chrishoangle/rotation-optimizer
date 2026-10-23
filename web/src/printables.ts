@@ -289,7 +289,13 @@ export function hostBadgesHtml(p: EventPlan, title: string, locations: Record<st
  * keeps its own styles inside a shadow root, so the seating chart's styles
  * never reach the host cards; every part starts on a new page.
  */
-export function printEverythingHtml(title: string, parts: [string, string][]): string {
+/**
+ * Pages to print, each in its own frame so their styles never clash. With
+ * `pdf`, it is one document on its own: the title (which browsers use as the
+ * PDF's file name) names it, and the print window opens by itself, where
+ * "Save as PDF" makes the file.
+ */
+export function printEverythingHtml(title: string, parts: [string, string][], pdf = false): string {
   const tpl = parts.map(([label, html], i) => {
     const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n")
       .replace(/@page\s*\{[^}]*\}/g, "").replace(/\bhtml,\s*body\b/g, ":host").replace(/\bbody\b/g, ":host");
@@ -298,7 +304,7 @@ export function printEverythingHtml(title: string, parts: [string, string][]): s
   }).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${e(title)}: everything to print</title>
+<title>${e(title)}${pdf ? "" : ": everything to print"}</title>
 <style>
 @page { size: letter; margin: 0.4in; }
 body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1c1c1e; }
@@ -308,13 +314,14 @@ body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, 
 @media screen { .part { margin: 24px; } }
 @media print { .bar { display: none; } }
 </style></head><body>
-<div class="bar"><span>${e(title)}: ${parts.map(([l]) => e(l)).join(", ")}. Print on US Letter.</span><button onclick="print()">Print</button></div>
+<div class="bar"><span>${pdf ? `${e(title)}. In the print window, choose <strong>Save as PDF</strong> to keep it as a file, or pick your printer.` : `${e(title)}: ${parts.map(([l]) => e(l)).join(", ")}. Print on US Letter.`}</span><button onclick="print()">${pdf ? "Save as PDF or print" : "Print"}</button></div>
 ${tpl}
 <script>
 document.querySelectorAll(".part").forEach(function (host) {
   var t = host.nextElementSibling;
   host.attachShadow({ mode: "open" }).appendChild(t.content.cloneNode(true));
 });
+${pdf ? 'addEventListener("load", function () { setTimeout(function () { print(); }, 400); });' : ""}
 </script>
 </body></html>
 `;

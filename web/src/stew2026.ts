@@ -1,5 +1,5 @@
 // The example dinner: the STEW 2026 family dinner as it really ran, used by
-// "See the 2026 dinner", the walkthrough, and the example rows beside each
+// "See the STEW 2026 dinner", the walkthrough, and the example rows beside each
 // paste box. Real alumni, included at the maintainer's decision: names and
 // what each does only. No contact details, employers, or schools.
 

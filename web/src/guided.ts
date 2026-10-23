@@ -101,6 +101,7 @@ let format: "chart" | "list" | "lines" = "chart"; // which example sits beside t
 let confirmNew = false; // "Start another dinner" asked, waiting for a yes
 let leaveRun = false; // "Back to planning" tapped during a round
 let swapSaved = false;
+let opened: { plan: EventPlan | null; docs: Set<string> } = { plan: null, docs: new Set() }; // printouts opened one at a time, for this schedule
 let phone: { link: string; copied: boolean } | null = null;
 let undoSnap: { label: string; json: string } | null = null;
 let undoTimer = 0;
@@ -539,7 +540,7 @@ function emptyPage(what: "schedule" | "print" | "run"): HTMLElement {
   return h("section", { className: "c-page c-empty" },
     h("h1", { tabindex: -1 }, what === "schedule" ? "Schedule" : what === "print" ? "Print" : "Run"),
     h("div", { className: "c-card c-empty-card" }, pic, h("h2", {}, words[what][0]), h("p", { className: "c-help" }, words[what][1]),
-      what === "run" ? h("button", { className: "c-link", onclick: async () => { practiceReturn = "run"; ctx.tryExample(); go("run"); } }, "Practice a night with the 2026 dinner") : null));
+      what === "run" ? h("button", { className: "c-link", onclick: async () => { practiceReturn = "run"; ctx.tryExample(); go("run"); } }, "Practice a night with the STEW 2026 dinner") : null));
 }
 
 /** "Send to your phone": a link that opens this event on another device. */
@@ -630,7 +631,7 @@ function homePage(): HTMLElement {
       h("span", { className: "c-choice-text" }, h("strong", {}, title), h("span", {}, help)), icon("chevron", "c-choice-go"));
   const open = keyOpens(h("label", { className: "c-choice", for: "c-open-home", tabindex: 0 }, openInput("c-open-home"), icon("folder", "c-choice-icon"),
     h("span", { className: "c-choice-text" }, h("strong", {}, "Open a saved event"), h("span", {}, "A file you saved from this app, like last year's.")), icon("chevron", "c-choice-go")));
-  const example = choice("See the 2026 dinner", "Our real STEW 2026 dinner, ready to explore. Nothing you do is kept.", async () => { practiceReturn = "home"; ctx.tryExample(); go("schedule"); await update(); }, false, "sparkle");
+  const example = choice("See the STEW 2026 dinner", "Our real STEW 2026 dinner, ready to explore. Nothing you do is kept.", async () => { practiceReturn = "home"; ctx.tryExample(); go("schedule"); await update(); }, false, "sparkle");
   const fresh = () => { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); };
   const arriving = ctx.incoming();
   const incomingCard = arriving ? h("div", { className: "c-card c-confirm", role: "alertdialog", "aria-label": "Open the dinner you sent" },
@@ -963,7 +964,7 @@ function formatPicker(kind: "hosts" | "fams"): HTMLElement {
     h("p", { className: "c-help" }, shown === "chart" ? "Last year's (or this year's) chart: one row per fam table, a column per round, pairs written \"A + B\". The app keeps that seating."
       : shown === "list" ? "A name and email on one line, what they do on the next. Emails are dropped; what they do becomes interests for matching."
       : kind === "hosts" ? "One alum per line: their name, then what they can talk about." : "One fam per line: an optional table number, its name, then its majors. Shorthand like PoliSci or Bio/Chem is understood.",
-      " ", h("button", { className: "c-link small", "data-k": `example-${kind}`, onclick: () => { useExample(kind); adding = null; render(); } }, "Use the 2026 example to see how it works"),
+      " ", h("button", { className: "c-link small", "data-k": `example-${kind}`, onclick: () => { useExample(kind); adding = null; render(); } }, "Use the STEW 2026 example to see how it works"),
       shown === "chart" ? [" \u00b7 ", h("button", { className: "c-link small", onclick: () => download("Seating chart template.csv", "Fam table,Round 1 (alums),Round 2 (alums)\nTable 1 Fam name (majors),Name or Name + Name,Name\n") }, "Download a blank seating chart")] : null));
 }
 
@@ -1248,7 +1249,7 @@ function setupPage(): HTMLElement {
   return h("section", { className: "c-page" },
     h("h1", { tabindex: -1 }, fresh && !hasPeople(s) ? "Let's set up your dinner" : "Set up"),
     fresh ? h("p", { className: "c-lead" }, "Three short steps. Most coordinators paste a seating chart or an alumni list they already have. ",
-      ctx.inPractice() ? null : h("button", { className: "c-link", onclick: async () => { practiceReturn = "setup"; ctx.tryExample(); go("schedule"); await update(); } }, "See the 2026 dinner first")) : null,
+      ctx.inPractice() ? null : h("button", { className: "c-link", onclick: async () => { practiceReturn = "setup"; ctx.tryExample(); go("schedule"); await update(); } }, "See the STEW 2026 dinner first")) : null,
     problems.length ? h("div", { className: "c-msg error", role: "alert" }, h("strong", {}, "Before making the schedule:"), h("ul", {}, problems.map((p) => h("li", {}, plain(p))))) : null,
     setupCard("dinner", "Your dinner", `${s.title || "Alumni dinner"} · ${s.rounds} round${s.rounds !== 1 ? "s" : ""}`, dinnerDone, () => [
       h("div", { className: "c-fields" },
@@ -1662,10 +1663,15 @@ function printPage(): HTMLElement {
       } }, "Print only the changed pages")) : null,
     h("ul", { className: "c-docs" }, list.map((d) => {
       const changedDoc = reprint.length && s.printed && ((d.label === "Room chart" && reprintList(s.printed, p).seatingChart) || (d.label === "Alumni cards" && reprintList(s.printed, p).hostIds.length) || (d.label === "Table numbers" && reprintList(s.printed, p).famIds.length));
-      return h("li", { className: changedDoc ? "changed" : "" }, changedDoc ? h("span", { className: "c-reprint-tag" }, "Reprint") : null, thumb(d.make(), d.label),
-        h("div", { className: "c-doc-text" }, h("strong", {}, d.label), h("span", { className: "c-help" }, d.purpose), h("span", { className: "c-pages" }, `About ${d.pages} page${d.pages !== 1 ? "s" : ""}`)));
+      const done = opened.plan === p && opened.docs.has(d.label);
+      return h("li", { className: `${changedDoc ? "changed" : ""} ${done ? "opened" : ""}` },
+        h("button", { className: "c-doc-hit", "data-k": `doc-${d.label}`, "aria-label": `Open the ${d.label.toLowerCase()} as a PDF${done ? ", opened" : ""}`, onclick: () => openDoc(d) }),
+        changedDoc ? h("span", { className: "c-reprint-tag" }, "Reprint") : done ? h("span", { className: "c-opened-tag" }, icon("check"), "Opened") : null,
+        thumb(d.make(), d.label),
+        h("div", { className: "c-doc-text" }, h("strong", {}, d.label), h("span", { className: "c-help" }, d.purpose), h("span", { className: "c-pages" }, `About ${d.pages} page${d.pages !== 1 ? "s" : ""}`),
+          h("span", { className: "c-doc-open", "aria-hidden": "true" }, icon("printer"), "Open as PDF")));
     })),
-    h("p", { className: "c-help" }, `About ${total} pages in all. Print everything opens one page with all of them; your browser's print window does the rest (choose US Letter and 100% scale).`,
+    h("p", { className: "c-help" }, `Tap a printout to open it on its own; the print window opens with it, where Save as PDF makes the file. Print everything does all of them at once, about ${total} pages in all (US Letter, 100% scale).`,
       printedOk ? [" ", h("button", { className: "c-link small", onclick: printEverything }, "Print everything again")] : null,
       !s.printed ? [" ", h("button", { className: "c-link small", onclick: () => go("run") }, "Skip printing for now")] : null),
     more(morePrint, () => { morePrint = !morePrint; render(); }, "More options",
@@ -1676,6 +1682,18 @@ function printPage(): HTMLElement {
       h("p", { className: "c-label" }, "Print one at a time"),
       h("ul", { className: "c-plain-list" }, [...list.map((d): [string, string, () => string] => [d.label, d.purpose.charAt(0).toLowerCase() + d.purpose.slice(1), d.make]), ...extra].map(([label, purpose, make]) =>
         h("li", {}, h("button", { className: "c-link", onclick: () => openPage(make()) }, label), h("span", { className: "c-help" }, `: ${purpose.replace(/\.$/, "")}`))))));
+}
+
+/** One printout on its own, named for the event, with the print window (and Save as PDF) open. Once all four are opened, the app counts it as printed. */
+function openDoc(d: Doc): void {
+  const s = ev();
+  if (!s.plan) return;
+  if (!s.title.trim()) s.title = "Alumni dinner";
+  openPage(printEverythingHtml(`${s.title}: ${d.label}`, [[d.label, d.make()]], true));
+  if (opened.plan !== s.plan) opened = { plan: s.plan, docs: new Set() };
+  opened.docs.add(d.label);
+  if (opened.docs.size === docs(s, s.plan).length && !(s.printed && isCurrent(s) && !reprintNeeded(s).length)) ctx.markPrinted();
+  render();
 }
 
 function printEverything(): void {

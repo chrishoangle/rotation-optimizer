@@ -175,7 +175,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
 
 def test_the_example_is_a_sandbox(page):
     p = page
-    p.get_by_text("See the 2026 dinner").click()
+    p.get_by_text("See the STEW 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     assert "Practice" in p.inner_text(".c-top")
     p.locator(".c-top").get_by_role("button", name="End practice").click()
@@ -185,7 +185,7 @@ def test_the_example_is_a_sandbox(page):
 
 def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p = page
-    p.get_by_text("See the 2026 dinner").click()
+    p.get_by_text("See the STEW 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     p.locator(".c-tab", has_text="Set up").click()
     p.locator('[data-card="hosts"] .c-card-head').click()
@@ -226,7 +226,7 @@ def test_the_full_planner_is_at_its_own_address(url):
 def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     # Someone is told to move; a later change undoes that move. They must be told again.
     p = page
-    p.get_by_text("See the 2026 dinner").click()
+    p.get_by_text("See the STEW 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     button(p, "Looks good: print").click()
     with p.expect_popup() as pop:
@@ -498,3 +498,25 @@ def test_the_dinner_travels_to_a_phone_in_a_link(url):
         assert phone.locator("h1").inner_text() == "Phone Dinner"
         assert "#take=" not in phone.url
         browser.close()
+
+
+def test_each_printout_opens_on_its_own_as_a_pdf(page):
+    p = page
+    p.get_by_text("See the STEW 2026 dinner").click()
+    p.wait_for_selector(".c-room")
+    button(p, "Looks good: print").click()
+    labels = ["Room chart", "Alumni cards", "Table numbers", "Run sheet"]
+    for i, label in enumerate(labels):
+        with p.expect_popup() as pop:
+            p.locator(f'[data-k="doc-{label}"]').click()
+        doc = pop.value
+        doc.wait_for_load_state()
+        assert doc.title() == f"STEW 2026 Family Dinner: {label}"
+        assert "Save as PDF" in doc.inner_text(".bar")
+        assert doc.locator(".part").count() == 1
+        doc.close()
+        if i < len(labels) - 1:
+            assert "You are ready for the event." not in words(p)
+    # Once every printout has been opened, the app counts the event as printed.
+    assert "You are ready for the event." in words(p)
+    assert p.locator(".c-opened-tag").count() == 0 or p.locator(".c-docs li.opened").count() == 4

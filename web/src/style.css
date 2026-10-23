@@ -851,3 +851,12 @@ main.coord.with-bar { padding-bottom: 120px; }
 html:has(main.coord.with-bar) { scroll-padding-top: 120px; scroll-padding-bottom: 110px; }
 @media (max-width: 700px) { html:has(main.coord.with-bar) { scroll-padding-bottom: 200px; } }
 .c-field .c-help { display: block; margin-top: 4px; }
+/* Print: each printout opens on its own. */
+.c-docs li { cursor: pointer; transition: box-shadow .15s ease-out, transform .15s ease-out; }
+.c-docs li:hover { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.c-doc-hit { position: absolute; inset: 0; z-index: 2; background: none; border: none; border-radius: 16px; cursor: pointer; }
+.c-doc-hit:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.c-doc-open { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-weight: 600; font-size: var(--t-xs); color: var(--accent-ink); }
+.c-doc-open .c-icon svg { width: 16px; height: 16px; }
+.c-opened-tag { position: absolute; top: 10px; right: 10px; z-index: 1; display: inline-flex; align-items: center; gap: 4px; background: var(--success); color: var(--surface); font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px 2px 6px; }
+.c-opened-tag .c-icon svg { width: 14px; height: 14px; stroke-width: 2.4; }
