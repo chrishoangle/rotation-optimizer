@@ -65,18 +65,18 @@ python -m pytest tests/ -v
 ## Plan your own event
 
 Open the planner at https://chrishoangle.github.io/rotation-optimizer/app/.
-It has four steps in event words: Your lists, Schedule, Print, and Run the
-event. Alumni and fams are pasted straight from a spreadsheet (or typed, or
-uploaded) and shown as plain lists; the few alumni who arrive late or can't
-use stairs get a note from one line under the list. The schedule is a list
-per table where tapping two alumni in a round swaps them, and the rest of
-the night is fixed up around it. Print everything makes one file with the
-seating chart, host cards, table tents, and run sheet. Run the event shows
-the round, who is where, and one Someone changed? button that re-plans and
-lists exactly who to tell. See an example runs in a sandbox, and saving is
-automatic. Every option below is in the full planner, at the address ending
-in `#full`, and its night tools (check-in, room setup, QR code) are under
-More. No install and no
+It is organised around what a coordinator does, in four places: **Set up**
+(paste your alumni and fams; a title row is skipped and said so), **Schedule**
+(a room plan that answers "is this good enough to run?", with changes made in
+Adjust), **Print** (what to print, how many pages, and why, then Print
+everything; after a change, only the pages that changed), and **Run** (a
+separate full-screen mode for a phone: the round, the clock, one button, and
+"Someone changed?", which turns any change into a list of people to tell).
+After the last round, **Wrap up** saves the event for next year. Special
+arrangements (late arrivals, stairs, must or never meet) sit under More
+options; file actions and the extra night tools (check-in, room setup, QR
+code) sit in the ⋯ menu. Every option below is also in the full planner, at
+the address ending in `#full`. No install and no
 code are needed, and nothing leaves the browser: the solver runs in the page
 (HiGHS compiled to WebAssembly), and the event is saved on that computer as
 you work. The same app also runs in Python with Streamlit at
@@ -109,7 +109,7 @@ be written.
    sidebar prints a two-page coordinator guide, volunteer role cards, and a
    privacy note.
 5. Rehearse with Practice a cancellation first, which runs the night on a copy.
-6. On the night, Run the event works on a phone. The full night tools add:
+6. On the night, Run works on a phone. The extra night tools in the ⋯ menu add:
    - Room setup: put the tents out, walk the room with the setup sheet, and
      tick each table. If a fam is already sitting at another table, record
      the number they are at instead of moving the students.
