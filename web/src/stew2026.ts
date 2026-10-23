@@ -55,6 +55,9 @@ export function stewChartGrid(): string[][] {
 export function stewDinner(): EventState {
   const s = newEvent({
     title: "STEW 2026 Family Dinner", rounds: 2,
+    // The night as it ran: admits seated from 5:30 PM, round 1 6:16 to 6:28, a 3-minute changeover,
+    // round 2 6:31 to 6:43, then open networking (round 3) until closing at 6:58.
+    startTime: "5:30 PM", welcomeMinutes: 43, roundMinutes: 12, switchMinutes: 3, openMinutes: 15,
     hosts: STEW_TABLES.map(([table_label, host_name]) => ({ table_label, host_name, tags: stewInterests(host_name).join("; ") })),
     fams: STEW_FAMS.map(([table_number, fam_label, majors]) => ({ table_number, fam_label, interests: majorWords(majors).join("; ") })),
   });

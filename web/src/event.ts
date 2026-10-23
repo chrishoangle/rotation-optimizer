@@ -34,6 +34,7 @@ export interface EventState {
   startTime: string;
   roundMinutes: number;
   switchMinutes: number; // alumni moving between rounds
+  welcomeMinutes: number; // from doors opening to the welcome, which comes one changeover before round 1
   openMinutes: number; // an open floor after the last round, 0 for none
   printedAt: string;
   arrived: string[]; // host ids checked in on the night
@@ -60,7 +61,7 @@ export function newEvent(p: Partial<EventState> = {}): EventState {
   return {
     title: "Alumni dinner", rounds: 2, hosts: [], fams: [], rules: [], finished: 0, cancelHosts: {}, cancelFams: {},
     plan: null, planInputs: null, printed: null, oneWeakRound: false, planTables: null, startTime: "", roundMinutes: 20,
-    switchMinutes: 5, openMinutes: 0, printedAt: "", arrived: [], notes: "", nightLog: [], night: {}, ...p,
+    switchMinutes: 5, welcomeMinutes: 10, openMinutes: 0, printedAt: "", arrived: [], notes: "", nightLog: [], night: {}, ...p,
   };
 }
 
@@ -353,6 +354,7 @@ export function saveEvent(s: EventState): string {
     round_minutes: s.roundMinutes,
     // Written only when changed, so files from before these settings read the same.
     ...(s.switchMinutes !== 5 ? { switch_minutes: s.switchMinutes } : {}),
+    ...(s.welcomeMinutes !== 10 ? { welcome_minutes: s.welcomeMinutes } : {}),
     ...(s.openMinutes ? { open_minutes: s.openMinutes } : {}),
     printed_at: s.printedAt,
     arrived: s.arrived,
@@ -377,7 +379,7 @@ export function loadEvent(text: string): EventState {
       finished: Number(d.finished), cancelHosts: intMap(d.cancel_hosts), cancelFams: intMap(d.cancel_fams),
       plan: planFromDict(d.plan), planInputs: d.plan_inputs, printed: planFromDict(d.printed),
       oneWeakRound: !!d.one_weak_round, planTables: d.plan_tables ?? null, startTime: String(d.start_time ?? ""),
-      roundMinutes: Number(d.round_minutes ?? 20), switchMinutes: Number(d.switch_minutes ?? 5), openMinutes: Number(d.open_minutes ?? 0), printedAt: String(d.printed_at ?? ""),
+      roundMinutes: Number(d.round_minutes ?? 20), switchMinutes: Number(d.switch_minutes ?? 5), welcomeMinutes: Number(d.welcome_minutes ?? 10), openMinutes: Number(d.open_minutes ?? 0), printedAt: String(d.printed_at ?? ""),
       arrived: (d.arrived ?? []).map(String), notes: String(d.notes ?? ""),
       nightLog: (d.night_log ?? []).map((e: any) => ({ at: String(e.at ?? ""), text: String(e.text ?? "") })),
       night: d.night && typeof d.night === "object" && !Array.isArray(d.night) ? d.night : {},
@@ -401,7 +403,7 @@ export function handoffEvent(s: EventState): EventState {
     // Tables moved on the night go back to where they were planned.
     fams: s.fams.map((r) => ({ ...r, ...(s.night.tablesBefore?.[r.fam_id] ?? {}), students: "" })),
     rules: structuredClone(s.rules.filter(lasts)), oneWeakRound: s.oneWeakRound, startTime: s.startTime, roundMinutes: s.roundMinutes,
-    switchMinutes: s.switchMinutes, openMinutes: s.openMinutes, notes: s.notes,
+    switchMinutes: s.switchMinutes, welcomeMinutes: s.welcomeMinutes, openMinutes: s.openMinutes, notes: s.notes,
   });
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "rotation-optimizer-web",
   "private": true,
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Rotation Optimizer as a static web app. The solver runs in the browser.",
   "type": "module",
   "scripts": {

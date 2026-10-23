@@ -46,7 +46,8 @@ export function endRound(s: EventState, r: number, at: number): void {
 export function plannedStart(s: EventState, r: number, today = todayIso()): number | null {
   const doors = toMinutes(s.startTime);
   const first = times(s, 1).start;
-  const fromDoors = doors === null ? null : doors + WELCOME + SETTLE;
+  // Round 1 starts one changeover after the welcome, as on the run sheet.
+  const fromDoors = doors === null ? null : doors + (s.welcomeMinutes ?? WELCOME) + (s.switchMinutes ?? SETTLE);
   const onTheDay = s.night.date ? s.night.date === today : first === null || Math.abs(first - fromDoors!) <= 120;
   const base = fromDoors !== null && onTheDay ? fromDoors : first;
   return base === null ? null : base + (r - 1) * (s.roundMinutes + (s.switchMinutes ?? SWITCH));

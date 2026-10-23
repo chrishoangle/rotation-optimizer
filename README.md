@@ -92,7 +92,7 @@ anything removed or replaced can be undone for a few seconds; on a phone the
 next action floats above the tabs and Back sits in the header. Set up first
 asks what you have; each paste box can show real example rows for the three
 things coordinators paste (a seating chart, an alumni list, one per line),
-what was read is shown as a small table to confirm or undo; alumni typed one per line also get close interests (medicine also matches biology and pre-med), said in the note and editable; one timeline (doors, round length, changeover, an open floor at the end) sets the run sheet and the night; and **Send to your phone** carries the
+what was read is shown as a small table to confirm or undo; alumni typed one per line also get close interests (medicine also matches biology and pre-med), said in the note and editable; one timeline (doors, when round 1 starts, round length, changeover, an open floor at the end) sets the run sheet and the night, and the STEW 2026 example carries the night as it ran (round 1 at 6:16 PM, 12-minute rounds, 3-minute changeovers, open networking until 6:58 PM); and **Send to your phone** carries the
 dinner to your phone in a link, without student names. Special
 arrangements (late arrivals, stairs, must or never meet) sit under More
 options; file actions and the extra night tools (check-in, room setup, QR

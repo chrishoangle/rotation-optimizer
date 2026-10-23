@@ -1301,7 +1301,7 @@ function setupPage(): HTMLElement {
       h("div", { className: "c-fields" },
         h("div", { className: "c-field" }, h("label", { for: "c-name", className: "c-label" }, "Name"), name),
         h("div", { className: "c-field" }, h("label", { for: "c-rounds", className: "c-label" }, "Rounds"), rounds,
-          h("span", { className: "c-help", "data-k": "night-line" }, nightLine(s), " ",
+          h("span", { className: "c-help", "data-k": "night-line" }, showTiming ? "" : nightLine(s), " ",
             h("button", { className: "c-link small", "aria-expanded": showTiming ? "true" : "false", "data-k": "change-times", onclick: () => { showTiming = !showTiming; render(); } }, showTiming ? "Hide times" : "Change times"))),
         h("div", { className: "c-field" }, h("label", { for: "c-date", className: "c-label" }, "Date (optional)"), date,
           h("span", { className: "c-help" }, "Shows a countdown on the home page."))),
@@ -1698,7 +1698,7 @@ function docs(s: EventState, p: EventPlan): Doc[] {
     { label: "Room chart", purpose: "For the wall or the door: who sits where, each round.", pages: p.rounds + (students ? 1 : 0), make: () => seatingChartHtml(p, title, null, true, "", loc) },
     { label: "Alumni cards", purpose: "One for each alum: where to go each round.", pages: Math.ceil(p.hosts.length / 2), make: () => hostCardsHtml(p, null, title, "", loc) },
     { label: "Table numbers", purpose: "Fold one and stand it on each table.", pages: p.fams.length, make: () => tableTentsHtml(p) },
-    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, title, s.startTime, s.roundMinutes, 10, s.switchMinutes, s.openMinutes) },
+    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, title, s.startTime, s.roundMinutes, s.welcomeMinutes, s.switchMinutes, s.openMinutes) },
   ];
 }
 
@@ -1775,7 +1775,7 @@ function printPage(): HTMLElement {
 /** The night from doors to closing, in minutes, laid out as the run sheet lays it out. */
 function nightMinutes(s: EventState): number {
   const r = s.plan?.rounds ?? s.rounds;
-  return 10 + s.switchMinutes + r * s.roundMinutes + (r - 1) * s.switchMinutes + s.openMinutes;
+  return s.welcomeMinutes + s.switchMinutes + r * s.roundMinutes + (r - 1) * s.switchMinutes + s.openMinutes;
 }
 
 const duration = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
@@ -1784,7 +1784,7 @@ const duration = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h$
 function nightLine(s: EventState): string {
   const r = s.plan?.rounds ?? s.rounds, total = nightMinutes(s), doors = toMinutes(s.startTime);
   const parts = [`${r} round${r !== 1 ? "s" : ""} of ${s.roundMinutes} min`, s.switchMinutes ? `${s.switchMinutes} min to switch` : "", s.openMinutes ? `${s.openMinutes} min open floor` : ""].filter(Boolean);
-  return `${parts.join(", ")}. About ${duration(total)} from doors to closing` + (doors !== null ? ` (${shown(doors)} to ${shown(doors + total)}).` : ".");
+  return `${parts.join(", ")}. About ${duration(total)} from doors to closing` + (doors !== null ? ` (${shown(doors)} to ${shown(doors + total)}, round 1 at ${shown(doors + s.welcomeMinutes + s.switchMinutes)}).` : ".");
 }
 
 /** When doors open, how long each round and changeover lasts, and an open floor at the end: one timeline for the run sheet and the night. */
@@ -1798,12 +1798,24 @@ function timingFields(): HTMLElement {
   const doors = h("input", { id: "c-doors", type: "text", value: s.startTime, placeholder: "e.g. 6:30 PM" }) as HTMLInputElement;
   doors.addEventListener("change", () => { s.startTime = doors.value.trim(); ctx.persist(); render(); });
   const bad = s.startTime.trim() && toMinutes(s.startTime) === null;
+  // Coordinators plan by when round 1 starts; the welcome comes one changeover before it.
+  const open = toMinutes(s.startTime);
+  const first = h("input", { id: "c-first", type: "text", value: open !== null ? shown(open + s.welcomeMinutes + s.switchMinutes) : "", placeholder: "e.g. 6:15 PM" }) as HTMLInputElement;
+  first.addEventListener("change", () => {
+    const r1 = toMinutes(first.value.trim());
+    if (r1 === null) { render(); return; }
+    const d = toMinutes(s.startTime);
+    if (d !== null && r1 - d - s.switchMinutes >= 0) s.welcomeMinutes = r1 - d - s.switchMinutes;
+    else s.startTime = shown(r1 - s.welcomeMinutes - s.switchMinutes);
+    ctx.persist(); render();
+  });
   return h("div", { className: "c-timing" },
     h("div", { className: "c-fields" },
       h("div", { className: "c-field" }, h("label", { for: "c-doors", className: "c-label" }, "Doors open"), doors,
         bad ? h("span", { className: "c-help warn" }, "Write it like 6:30 PM or 18:30.") : null),
-      pick("c-minutes", "Each round", [10, 15, 20, 25, 30, 40, 45, 60], s.roundMinutes, (n) => `${n} minutes`, (n) => { s.roundMinutes = n; }),
-      pick("c-switch", "Changeover", [0, 2, 3, 5, 10, 15], s.switchMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { s.switchMinutes = n; }),
+      h("div", { className: "c-field" }, h("label", { for: "c-first", className: "c-label" }, "Round 1 starts"), first),
+      pick("c-minutes", "Each round", [10, 12, 15, 20, 25, 30, 40, 45, 60], s.roundMinutes, (n) => `${n} minutes`, (n) => { s.roundMinutes = n; }),
+      pick("c-switch", "Changeover", [0, 2, 3, 5, 10, 15], s.switchMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { if (toMinutes(s.startTime) !== null) s.welcomeMinutes = Math.max(0, s.welcomeMinutes + s.switchMinutes - n); s.switchMinutes = n; }),
       pick("c-open", "Open floor at the end", [0, 10, 15, 20, 30, 45, 60], s.openMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { s.openMinutes = n; })),
     h("p", { className: "c-help", "aria-live": "polite" }, nightLine(s)));
 }

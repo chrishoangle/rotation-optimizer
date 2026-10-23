@@ -564,3 +564,13 @@ def test_files_saved_before_check_in_existed_still_open():
         del old[key]
     loaded = load_event(json.dumps(old))
     assert (loaded.arrived, loaded.notes, loaded.night_log) == ([], "", [])
+
+
+def test_timing_settings_round_trip_and_stay_out_of_old_files():
+    from rotation_optimizer.event import EventState, load_event, save_event
+
+    s = EventState()
+    assert "welcome_minutes" not in save_event(s) and "switch_minutes" not in save_event(s)
+    s.welcome_minutes, s.switch_minutes, s.open_minutes, s.round_minutes = 43, 3, 15, 12
+    back = load_event(save_event(s))
+    assert (back.welcome_minutes, back.switch_minutes, back.open_minutes, back.round_minutes) == (43, 3, 15, 12)

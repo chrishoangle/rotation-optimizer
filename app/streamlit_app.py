@@ -628,7 +628,7 @@ def results(problems: list[str]) -> None:
     d[2].download_button("Table tents", table_tents_html(plan), file_name=_file_name("table tents", "html"), mime="text/html",
                          width="stretch", help="A big table number to fold and stand on each fam's table.")
     d[3].download_button("Run sheet", run_sheet_html(plan, title=event.title, start_time=event.start_time,
-                                                     round_minutes=event.round_minutes, switch_minutes=event.switch_minutes,
+                                                     round_minutes=event.round_minutes, switch_minutes=event.switch_minutes, welcome_minutes=event.welcome_minutes,
                                                      open_minutes=event.open_minutes),
                          file_name=_file_name("run sheet", "html"), mime="text/html", width="stretch",
                          help="For you and the MC: a timeline for the night and check-in lists.")
