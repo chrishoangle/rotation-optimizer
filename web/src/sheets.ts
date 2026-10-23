@@ -272,9 +272,9 @@ export function parseRuleRows(rows: Iterable<Row>, hosts: Host[], fams: GuestGro
 const SYNONYMS: Record<string, string[]> = {
   table_label: ["table", "table name", "host table", "career", "field", "theme", "topic"],
   host_name: ["name", "alum", "alum name", "alumni", "alumnus", "host", "host name", "full name", "your name"],
-  tags: ["tag", "keywords", "topics", "interests", "areas", "expertise"],
+  tags: ["tag", "keywords", "topics", "interests", "areas", "expertise", "fields"],
   fam_label: ["fam", "group", "group name", "family", "family name"],
-  interests: ["interest", "majors", "major", "keywords", "tags", "topics"],
+  interests: ["interest", "majors", "major", "keywords", "tags", "topics", "fields"],
   table_number: ["table", "table no", "table #", "number"],
   students: ["student", "student name", "names", "members", "admits", "student names", "name", "your name", "full name"],
   size: ["count", "students count", "number of students", "how many"],

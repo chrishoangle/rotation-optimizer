@@ -49,6 +49,8 @@ def page(url):
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         ctx = browser.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
+        # These tests drive the full planner; test_guided.py drives the guided one.
+        ctx.add_init_script("try { if (!localStorage.getItem('rotation-optimizer:ui')) localStorage.setItem('rotation-optimizer:ui', 'full'); } catch (e) {}")
         p = ctx.new_page()
         errors: list[str] = []
         p.on("pageerror", lambda e: errors.append(str(e)))
@@ -77,6 +79,13 @@ def downloaded(p, name: str, nth: int = 0):
 def page_y(p, name: str) -> float:
     """A button's position on the page, not the screen, so a scroll still in progress does not count."""
     return button(p, name).evaluate("b => b.getBoundingClientRect().top + window.scrollY")
+
+
+def tool(p, name: str) -> None:
+    """Open one of night mode's tools, such as Check-in."""
+    b = p.locator(".tools").get_by_role("button", name=name, exact=True)
+    if b.get_attribute("aria-expanded") != "true":
+        b.click()
 
 
 def start_round_1(p) -> None:
@@ -292,6 +301,7 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     button(p, "Mark as printed").click()
     button(p, "Open night mode").click()
     p.wait_for_selector("text=Round 1 of 2")
+    tool(p, "Check-in")
     assert "Check-in: 0 of 10 alumni here" in text(p)
     button(p, "Not here yet").first.click()
     assert "Check-in: 1 of 10 alumni here" in text(p)
@@ -299,7 +309,7 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     p.wait_for_selector("text=didn't show up. Cancel them from round 1?")
     button(p, "Yes, cancel").click()
     p.wait_for_selector("text=Changes are waiting")
-    button(p, "An alum arrived late, or a new one came").click()
+    button(p, "A new alum came").click()
     p.get_by_label("Host table name").fill("Real Estate")
     p.get_by_label("Alum's name").fill("Alum K")
     p.get_by_label("Tags").fill("finance; economics")
@@ -309,12 +319,13 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     body = text(p)
     assert re.search(r"Alum K \(Real Estate\): new host\. In round 1, go to Table \d+", body)
     assert "Changes are waiting" not in body
+    tool(p, "Where is…")
     p.get_by_label("Where is").fill("alum k")
     assert "Round 2: Table" in p.inner_text("#where-results")
     start_round_1(p)
     button(p, "Round 1 is finished: hosts move now").click()
     assert "Moving to round 2 of 2" in text(p)
-    p.get_by_text("Tonight's log").click()
+    tool(p, "Tonight's log")
     log = text(p)
     assert "did not show up, cancelled from round 1." in log and "Added Alum K (Real Estate) as a host from round 1." in log
     assert jargon(text(p)) == []
@@ -403,6 +414,7 @@ def test_practice_the_night_changes_nothing(page):
     before = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
     button(p, "Practice the night").click()
     p.wait_for_selector("text=Practice:")
+    tool(p, "Check-in")
     button(p, "Didn't show").first.click()
     button(p, "Yes, cancel").click()
     button(p, "Re-plan now").click()
@@ -432,6 +444,7 @@ def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
     find(p)
     button(p, "Mark as printed").click()
     button(p, "Open night mode").click()
+    tool(p, "Room setup")
     p.wait_for_selector("text=Room setup: 0 of 10 tables checked")
     p.locator(".setup li").first.get_by_role("button", name="Check").click()
     assert "Room setup: 1 of 10 tables checked" in text(p)
@@ -446,20 +459,20 @@ def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
     assert re.search(r"Bio & Chem is at Table 2, not Table 10 as your card says\.", tell)
     assert re.search(r"Cog Sci & Pre-Health is at Table 10, not Table 2 as your card says\.", tell)
     # An expected alum misses round 1, then turns up.
+    tool(p, "Check-in")
     button(p, "Didn't show").first.click()
     button(p, "Yes, cancel").click()
     button(p, "Re-plan now").click()
     p.wait_for_selector("text=What to tell people")
     start_round_1(p)
     button(p, "Round 1 is finished: hosts move now").click()
-    if not p.eval_on_selector('[data-panel="checkin"]', "d => d.open"):
-        p.locator('[data-panel="checkin"] > summary').click()
-    p.locator(".checkin li.noshow").first.get_by_role("button", name="Arrived late").click()
-    button(p, "Add them back").click()
+    button(p, "A missing alum arrived").click()
+    p.locator(".changed .checkin li").first.get_by_role("button", name="They're here").click()
+    p.locator(".changed").get_by_role("button", name="Add them back").click()
     p.wait_for_selector("text=Changes are waiting")
     button(p, "Re-plan now").click()
     p.wait_for_selector("text=What to tell people")
-    p.get_by_text("Tonight's log").click()
+    tool(p, "Tonight's log")
     assert "arrived late and hosts from round 2." in text(p)
     assert jargon(text(p)) == []
 
@@ -514,12 +527,12 @@ def test_volunteer_qr_view_students_runner_sheets_and_wrap_up(page):
     pop.value.close()
     button(p, "Mark as printed").click()
     button(p, "Open night mode").click()
-    p.locator('[data-panel="students"] > summary').click()
+    tool(p, "Students")
     for _ in range(2):
         p.get_by_label("One more at Bio & Chem").click()
     assert "2 of 6" in p.inner_text('[data-panel="students"]')
     assert "Few students yet at" in p.inner_text(".now-board")
-    p.locator('[data-panel="share"] > summary').click()
+    tool(p, "QR code for volunteers")
     p.wait_for_selector(".qr svg")
     p.context.grant_permissions(["clipboard-read", "clipboard-write"])
     button(p, "Copy the link").click()
