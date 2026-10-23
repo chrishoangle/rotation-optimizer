@@ -364,3 +364,40 @@ def test_the_tour_uses_the_coordinators_own_event(page):
 def ev_plan_is_untouched(p) -> bool:
     # The tour plans on a copy: the coordinator's own event still has no schedule.
     return p.locator(".c-tab", has_text="Print").get_attribute("disabled") is not None
+
+
+# A seating chart as coordinators keep it in a Google Doc, with invented people.
+CHART_HTML = """<table><tr><td><p>Fam Table</p></td><td><p>Round 1 (alums)</p></td><td><p>Round 2 (alums)</p></td></tr>
+<tr><td><p>Table 1</p><p>Fam 6 (PoliSci/Comm)</p></td><td><p>Ann Park</p></td><td><p>Bo Lin</p></td></tr>
+<tr><td><p>Table 2</p><p>Fam 3 (Cog Sci/Math)</p></td><td><p>Cy Ruiz + Di Wu</p></td><td><p>Ann Park</p></td></tr>
+<tr><td><p>Table 3</p><p>Fam 10 (Bio/Chem)</p></td><td><p>Bo Lin</p></td><td><p>Cy Ruiz + Di Wu</p></td></tr></table>"""
+ALUMNI_LIST = "Ann Park: ann@example.com\nNonprofit consulting and education reform\nBo Lin: bo@example.com\nPracticing internist\nCy Ruiz: cy@example.com\nSemiconductor engineer\nGus Hale: gus@example.com\nDatabase analyst"
+
+
+def paste_html(p, label: str, html: str, text: str = "") -> None:
+    p.get_by_label(label).evaluate(
+        "(el, [html, text]) => { const d = new DataTransfer(); d.setData('text/html', html); d.setData('text/plain', text); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }",
+        [html, text])
+    p.wait_for_timeout(150)
+
+
+def test_a_coordinator_pastes_the_seating_chart_and_alumni_list_they_already_have(page):
+    p = page
+    p.get_by_text("Start a dinner").click()
+    button(p, "Next: your alumni").click()
+    paste_html(p, "Paste or type your alumni", CHART_HTML, "Fam Table\nRound 1")
+    assert "Read your seating chart: 3 fams, 4 alumni at 3 tables (1 pair), 2 rounds." in words(p)
+    p.locator('[data-card="hosts"] .c-card-head').click()
+    assert "The seating from your chart is kept as you made it." in words(p)
+    button(p, "Paste more alumni").click()
+    paste(p, "Paste or type your alumni", ALUMNI_LIST)
+    text = words(p)
+    assert "Added what 3 of 4 alumni do" in text and "Not in your seating, so left out: Gus Hale." in text
+    assert "@" not in p.evaluate("() => localStorage.getItem('rotation-optimizer:event')")
+    button(p, "Make the schedule").click()
+    p.wait_for_selector(".c-room")
+    r1 = " ".join(p.locator('.c-tile[data-round="1"]').all_inner_texts())
+    assert "Fam 6" in r1 and r1.index("Ann Park") < r1.index("Cy Ruiz & Di Wu") < r1.index("Bo Lin")
+    p.get_by_role("button", name="Round 2", exact=True).click()
+    r2 = [t.replace("\n", " ") for t in p.locator('.c-tile[data-round="2"]').all_inner_texts()]
+    assert "Bo Lin" in r2[0] and "Ann Park" in r2[1] and "Cy Ruiz & Di Wu" in r2[2]

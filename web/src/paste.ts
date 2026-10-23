@@ -53,3 +53,23 @@ export function looksLikeHeader(cells: string[]): boolean {
   if (cells.some((c) => /^\d+$/.test(c.trim()))) return false;
   return cells.filter((c) => HEADER_WORDS.includes(norm(c))).length >= 2;
 }
+
+/**
+ * A table copied from Google Docs, Word, or a web page arrives as HTML; its
+ * plain text loses the columns. Each cell keeps its own line breaks, so
+ * "Table 1" and "Fam 6 (PoliSci)" on two lines stay one cell.
+ */
+export function gridFromHtml(html: string): string[][] | null {
+  if (!/<table/i.test(html ?? "")) return null;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const table = doc.querySelector("table");
+  if (!table) return null;
+  const cellText = (cell: Element) => {
+    const blocks = [...cell.querySelectorAll("p, div, li")].filter((b) => !b.querySelector("p, div, li"));
+    const parts = blocks.length ? blocks.map((b) => b.textContent ?? "") : [(cell.innerHTML.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "")).replace(/&amp;/g, "&").replace(/&nbsp;/g, " ")];
+    return parts.map((p) => p.replace(/ /g, " ").trim()).filter(Boolean).join("\n");
+  };
+  const rows = [...table.querySelectorAll("tr")].map((tr) => [...tr.querySelectorAll("th, td")].map(cellText));
+  const kept = rows.filter((r) => r.some((c) => c));
+  return kept.length ? kept : null;
+}

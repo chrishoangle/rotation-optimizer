@@ -70,7 +70,11 @@ walk through a whole dinner, from the two lists to next year's file. With an
 event open, the tour uses a copy of your own alumni and fams (it never changes
 your event); otherwise it uses an invented example dinner.
 It is organised around what a coordinator does, in four places: **Set up**
-(paste your alumni and fams; a title row is skipped and said so; alumni who
+(paste what you already have from Google Docs, Sheets, or Excel: last year's
+seating chart, with a column per round, gives the fams, the alumni and pairs,
+and the seating itself, and an alumni list of names, emails, and what each
+alum does adds their interests, with the emails dropped; or paste your alumni
+and fams as plain lists; a title row is skipped and said so; alumni who
 share a field host one table together as a pair, and any pair can be split or
 two alumni paired by hand), **Schedule** (the room drawn one round at a time,
 with each alum or pair at their table, and changes made in Adjust), **Print** (what to print, how many pages, and why, then Print

@@ -25,7 +25,8 @@ import { changeSlipsHtml, movesBetween } from "./moves";
 import {
   addLateHost, cancelFam, cancelHost, currentRound, finishRound, joinLate, logChange, moveFamTable, recordActual, roomTables, toggleTold, whereIs,
 } from "./night";
-import { looksLikeHeader, parsePasted } from "./paste";
+import { gridFromHtml, looksLikeHeader, parsePasted } from "./paste";
+import { ListedAlum, SeatingChart, pairKey, readAlumniList, readSeatingChart } from "./seating";
 import { HostSettings, clearGrid, gridChanges, hostSettings, placeInGrid, renameInRules, setHostSettings, settingsWords } from "./people";
 import type { EventPlan } from "./planning";
 import { describeReprint, hostLabel, provenOptimal, reprintList } from "./planning";
@@ -83,6 +84,7 @@ let moreFams = false;
 let noteFor: string | null = null;
 let imported: { kind: "hosts" | "fams"; skipped: string[] | null; columns: string } | null = null;
 let paired: string[] = []; // pairs made from alumni who share a field, said once after an import
+let fromChart = false; // the lists came from a seating chart, whose seating is kept
 let pairA = "";
 let showMatches = false;
 // Schedule
@@ -454,7 +456,7 @@ function homePage(): HTMLElement {
     h("button", { className: `c-choice ${primary ? "primary" : ""}`, onclick }, icon(glyph, "c-choice-icon"),
       h("span", { className: "c-choice-text" }, h("strong", {}, title), h("span", {}, help)), icon("chevron", "c-choice-go"));
   const open = keyOpens(h("label", { className: "c-choice", for: "c-open-home", tabindex: 0 }, openInput("c-open-home"), icon("folder", "c-choice-icon"),
-    h("span", { className: "c-choice-text" }, h("strong", {}, "Open last year's file"), h("span", {}, "Or any event you saved.")), icon("chevron", "c-choice-go")));
+    h("span", { className: "c-choice-text" }, h("strong", {}, "Open a saved event"), h("span", {}, "A file you saved from this app, like last year's.")), icon("chevron", "c-choice-go")));
   const example = choice("Try an example", "A practice dinner. Nothing you do is kept.", async () => { practiceReturn = "home"; ctx.tryExample(); go("schedule"); await update(); }, false, "sparkle");
   const fresh = () => { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); };
   if (going) {
@@ -486,7 +488,7 @@ function homePage(): HTMLElement {
     picture,
     h("div", { className: "c-choices" },
       tourSeen() ? null : tourChoice(false, true),
-      choice("Start a dinner", "Paste your alumni and fams from a spreadsheet.", fresh, tourSeen(), "plus"),
+      choice("Start a dinner", "Paste your lists or last year's seating chart from Docs, Sheets, or Excel.", fresh, tourSeen(), "plus"),
       open, example, tourSeen() ? tourChoice(false, false) : null),
     h("p", { className: "c-fine" }, "Everything stays in this browser. Nothing is sent anywhere."));
 }
@@ -633,6 +635,54 @@ function addRows(kind: "hosts" | "fams", grid: string[][]): void {
   say("ok", `Added ${kind === "hosts" ? alumni(body.length) : famsN(body.length)}.` + (paired.length && kind === "hosts" ? ` Alumni who share a field host one table together: ${paired.join(", ")}. You can split a pair under Alumni.` : ""));
 }
 
+/** Last year's (or this year's) seating chart: the fams, the alumni and pairs, and who sat where. */
+function importChart(chart: SeatingChart): void {
+  const s = ev();
+  const known = new Map(hostsOf(s).map((r) => [pairKey(whoAt(r)), r.tags ?? ""]));
+  s.rounds = chart.rounds;
+  s.fams = chart.fams.map((f) => ({ ...blankRow("fams"), table_number: f.table, fam_label: f.name, interests: f.interests.join("; ") }));
+  s.hosts = chart.hosts.map((who) => ({ ...blankRow("hosts"), host_name: who, table_label: who, tags: known.get(pairKey(who)) ?? "" }));
+  s.rules = [];
+  tidy(s);
+  for (const seat of chart.seats) placeInGrid(s, seat.host, seat.fam, seat.round);
+  if (!s.title.trim()) s.title = "Alumni dinner";
+  fromChart = true;
+  paired = [];
+  imported = null;
+  ctx.persist();
+  const n = peopleCount(s), pairs = pairCount(s);
+  say("ok", `Read your seating chart: ${famsN(chart.fams.length)}, ${alumni(n)} at ${chart.hosts.length} tables${pairs ? ` (${pairs} pair${pairs !== 1 ? "s" : ""})` : ""}, ${chart.rounds} round${chart.rounds !== 1 ? "s" : ""}. The seating is kept exactly as you made it.`);
+}
+
+/** A list of alumni with what they do: their interests are read from it, and emails are dropped. */
+function importAlumniList(list: ListedAlum[]): void {
+  const s = ev();
+  const had = hostsOf(s).length > 0;
+  const missing: string[] = [];
+  let matched = 0;
+  for (const a of list) {
+    const words = a.interests.length ? a.interests : a.about ? [a.about.toLowerCase()] : [];
+    const row = hostsOf(s).find((r) => peopleIn(whoAt(r)).some((p) => p.toLowerCase() === a.name.toLowerCase()));
+    if (row) { for (const w of [...words].reverse()) addInterest(row, w); matched++; continue; }
+    if (had) { missing.push(a.name); continue; }
+    s.hosts.push({ ...blankRow("hosts"), host_name: a.name, table_label: a.name, tags: words.join("; ") });
+  }
+  tidy(s);
+  ctx.persist();
+  imported = null;
+  say("ok", (had ? `Added what ${matched} of ${alumni(list.length)} do, as interests for matching.` : `Added ${alumni(list.length)} with what they do as interests.`)
+    + (missing.length ? ` Not in your seating, so left out: ${missing.join(", ")}.` : "") + " Emails are never kept.");
+}
+
+/** Read a seating chart or an alumni list if that is what was pasted. True when it was. */
+function importWhatTheyHave(plain: string, grid: string[][] | null): boolean {
+  const chart = grid ? readSeatingChart(grid) : null;
+  if (chart) { importChart(chart); return true; }
+  const list = readAlumniList(plain);
+  if (list) { importAlumniList(list); return true; }
+  return false;
+}
+
 function undoHeader(): void {
   if (!imported?.skipped) return;
   const s = ev();
@@ -662,13 +712,16 @@ function pasteBox(kind: "hosts" | "fams"): HTMLElement {
   const add = h("button", { className: "c-button primary", hidden: true, onclick: () => {
     const grid = typedGrid(box.value);
     if (!grid.length) return;
-    addRows(kind, grid);
+    if (!importWhatTheyHave(box.value, grid)) addRows(kind, grid);
     adding = null;
     render();
   } }, "Add these");
   box.addEventListener("input", () => { add.hidden = !box.value.trim(); });
   box.addEventListener("paste", (e) => {
-    const grid = parsePasted((e as ClipboardEvent).clipboardData?.getData("text/plain") ?? "");
+    const data = (e as ClipboardEvent).clipboardData;
+    const plain = data?.getData("text/plain") ?? "";
+    const grid = gridFromHtml(data?.getData("text/html") ?? "") ?? parsePasted(plain);
+    if (importWhatTheyHave(plain, grid)) { e.preventDefault(); adding = null; render(); return; }
     if (!grid) return;
     e.preventDefault();
     addRows(kind, grid);
@@ -679,8 +732,8 @@ function pasteBox(kind: "hosts" | "fams"): HTMLElement {
     h("label", { for: id, className: "c-label" }, kind === "hosts" ? "Paste or type your alumni" : "Paste or type your fams"),
     box,
     h("p", { id: `${id}-help`, className: "c-help" }, kind === "hosts"
-      ? "Copy the rows from your spreadsheet, or type one alum per line: their name, then what they can talk about."
-      : "Copy the rows from your spreadsheet, or type one fam per line: its name, then what its students are interested in."),
+      ? "Paste from Google Docs, Sheets, or Excel: last year's seating chart (fam, round 1, round 2), a list of names with what each alum does, or one alum per line with what they can talk about."
+      : "Paste from Google Docs, Sheets, or Excel: a seating chart works here too, or one fam per line with its majors."),
     h("div", { className: "c-row" }, add, uploadButton(kind),
       ev()[kind].length ? h("button", { className: "c-link", onclick: () => { adding = null; render(); } }, "Cancel") : null));
 }
@@ -906,6 +959,9 @@ function setupPage(): HTMLElement {
     ]),
     setupCard("hosts", "Alumni", alumni(nPeople) + (nPairs ? ` at ${nHosts} tables · ${nPairs} pair${nPairs !== 1 ? "s" : ""}` : "") + (special.length ? ` · ${special.length} with special arrangements` : ""), nHosts > 0, () => [
       importNote("hosts"),
+      fromChart && gridChanges(s).length ? h("p", { className: "c-note" }, "The seating from your chart is kept as you made it. ",
+        h("button", { className: "c-link", onclick: () => { clearGrid(s); fromChart = false; ctx.persist(); say("ok", "The app will seat everyone by shared interests when you make the schedule."); render(); } }, "Let the app re-seat everyone by interests"),
+        hostsOf(s).some((r) => !(r.tags ?? "").trim()) ? h("span", { className: "c-help" }, " To match by interests, paste your alumni list too: names with what each one does.") : null) : null,
       paired.length ? h("p", { className: "c-note" }, `Alumni who share a field host one table together: ${paired.join(", ")}. Tap Split on any pair that should host alone.`) : null,
       editing === "hosts" ? peopleList("hosts", moreHosts ? [...ALUMNI_COLS, TOPIC_COL] : ALUMNI_COLS) : nHosts && adding !== "hosts" ? readList("hosts") : pasteBox("hosts"),
       listButtons("hosts", nHosts),
@@ -1607,7 +1663,7 @@ function wrapPage(): HTMLElement {
     h("div", { className: "c-actions" }, h("span", { className: "c-help" }, "One file with your alumni, fams, and notes. No student names, no schedules."),
       h("button", { className: "c-button primary big", onclick: () => {
         ctx.handOff();
-        say("ok", "Saved as a .zip file. Give it to next year's coordinator: they unzip it, choose Open last year's file, and pick the file ending in .rotation.json.");
+        say("ok", "Saved as a .zip file. Give it to next year's coordinator: they unzip it, choose Open a saved event, and pick the file ending in .rotation.json.");
         render();
       } }, "Save for next year")),
     names ? h("p", { className: "c-help" }, "Your office may ask you not to keep student names. ",
