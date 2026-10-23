@@ -11,7 +11,9 @@
 // stays at the address ending in #full.
 
 import { h, openPage, readFile, replace } from "./dom";
+import { avatars, famHue, peopleIn } from "./faces";
 import { IconName, icon } from "./icons";
+import { openTour, tourSeen, tourStep } from "./tour";
 import {
   EventState, FAM_COLUMNS, HOST_COLUMNS, applySpelling, checkInputs, famLocations, hasStarted, isCurrent, loadEvent,
   maxRounds, nearMisses, newEvent, normalizeState, normalizeTable, stepFreeFams,
@@ -42,6 +44,8 @@ export interface GuidedCtx {
   now(): string;
   /** Plan or update the schedule; returns a problem in plain words, or "" when it worked. */
   solve(keepPrinted: boolean): Promise<string>;
+  /** Plan an event that is not the open one, for the walkthrough. */
+  solveOn(s: EventState, keepPrinted: boolean): Promise<string>;
   /** The extra night tools: check-in, room setup, QR code for volunteers. */
   openNight(): void;
   openFull(): void;
@@ -114,25 +118,6 @@ const whoAt = (r: CleanRow) => (r.host_name || r.table_label || "").trim();
 const peopleCount = (s: EventState) => hostsOf(s).reduce((n, r) => n + Math.max(1, peopleIn(whoAt(r)).length), 0);
 const pairCount = (s: EventState) => hostsOf(s).filter((r) => peopleIn(whoAt(r)).length > 1).length;
 
-/** The people at one alumni table: one alum, or a pair written "Sam Rivera & Priya Shah". */
-export function peopleIn(name: string): string[] {
-  return (name ?? "").split(/\s*&\s*|\s*\+\s*|\s+\/\s+|\s+and\s+/i).map((x) => x.trim()).filter(Boolean);
-}
-
-/** Initials in a soft circle, coloured by name so the same person always looks the same. */
-function avatar(name: string): HTMLElement {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const initials = ((words[0]?.[0] ?? "") + (words.length > 1 ? words[words.length - 1][0] : words[0]?.[1] ?? "")).toUpperCase();
-  let hue = 0;
-  for (const ch of name) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
-  return h("span", { className: "c-avatar", style: `--h: ${hue}`, "aria-hidden": "true" }, initials);
-}
-
-/** One avatar for an alum, two overlapping for a pair. */
-function avatars(who: string): HTMLElement {
-  const people = peopleIn(who);
-  return h("span", { className: `c-avatars ${people.length > 1 ? "pair" : ""}`, "aria-hidden": "true" }, (people.length ? people : [who]).map(avatar));
-}
 const famsN = (n: number) => `${n} fam${n !== 1 ? "s" : ""}`;
 
 function remember(): void {
@@ -245,6 +230,7 @@ function eventMenu(): HTMLElement {
       h("button", { onclick: () => { menu = false; go("home"); } }, "Start another dinner or see the example"),
       s.plan ? h("button", { onclick: () => go("wrap") }, "Wrap up and save for next year") : null,
       s.plan ? h("button", { onclick: () => { menu = false; ctx.openNight(); } }, "Extra night tools: check-in, room setup, QR code") : null,
+      h("button", { onclick: startTour }, "Take the 2-minute tour"),
       h("button", { onclick: () => { menu = false; openPage(coordinatorGuideHtml(s.title)); } }, "Print a one-page guide"),
       h("button", { onclick: () => { menu = false; openPage(privacyNoteHtml()); } }, "Privacy note for IT"),
       h("button", { onclick: () => { menu = false; ctx.offlineCopy(); } }, "Download the app for use without internet")) : null);
@@ -398,6 +384,28 @@ const PICTURE = `<svg viewBox="0 0 520 150" role="img" aria-label="Students stay
 <g fill="var(--accent)"><circle cx="118" cy="110" r="10"/><circle cx="232" cy="110" r="10"/><circle cx="458" cy="50" r="10"/></g>
 <g fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#ah)"><path d="M132 118 Q175 140 216 120"/><path d="M246 122 Q360 150 448 68"/></g></svg>`;
 
+/** The two-minute walkthrough, on a copy of this event or on an example dinner. */
+function startTour(): void {
+  if (menu) { menu = false; render(); }
+  openTour({
+    mine: () => (hasPeople(ev()) && !ctx.inPractice() ? ev() : null),
+    solveOn: (s, keep) => ctx.solveOn(s, keep),
+    now: () => ctx.now(),
+    finish: (next) => {
+      if (next === "start" && !hasPeople(ev())) { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); return; }
+      render();
+    },
+  });
+}
+
+function tourChoice(mine: boolean, primary: boolean): HTMLElement {
+  const at = tourStep();
+  return h("button", { className: `c-choice ${primary ? "primary" : ""}`, "data-k": "tour", onclick: startTour }, icon("play", "c-choice-icon"),
+    h("span", { className: "c-choice-text" }, h("strong", {}, at ? "Continue the tour" : mine ? "Walk through your event" : "Take the 2-minute tour"),
+      h("span", {}, at ? `You stopped at step ${at} of 8.` : mine ? "Two minutes, with your own alumni and fams." : "See a whole dinner, from the lists to the last round.")),
+    icon("chevron", "c-choice-go"));
+}
+
 /** "Saturday, November 14 · 22 days to go", or nothing without a date. */
 function dateLine(date: string | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? "");
@@ -446,6 +454,7 @@ function homePage(): HTMLElement {
         })),
         h("button", { className: "c-button primary big", "data-k": "next-step", onclick: act }, label, icon("chevron"))),
       h("div", { className: "c-choices quiet" },
+        tourChoice(true, false),
         choice("Start another dinner", "Your current dinner is replaced. Download a copy first from the ⋯ menu.", fresh, false, "plus"),
         open, example),
       h("p", { className: "c-fine" }, "Everything stays in this browser. Nothing is sent anywhere."));
@@ -457,8 +466,9 @@ function homePage(): HTMLElement {
     h("p", { className: "c-lead" }, "Students stay at their table all night. Alumni, alone or in pairs, move to a new table each round. Paste your two lists, print what you need, and run the night from your phone."),
     picture,
     h("div", { className: "c-choices" },
-      choice("Start a dinner", "Paste your alumni and fams from a spreadsheet.", fresh, true, "plus"),
-      open, example),
+      tourSeen() ? null : tourChoice(false, true),
+      choice("Start a dinner", "Paste your alumni and fams from a spreadsheet.", fresh, tourSeen(), "plus"),
+      open, example, tourSeen() ? tourChoice(false, false) : null),
     h("p", { className: "c-fine" }, "Everything stays in this browser. Nothing is sent anywhere."));
 }
 
@@ -1086,8 +1096,6 @@ function roundSwitch(p: EventPlan): HTMLElement {
       onclick: () => { showRound = r; render(); } }, r ? `Round ${r}` : "Whole night")));
 }
 
-/** A soft colour for each fam table, the same on every screen. */
-const famHue = (n: number) => (n * 47 + 200) % 360;
 
 /** The room in one round: each table drawn with its fam and the alum or pair sitting there. */
 function room(p: EventPlan, r: number): HTMLElement {

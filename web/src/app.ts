@@ -1283,6 +1283,14 @@ const guidedCtx: GuidedCtx = {
     const ok = await solve(keep, "tables");
     return ok ? "" : ui.solveError?.text ?? "Something went wrong.";
   },
+  solveOn: async (s, keep) => {
+    try {
+      solveEvent(await getHighs(), s, keep);
+      return "";
+    } catch (err) {
+      return err instanceof SheetError ? err.problems.join(" ") : (err as Error).message;
+    }
+  },
   openNight: () => setNightMode(true),
   openFull: () => setUi("full"),
   practice: () => {

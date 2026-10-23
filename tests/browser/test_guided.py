@@ -282,3 +282,77 @@ def test_a_pair_can_split_and_two_alumni_can_pair(page):
     assert p.locator(".c-steps li").count() == 4
     button(p, "Next: add your alumni and fams").click()
     p.wait_for_selector("text=Set up")
+
+
+def tour_text(p) -> str:
+    return p.inner_text(".c-tour")
+
+
+def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
+    p = page
+    p.get_by_role("button", name="Take the 2-minute tour").click()
+    assert "Here's an example alumni dinner." in tour_text(p)
+    assert "Welcome to Spring Alumni Dinner" in tour_text(p)
+    seen = []
+    for step in range(1, 9):
+        p.wait_for_selector(f'.c-tour-scene[data-step="{step}"]')
+        if step == 3:
+            p.wait_for_selector("text=Schedule ready.")
+        if step in (4, 6):
+            p.wait_for_selector(".c-tour-matches, .c-tour-flow")
+        if step == 7:
+            assert "Tell these people where to go" in tour_text(p)
+        text = tour_text(p)
+        seen.append(text)
+        assert [j for j in COORD_JARGON if re.search(j, text, re.IGNORECASE)] == [], f"step {step}"
+        if step == 5:
+            # Leave half way; the tour picks up at the same step.
+            p.keyboard.press("Escape")
+            assert p.locator(".c-tour").count() == 0
+            p.reload()
+            p.get_by_role("button", name=re.compile("Continue the tour")).click()
+            p.wait_for_selector('.c-tour-scene[data-step="5"]')
+            button(p, "Back").click()
+            p.wait_for_selector('.c-tour-scene[data-step="4"]')
+            p.locator('[data-k="tour-next"]').click()
+        if step < 8:
+            p.locator('[data-k="tour-next"]').click()
+    assert "meets" in seen[3] and "because they share" in seen[3]
+    assert "can't make round 2" in seen[5] and "Round 1 is done" in seen[5]
+    assert "Event complete" in seen[7]
+    button(p, "Plan my dinner").click()
+    assert p.locator(".c-tour").count() == 0
+    p.wait_for_selector("text=Your dinner")
+    # Once seen, the tour is a quieter choice on the first screen.
+    p.get_by_role("button", name="Event menu").click()
+    button(p, "Start another dinner or see the example").click()
+    assert p.locator(".c-choice.primary", has_text="Start a dinner").count() == 1
+
+
+def test_the_tour_uses_the_coordinators_own_event(page):
+    p = page
+    p.get_by_text("Start a dinner").click()
+    p.get_by_label("Name").fill("Transfer Admit Dinner")
+    button(p, "Next: your alumni").click()
+    paste(p, "Paste or type your alumni", ALUMNI)
+    paste(p, "Paste or type your fams", FAMS)
+    p.get_by_role("button", name="Event menu").click()
+    button(p, "Take the 2-minute tour").click()
+    assert "Let's walk through your event." in tour_text(p)
+    assert "Welcome to Transfer Admit Dinner" in tour_text(p)
+    p.locator('[data-k="tour-next"]').click()
+    assert "Alum A" in tour_text(p) and "Fam Red" in tour_text(p)
+    p.locator('[data-k="tour-next"]').click()
+    p.wait_for_selector("text=Schedule ready.")
+    for _ in range(3):
+        p.locator('[data-k="tour-next"]').click()
+    p.wait_for_selector(".c-tour-flow")
+    assert re.search(r"Alum [A-F]( & Alum [A-F])? can't make round 2", tour_text(p))
+    button(p, "Skip tour").click()
+    assert p.locator(".c-tour").count() == 0
+    assert ev_plan_is_untouched(p)
+
+
+def ev_plan_is_untouched(p) -> bool:
+    # The tour plans on a copy: the coordinator's own event still has no schedule.
+    return p.locator(".c-tab", has_text="Print").get_attribute("disabled") is not None

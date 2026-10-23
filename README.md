@@ -65,6 +65,10 @@ python -m pytest tests/ -v
 ## Plan your own event
 
 Open the planner at https://chrishoangle.github.io/rotation-optimizer/app/.
+New to it? **Take the 2-minute tour** on the first screen: eight short scenes
+walk through a whole dinner, from the two lists to next year's file. With an
+event open, the tour uses a copy of your own alumni and fams (it never changes
+your event); otherwise it uses an invented example dinner.
 It is organised around what a coordinator does, in four places: **Set up**
 (paste your alumni and fams; a title row is skipped and said so; alumni who
 share a field host one table together as a pair, and any pair can be split or
