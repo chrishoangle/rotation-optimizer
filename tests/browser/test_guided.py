@@ -2,7 +2,7 @@
 
 Set up (paste alumni and fams from a spreadsheet, with title rows), Schedule
 (a room plan; swaps only in Adjust), Print (what to print and why), Run (a
-separate mode with one button and "Someone changed?"), and Wrap up. Every
+separate mode with one button and "Something came up"), and Wrap up. Every
 screen must be in event words and stay small.
 """
 
@@ -83,9 +83,11 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     button(p, "Next: your alumni").click()
     paste(p, "Paste or type your alumni", ALUMNI)
     assert "Added 6 alumni." in words(p)
-    # Two alumni share the field "Law", so they are known by their names; the field joins their interests.
+    # Two alumni share the field "Law", so they host one table together and move as a pair.
+    assert "host one table together: Alum B & Alum F (Law)" in words(p)
+    assert "6 alumni at 5 tables" in p.inner_text('[data-card="hosts"]')
     p.locator('[data-card="hosts"] .c-card-head').click()
-    assert "first row looked like column titles" in words(p) or "Alum A" in words(p)
+    assert p.locator('[data-kind="hosts"] li.pair').count() == 1
     p.get_by_role("button", name="More options").first.click()
     p.get_by_label("Choose an alum").select_option(label="Alum D")
     p.get_by_label("Alum D is here from round").select_option("2")
@@ -131,23 +133,26 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
 
     button(p, "Next: run the event").click()
     assert p.locator(".c-tabs").count() == 0, "Run is its own mode"
-    assert visible_controls(p) <= 7, "the night shows the round, one button, and Someone changed?"
+    assert visible_controls(p) <= 7, "the night shows the round, one button, and Something came up"
     assert jargon(p) == []
     button(p, "Start round 1").click()
     assert "minutes left" in words(p)
-    button(p, "Someone changed?").click()
+    button(p, "Something came up").click()
     button(p, "An alum left or didn't come").click()
     p.get_by_label("Alum who left").select_option(label="Alum B")
     p.get_by_label("Misses from round").select_option("2")
     button(p, "Work out who moves").click()
     p.wait_for_selector(".c-tell, .c-msg.ok")
+    # Alum B was half of a pair: Alum F keeps the table, so nobody moves.
+    assert "Nobody else moves" in words(p)
     if p.locator(".c-tell").count():
         assert "Everyone else stays where their card says." in words(p)
         p.locator(".c-tell input[type=checkbox]").first.check()
         assert p.locator(".c-tell li.told").count() == 1
     button(p, "See who is at each table").click()
     p.get_by_role("button", name="Round 2", exact=True).click()
-    assert "Alum B" not in " ".join(p.locator(".c-where .who").all_inner_texts())
+    seated = " ".join(p.locator(".c-where .who").all_inner_texts())
+    assert "Alum B" not in seated and "Alum F" in seated
 
     p.get_by_role("button", name="Night menu").click()
     button(p, "Wrap up").click()
@@ -205,7 +210,7 @@ def test_the_full_planner_is_at_its_own_address(url):
         p.goto(url + "#full")
         p.wait_for_selector("#sidebar")
         button(p, "Back to the guided planner").click()
-        p.wait_for_selector("text=Plan your rotation dinner")
+        p.wait_for_selector("main.coord")
         browser.close()
 
 
@@ -220,7 +225,7 @@ def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     pop.value.close()
     button(p, "Next: run the event").click()
     button(p, "Start round 1").click()
-    button(p, "Someone changed?").click()
+    button(p, "Something came up").click()
     button(p, "An alum left or didn't come").click()
     p.get_by_label("Alum who left").select_option(label="Alum A")
     p.get_by_label("Misses from round").select_option("2")
@@ -229,7 +234,7 @@ def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     for box in p.locator(".c-tell input[type=checkbox]").all():
         box.check()
     assert "Everyone has been told" in words(p)
-    button(p, "Someone changed?").click()
+    button(p, "Something came up").click()
     button(p, "An alum arrived late, or someone new came").click()
     p.get_by_label("Alum who arrived").select_option(label="Alum A")
     p.get_by_label("Hosts from round").select_option("2")
@@ -250,3 +255,30 @@ def test_an_old_full_planner_choice_still_opens_the_coordinator_app(url):
         p.wait_for_selector("text=Plan your rotation dinner")
         assert p.locator("#sidebar").count() == 0
         browser.close()
+
+
+def test_a_pair_can_split_and_two_alumni_can_pair(page):
+    p = page
+    p.get_by_text("Start a dinner").click()
+    p.get_by_label("Name").fill("Spring Dinner")
+    button(p, "Next: your alumni").click()
+    paste(p, "Paste or type your alumni", ALUMNI)
+    p.locator('[data-card="hosts"] .c-card-head').click()
+    assert p.locator('[data-kind="hosts"] li').count() == 5
+    p.get_by_role("button", name="Split Alum B & Alum F so each hosts alone").click()
+    assert p.locator('[data-kind="hosts"] li').count() == 6
+    assert p.locator('[data-kind="hosts"] li.pair').count() == 0
+    p.get_by_role("button", name="More options").first.click()
+    p.get_by_label("First alum of the pair").select_option(label="Alum A")
+    p.get_by_label("Second alum of the pair").select_option(label="Alum C")
+    button(p, "Pair them").click()
+    assert "Alum A & Alum C now host one table together." in words(p)
+    assert p.locator('[data-kind="hosts"] li.pair').count() == 1
+
+    # Home becomes the event, with one next step.
+    p.get_by_role("button", name="Event menu").click()
+    button(p, "Start another dinner or see the example").click()
+    assert p.locator("h1").inner_text() == "Spring Dinner"
+    assert p.locator(".c-steps li").count() == 4
+    button(p, "Next: add your alumni and fams").click()
+    p.wait_for_selector("text=Set up")

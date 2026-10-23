@@ -322,7 +322,7 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 <h2>MC timeline</h2>
 <table>${timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app, open Run, tap Someone changed?, and say what happened.
+<p class="help">In the app, open Run, tap Something came up, and say what happened.
 Tell the people it lists, and hand out change slips if you print them. Rounds already finished never change.</p>
 </section>
 <section>

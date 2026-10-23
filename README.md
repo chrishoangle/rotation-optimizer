@@ -66,12 +66,14 @@ python -m pytest tests/ -v
 
 Open the planner at https://chrishoangle.github.io/rotation-optimizer/app/.
 It is organised around what a coordinator does, in four places: **Set up**
-(paste your alumni and fams; a title row is skipped and said so), **Schedule**
-(a room plan that answers "is this good enough to run?", with changes made in
-Adjust), **Print** (what to print, how many pages, and why, then Print
+(paste your alumni and fams; a title row is skipped and said so; alumni who
+share a field host one table together as a pair, and any pair can be split or
+two alumni paired by hand), **Schedule** (the room drawn one round at a time,
+with each alum or pair at their table, and changes made in Adjust), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
-"Someone changed?", which turns any change into a list of people to tell).
+"Something came up", which turns any change into a list of people to tell;
+if one of a pair leaves, their partner keeps the table and nobody moves).
 After the last round, **Wrap up** saves the event for next year. Special
 arrangements (late arrivals, stairs, must or never meet) sit under More
 options; file actions and the extra night tools (check-in, room setup, QR

@@ -40,10 +40,10 @@ ${body}
 /** Two pages: planning in steps, then "on the night, if this happens, do this". */
 export function coordinatorGuideHtml(title: string): string {
   const ifs: [string, string][] = [
-    ["An alum doesn't show up, or has to leave", "Run, Someone changed?, An alum left or didn't come. Choose them and the first round they miss, then Work out who moves. Tell the people listed."],
-    ["An alum arrives late, or someone new comes", "Someone changed?, An alum arrived late, or someone new came. Choose them, or Someone not on the list, and the round they start."],
-    ["Students sit at the wrong table", "Don't move the students. Someone changed?, A fam is sitting at a different table: type the number they are at. The alumni come to them."],
-    ["A whole fam leaves", "Someone changed?, A whole fam left."],
+    ["An alum doesn't show up, or has to leave", "Run, Something came up, An alum left or didn't come. Choose them and the first round they miss, then Work out who moves. If one of a pair leaves, their partner keeps the table and nobody moves. Tell the people listed."],
+    ["An alum arrives late, or someone new comes", "Something came up, An alum arrived late, or someone new came. Choose them, or Someone not on the list, and the round they start."],
+    ["Students sit at the wrong table", "Don't move the students. Something came up, A fam is sitting at a different table: type the number they are at. The alumni come to them."],
+    ["A whole fam leaves", "Something came up, A whole fam left."],
     ["A student walks in", "Nothing to change: they join any fam with space."],
     ["The laptop or wifi dies", "Run the night from the printed seating chart. The app also works offline on any device that opened it before."],
   ];
@@ -57,7 +57,7 @@ export function coordinatorGuideHtml(title: string): string {
 <li><strong>Print.</strong> Print everything: room chart, alumni cards, table numbers, and run sheet in one file.</li>
 </ol>
 <h2>On the night: if this happens, do this</h2>
-<p>Open <strong>Run</strong> on your phone. Tap <strong>Start round 1</strong>, and <strong>End round</strong> when each round ends. When something changes, tap <strong>Someone changed?</strong>; the app works out who moves and lists exactly who to tell.</p>
+<p>Open <strong>Run</strong> on your phone. Tap <strong>Start round 1</strong>, and <strong>End round</strong> when each round ends. When something changes, tap <strong>Something came up</strong>; the app works out who moves and lists exactly who to tell.</p>
 ${ifs.map(([when, what]) => `<div class="if"><strong>${e(when)}</strong>${e(what)}</div>`).join("\n")}
 <h2>After the night</h2>
 <p>Choose Wrap up, jot what you'd change, then Save for next year and pass the file on.</p>
