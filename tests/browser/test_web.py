@@ -211,7 +211,9 @@ def test_night_of_a_three_round_dinner(page):
     body = text(p)
     assert "Pharmacy: cancelled from round 2" in body and "Bio & Chem: cancelled from round 2" in body
     assert re.search(r"Reprint: .*seating chart, round 2 page and round 3 page", body)
-    page_html = Path(downloaded(p, "Download", 4).path()).read_text()
+    with p.expect_download() as d:
+        p.locator(".card", has_text="Reprint seating chart pages").get_by_role("button", name="Download").click()
+    page_html = Path(d.value.path()).read_text()
     assert "Replaces the earlier copy" in page_html
     assert jargon(body) == []
 
@@ -274,3 +276,143 @@ def test_paste_from_a_spreadsheet_and_every_alum_gets_a_table(page):
     rows = p.eval_on_selector_all("table.plain tbody tr", "trs => trs.map(tr => tr.innerText)")
     assert len(rows) == 8 and all("Table " in r for r in rows)  # 12 places, so all 8 host tables host
     assert "has no table in any round" not in text(p)
+
+
+def test_night_mode_check_in_no_show_and_late_alum(page):
+    p = page
+    find(p)
+    button(p, "Mark as printed").click()
+    button(p, "Open night mode").click()
+    p.wait_for_selector("text=Round 1 of 2")
+    assert "Check-in: 0 of 10 alumni here" in text(p)
+    button(p, "Not here yet").first.click()
+    assert "Check-in: 1 of 10 alumni here" in text(p)
+    button(p, "Didn't show").first.click()
+    p.wait_for_selector("text=didn't show up. Cancel them from round 1?")
+    button(p, "Yes, cancel").click()
+    p.wait_for_selector("text=Changes are waiting")
+    button(p, "An alum arrived late, or a new one came").click()
+    p.get_by_label("Host table name").fill("Real Estate")
+    p.get_by_label("Alum's name").fill("Alum K")
+    p.get_by_label("Tags").fill("finance; economics")
+    button(p, "Add").click()
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    body = text(p)
+    assert re.search(r"Alum K \(Real Estate\): new host\. In round 1, go to Table \d+", body)
+    assert "Changes are waiting" not in body
+    p.get_by_label("Where is").fill("alum k")
+    assert "Round 2: Table" in p.inner_text("#where-results")
+    button(p, "Round 1 is finished: hosts move now").click()
+    assert "Round 2 of 2" in text(p) and "Last round" in text(p)
+    p.get_by_text("Tonight's log").click()
+    log = text(p)
+    assert "did not show up, cancelled from round 1." in log and "Added Alum K (Real Estate) as a host from round 1." in log
+    assert jargon(text(p)) == []
+    # A reload during the event comes back to night mode.
+    p.reload()
+    p.wait_for_selector("text=Round 2 of 2")
+    p.set_viewport_size({"width": 390, "height": 844})
+    assert p.evaluate("document.documentElement.scrollWidth") <= 390
+    button(p, "Back to planning").click()
+    p.wait_for_selector("text=1. Host tables")
+
+
+def test_why_a_pairing_and_choosing_a_different_host(page):
+    p = page
+    find(p)
+    assert re.search(r"Pairings that share an interest\s+18 of 20", text(p))
+    row = p.locator("table.schedule tbody tr", has_text="Bio & Chem").first
+    row.get_by_role("button", name="Why?").click()
+    why = p.inner_text(".why")
+    assert "Bio & Chem both list" in why or "shares none of Bio & Chem" in why
+    pick = p.get_by_label("Host for Bio & Chem in round 1")
+    current = pick.evaluate("s => s.value")
+    other = pick.evaluate("(s, cur) => [...s.options].map(o => o.value).find(v => v !== cur)", current)
+    pick.select_option(other)
+    button(p, "Use this host").click()
+    p.wait_for_selector("text=kept as a must meet rule")
+    assert "Bio & Chem" in p.eval_on_selector_all('table[data-table="rules"] select[data-col="fam"]', "ss => ss.map(s => s.value).join()")
+    button(p, "Undo").click()
+    p.wait_for_selector("text=Undone: the rule is removed")
+    assert "Bio & Chem" not in p.eval_on_selector_all('table[data-table="rules"] select[data-col="fam"]', "ss => ss.map(s => s.value).join()")
+
+
+def test_works_with_no_internet_after_one_visit(page):
+    p = page
+    p.evaluate("() => navigator.serviceWorker.ready")
+    p.reload()
+    p.wait_for_selector("text=1. Host tables")
+    p.wait_for_function("() => !!navigator.serviceWorker.controller")
+    p.context.set_offline(True)
+    try:
+        p.reload()
+        p.wait_for_selector("text=1. Host tables")
+        find(p)
+        assert "Proven best possible" in text(p)
+        p.get_by_text("Working without internet").click()
+        assert "saved on this device" in text(p)
+    finally:
+        p.context.set_offline(False)
+
+
+def test_offline_copy_is_one_file_that_plans(page, tmp_path):
+    p = page
+    p.get_by_text("Working without internet").click()
+    copy = tmp_path / "offline.html"
+    downloaded(p, "Download an offline copy of this app").save_as(copy)
+    assert copy.stat().st_size > 4_000_000
+    q = p.context.new_page()
+    errors: list[str] = []
+    q.on("pageerror", lambda e: errors.append(str(e)))
+    q.goto(copy.as_uri())
+    q.wait_for_selector("text=1. Host tables")
+    find(q)
+    assert "Proven best possible" in text(q)
+    assert errors == []
+
+
+def test_mark_as_printed_downloads_a_backup_and_versions_can_be_restored(page):
+    p = page
+    find(p)
+    with p.expect_download() as d:
+        button(p, "Mark as printed").click()
+    assert "printed backup" in d.value.suggested_filename
+    set_number(p, "Rounds", 3)
+    find(p)
+    assert "Planned for 3 rounds" in text(p)
+    p.get_by_text("Earlier versions in this browser").click()
+    p.locator(".versions li", has_text="before re-planning").first.get_by_role("button", name="Restore").click()
+    p.wait_for_selector("text=Restored the version from")
+    assert "Planned for 2 rounds" in text(p)
+
+
+def test_practice_the_night_changes_nothing(page):
+    p = page
+    find(p)
+    assert "students in 10 fams" in p.inner_text("#fam-totals")
+    before = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
+    button(p, "Practice the night").click()
+    p.wait_for_selector("text=Practice:")
+    button(p, "Didn't show").first.click()
+    button(p, "Yes, cancel").click()
+    button(p, "Re-plan now").click()
+    p.wait_for_selector("text=What to tell people")
+    button(p, "End practice").click()
+    p.wait_for_selector("text=Practice ended. Your event is exactly as it was.")
+    after = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
+    assert json.loads(after)["cancel_hosts"] == {} and json.loads(after)["night_log"] == []
+    assert json.loads(after)["plan"] == json.loads(before)["plan"]
+
+
+def test_remove_student_names_and_team_pages(page):
+    p = page
+    with p.expect_popup() as pop:
+        button(p, "Coordinator guide (2 pages)").click()
+    assert "if this happens, do this" in pop.value.inner_text("body")
+    pop.value.close()
+    button(p, "Remove student names").click()
+    button(p, "Remove names").click()
+    p.wait_for_selector("text=Student names removed.")
+    saved = Path(downloaded(p, "Save event file (keep this to continue later)").path()).read_text()
+    assert "Student 01" not in json.dumps(json.loads(saved)["fams"])

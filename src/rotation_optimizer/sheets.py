@@ -294,7 +294,7 @@ def load_schedule(
     return slots
 
 
-RULE_KINDS = {"must meet": "must", "never meet": "never", "only in rounds": "only"}
+RULE_KINDS = {"must meet": "must", "never meet": "never", "only in rounds": "only", "stays with": "stays"}
 
 
 def parse_rounds(text: str, rounds: int) -> tuple[int, ...]:
@@ -324,9 +324,11 @@ def parse_rounds(text: str, rounds: int) -> tuple[int, ...]:
 def parse_rule_rows(rows: Iterable[dict], hosts: list[Host], fams: list[GuestGroup], rounds: int):
     """Turn the rules table into Rule objects and host availability.
 
-    Each row has rule ("must meet", "never meet", or "only in rounds"),
-    host_table, fam, and rounds. Blank rounds means any round. "only in
-    rounds" needs no fam: the host is away in every other round. Returns
+    Each row has rule ("must meet", "never meet", "only in rounds", or
+    "stays with"), host_table, fam, and rounds. Blank rounds means any round.
+    "only in rounds" needs no fam: the host is away in every other round.
+    "stays with" keeps the host at one fam all night; a blank fam lets the
+    planner choose, and rounds must be blank. Returns
     (rules, host_away). Blank rows are ignored. Raises SheetError listing
     every problem.
     """
@@ -338,7 +340,7 @@ def parse_rule_rows(rows: Iterable[dict], hosts: list[Host], fams: list[GuestGro
     for i, row in enumerate(clean_rows(rows), start=1):
         kind = RULE_KINDS.get(row.get("rule", "").lower())
         if kind is None:
-            problems.append(f"Pairing rule {i}: choose must meet, never meet, or only in rounds.")
+            problems.append(f"Pairing rule {i}: choose must meet, never meet, only in rounds, or stays with.")
             continue
         try:
             h = host_id_by_label(hosts, row.get("host_table", ""))
@@ -356,6 +358,13 @@ def parse_rule_rows(rows: Iterable[dict], hosts: list[Host], fams: list[GuestGro
                 continue
             host_away[h] = sorted(set(range(1, rounds + 1)) - set(rs))
             continue
+        if kind == "stays":
+            if rs:
+                problems.append(f"Pairing rule {i}: stays with is for the whole night, so leave Rounds blank.")
+                continue
+            if not row.get("fam", "").strip():
+                rules.append(Rule("stays", h, "", ()))
+                continue
         try:
             f = fam_id_by_label(fams, row.get("fam", ""))
         except SheetError:

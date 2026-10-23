@@ -54,6 +54,12 @@ minimizing it spreads the empty rounds as evenly as the rules allow. In
 particular a host table hosts at least once whenever there is room. P sits
 between kept slots and score: kept slots > even spread > score > tie-break.
 
+Staying hosts (optional): a host h in S stays with one group all night. With
+a boolean y[h,g] per real group g:  Σ_g y[h,g] = 1, and in every round
+x[h,g,r] <= y[h,g], with x[h,g,r] >= y[h,g] wherever the slot is allowed.
+C3 does not apply to h, since it meets the same group every round. A given
+group fixes y[h,g] = 1.
+
 Weak-round limit (optional): for each group g in L, at most M rounds may
 pair it with a host scoring 0 with it:  Σ_{h: s[h,g]=0, r} x[h,g,r] <= M.
 
@@ -103,6 +109,8 @@ def solve(
     repeat_ok: Iterable[str] = (),
     spread_hosts: Mapping[str, Iterable[int]] | None = None,
     spread_groups: Mapping[str, Iterable[int]] | None = None,
+    stay_hosts: Mapping[str, str] | None = None,
+    stay_groups: Iterable[str] = (),
 ) -> Schedule:
     """Return the optimal (or best-found) rotation schedule.
 
@@ -136,6 +144,9 @@ def solve(
       spread_hosts, spread_groups: real host and group ids, each with the
         rounds it is there. Rounds without a partner from the other mapping
         are spread evenly (see the module docstring). Both or neither.
+      stay_hosts: {host_id: group_id or ""} hosts who stay with one group all
+        night; "" lets the solver choose the group from stay_groups.
+      stay_groups: the groups a staying host may stay with (the real ones).
     An unknown id or round raises InfeasibleProblemError before solving.
 
     A problem can have several optimal schedules with the same score. With
@@ -231,7 +242,11 @@ def solve(
             model.AddExactlyOne(x[h, g, r] for h in range(H))
 
     # (C3) No (host, group) pair appears in more than one round.
-    exempt = set(repeat_ok)
+    stay = dict(stay_hosts or {})
+    for h_id, g_id in stay.items():
+        if h_id not in host_index or (g_id and g_id not in group_index):
+            raise InfeasibleProblemError(f"staying host refers to unknown host or group: {h_id}, {g_id}")
+    exempt = set(repeat_ok) | set(stay)
     for h in range(H):
         for g in range(G):
             if hosts[h].host_id in exempt or groups[g].group_id in exempt:
@@ -248,6 +263,23 @@ def solve(
         model.Add(x[h, g, r] == 1)
     for h, g, r in forb_slots:
         model.Add(x[h, g, r] == 0)
+
+    # Staying hosts: one group all night, in every round the slot is allowed.
+    blocked = forb_slots | {(h, g, r) for h, g in forb for r in range(rounds)}
+    choices = [group_index[g] for g in stay_groups]
+    for h_id, g_id in stay.items():
+        h = host_index[h_id]
+        options = [group_index[g_id]] if g_id else choices
+        y = {g: model.NewBoolVar(f"y_{h}_{g}") for g in options}
+        model.AddExactlyOne(y.values())
+        for g in choices + ([group_index[g_id]] if g_id and group_index[g_id] not in choices else []):
+            for r in range(rounds):
+                if g not in y:
+                    model.Add(x[h, g, r] == 0)
+                    continue
+                model.Add(x[h, g, r] <= y[g])
+                if (h, g, r) not in blocked:
+                    model.Add(x[h, g, r] >= y[g])
 
     # Objective: maximize total match score across all assignments, after
     # keeping as many preferred slots as possible when any are given.

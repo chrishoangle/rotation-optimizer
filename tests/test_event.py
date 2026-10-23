@@ -15,6 +15,7 @@ from rotation_optimizer.event import (
     apply_spelling,
     check_inputs,
     fingerprint,
+    handoff_event,
     is_current,
     load_event,
     near_misses,
@@ -541,3 +542,24 @@ def test_near_misses_include_short_forms():
     fams = [{"fam_label": "X", "interests": "mathematics; economics; computer science"}]
     found = {m.spellings for m in near_misses(hosts, fams)}
     assert found == {("math", "mathematics"), ("econ", "economics")}
+
+
+def test_check_in_notes_and_night_log_survive_save_and_hand_off():
+    state = EventState(title="Dinner", hosts=[{"table_label": "Law", "tags": "law"}], fams=[{"fam_label": "Red", "interests": "law"}],
+                       arrived=["h01"], notes="Table 7 is by the kitchen.",
+                       night_log=[{"at": "7:42 PM", "text": "Law cancelled from round 2."}])
+    normalize_state(state)
+    loaded = load_event(save_event(state))
+    assert (loaded.arrived, loaded.notes, loaded.night_log) == (state.arrived, state.notes, state.night_log)
+    hand = handoff_event(state)
+    assert hand.notes == "Table 7 is by the kitchen." and hand.arrived == [] and hand.night_log == []
+
+
+def test_files_saved_before_check_in_existed_still_open():
+    import json
+
+    old = json.loads(save_event(EventState()))
+    for key in ("arrived", "notes", "night_log"):
+        del old[key]
+    loaded = load_event(json.dumps(old))
+    assert (loaded.arrived, loaded.notes, loaded.night_log) == ([], "", [])

@@ -32,6 +32,7 @@ from rotation_optimizer.event import (
     before_the_night,
     check_inputs,
     fingerprint,
+    handoff_event,
     load_event,
     near_misses,
     normalize_state,
@@ -128,6 +129,17 @@ def main() -> None:
         {"rule": "must meet", "host_table": "Pharmacy", "fam": "Bio & Chem", "rounds": "2"},
         {"rule": "never meet", "host_table": "Physician (MD)", "fam": "Cog Sci & Pre-Health", "rounds": ""},
         {"rule": "only in rounds", "host_table": "Academic Mentorship", "fam": "", "rounds": "1"}]))
+    stay = lambda host, fam="": {"rule": "stays with", "host_table": host, "fam": fam, "rounds": ""}
+    add("stays with a chosen fam", event(practice_h, practice_f, 3, rules=[stay("Therapy & Rehab", "Cog Sci & Pre-Health")]))
+    add("stays with any fam", event(practice_h, practice_f, 3, rules=[stay("Therapy & Rehab")]))
+    add("stays with any fam, uneven", event(extra_h, practice_f, 2, rules=[stay("Film & TV")]))
+    add("conflict: two stay with one fam", event(practice_h, practice_f, 2, rules=[
+        stay("Therapy & Rehab", "Cog Sci & Pre-Health"), stay("Pharmacy", "Cog Sci & Pre-Health")]))
+    add("conflict: stays and must meet", event(practice_h, practice_f, 2, rules=[
+        stay("Therapy & Rehab", "Cog Sci & Pre-Health"),
+        {"rule": "must meet", "host_table": "Therapy & Rehab", "fam": "Bio & Chem", "rounds": ""}]))
+    add("stays with, rounds given", event(practice_h, practice_f, 2, rules=[
+        {"rule": "stays with", "host_table": "Pharmacy", "fam": "", "rounds": "1"}]))
     add("one weak round", event(practice_h, practice_f, 3, one_weak_round=True))
     add("one weak round, real example", event(real_h, real_f, 2, one_weak_round=True))
     add("conflict: three musts", event(small_h, small_f, 2, rules=[
@@ -163,6 +175,12 @@ def main() -> None:
         s = copy.deepcopy(base)
         s.cancel_fams = {"fam_05": 2}
         add(f"{r} rounds, from scratch with a cancellation", s, keep_printed=False)
+    s = event(practice_h, practice_f, 3, rules=[stay("Therapy & Rehab")])
+    solve_event(s)
+    s.printed = s.plan
+    s.finished = 1
+    s.cancel_hosts = {"h02": 2}
+    add("stays with, a cancellation on the night", s)
     s = event(practice_h, practice_f, 3)
     solve_event(s)
     s.printed = s.plan
@@ -179,6 +197,7 @@ def main() -> None:
         "group_student_rows": [],
         "fairness": [],
         "host_warnings": [],
+        "event_file": [],
         "fingerprint": [],
         "before_the_night": [],
     }
@@ -209,6 +228,9 @@ def main() -> None:
         (["Timestamp", "Email address", "Your name", "Fam", "Table number", "Intended major(s)"], "fams"),
         (["Table number", "Fam name", "Size", "Interests", "Students"], "fams"),
         (["group", "count", "majors", "names"], "fams"),
+        # The Google Forms the app's script makes (web/src/forms.ts).
+        (["Timestamp", "Your name", "Host table name (your field, for example Pharmacy)", "Which fields can you talk about?"], "hosts"),
+        (["Timestamp", "Your name", "Which fam are you in?", "Your intended major and fields of interest"], "fams"),
     ]:
         messages["match_columns"].append({"columns": columns, "kind": kind, "mapping": match_columns(columns, kind)})
         problems, notices, mapping = column_report(columns, kind)
@@ -234,6 +256,12 @@ def main() -> None:
         messages["host_warnings"].append({"hosts": [[h.host_id, h.name] for h in hosts], "real": [[1, "h1", "f0", 5], [2, "h2", "f0", 5]],
                                           "rounds": 2, "host_away": away,
                                           "out": host_warnings(hosts, [Assignment(1, "h1", "f0", 5), Assignment(2, "h2", "f0", 5)], 2, away)})
+
+    st = event(practice_h, practice_f, 2, arrived=["h01", "h03"], notes="Table 7 is by the kitchen.",
+               night_log=[{"at": "7:42 PM", "text": "Pharmacy cancelled from round 2."}])
+    hand = handoff_event(st)
+    messages["event_file"].append({"text": save_event(st), "arrived": st.arrived, "notes": st.notes, "night_log": st.night_log,
+                                   "handoff": {"arrived": hand.arrived, "notes": hand.notes, "night_log": hand.night_log}})
 
     # Printouts for fixed plans, byte for byte.
     printouts = []

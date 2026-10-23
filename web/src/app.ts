@@ -12,13 +12,18 @@ import {
   removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
 } from "./event";
 import {
-  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, scheduleRows, seatingChartHtml, tableTentsHtml,
+  hostCardsHtml, hostViewRows, runSheetHtml, scheduleCsv, seatingChartHtml, tableNumbers, tableTentsHtml,
 } from "./export";
 import {
   EventPlan, InfeasibleProblemError, describeReprint, famName, openSlots, planChanges, provenOptimal,
   reprintList, slotText, weakCount,
 } from "./planning";
+import { explainPairing, sharedPairings } from "./explain";
+import { FIELDS, formsScript } from "./forms";
+import { changeSlipsHtml, movesBetween } from "./moves";
+import { addLateHost, cancelFam, cancelHost, currentRound, finishRound, logChange, notArrived, whereIs } from "./night";
 import { parsePasted } from "./paste";
+import { backupPacketHtml, coordinatorGuideHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml } from "./printables";
 import { csvRecords, sha256Hex } from "./py";
 import {
   CleanRow, FILE_COLUMNS, FRIENDLY, Kind, RULE_KINDS, SheetError, columnReport, dropExampleRows, groupStudentRows,
@@ -52,13 +57,19 @@ interface Ui {
   unfinish: number | null;
   restored: string;
   solving: boolean;
+  explain: { round: number; famId: string } | null;
+  pinned: { rule: CleanRow; text: string } | null;
+  confirmNames: boolean;
 }
 
 let ev: EventState;
+// Practice mode: the real event waits here while the coordinator tries a
+// rehearsal on a copy. Only the real event is ever saved in the browser.
+let practiceOriginal: EventState | null = null;
 let highs: HighsLike | null = null;
 const ui: Ui = {
   savedHash: "", savedAt: "", notes: {}, pending: {}, undo: null, confirmStart: null, confirmCancel: null,
-  solveError: null, tab: 1, unfinish: null, restored: "", solving: false,
+  solveError: null, tab: 1, unfinish: null, restored: "", solving: false, explain: null, pinned: null, confirmNames: false,
 };
 
 function practiceEvent(): EventState {
@@ -82,13 +93,28 @@ function store(): void {
   clearTimeout(storeTimer);
   storeTimer = 0;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ event: saveEvent(ev), savedHash: ui.savedHash, savedAt: ui.savedAt, at: now() }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ event: saveEvent(practiceOriginal ?? ev), savedHash: ui.savedHash, savedAt: ui.savedAt, at: now() }));
   } catch { /* private window or storage full: the event file is still the copy to keep */ }
 }
 function persist(): void {
   clearTimeout(storeTimer);
   storeTimer = window.setTimeout(store, 250);
 }
+// Recent versions, so a wrong click or a bad re-plan can be taken back
+// even without a saved file. Kept in this browser only, newest first.
+const VERSIONS_KEY = "rotation-optimizer:versions";
+interface Version { at: string; why: string; event: string }
+function versions(): Version[] {
+  try { return JSON.parse(localStorage.getItem(VERSIONS_KEY) ?? "[]"); } catch { return []; }
+}
+function snapshot(why: string): void {
+  if (practiceOriginal) return;
+  const list = [{ at: `${new Date().toLocaleDateString([], { month: "short", day: "numeric" })}, ${now()}`, why, event: saveEvent(ev) }, ...versions()].slice(0, 12);
+  for (let n = list.length; n > 0; n--) {
+    try { localStorage.setItem(VERSIONS_KEY, JSON.stringify(list.slice(0, n))); return; } catch { /* storage full: keep fewer */ }
+  }
+}
+
 // Write any change still waiting before the page goes away.
 window.addEventListener("pagehide", () => { if (storeTimer) store(); });
 
@@ -119,6 +145,7 @@ function refresh(opts: { tables?: boolean; scrollTo?: string } = {}): void {
     renderSidebar();
     if (opts.tables) renderTables();
     renderUploads();
+    renderFamTotals();
     renderChecks();
     renderSchedule();
     renderChecklist();
@@ -185,6 +212,7 @@ function renderSidebar(): void {
     if (!f) return;
     try {
       const state = loadEvent(await readFile(f));
+      if (!blank()) snapshot(`before opening ${f.name}`);
       startOver(state, `Opened ${f.name}.`);
     } catch (err) {
       note("file", "error", err instanceof SheetError ? err.problems[0] : "That file could not be opened.");
@@ -224,8 +252,35 @@ function renderSidebar(): void {
     openFile,
     h("label", { for: "open-event", className: "button wide" }, "Open a saved event file"),
     noteEl("file"),
+    notesField(),
+    versionsBox(),
     h("button", { className: "button wide", onclick: handOff }, "Hand off to next year"),
-    h("p", { className: "help" }, "A folder for next year's coordinator: the event file without student names, cancellations, or schedules, plus a note on how to open it."),
+    h("p", { className: "help" }, "A folder for next year's coordinator: the event file without student names, cancellations, or schedules, plus a note on how to open it, your notes, and what changed on the night."),
+
+    h("details", {}, h("summary", {}, "Working without internet"),
+      h("p", { className: "help", id: "offline-status" }, offlineText()),
+      h("button", { className: "button wide", onclick: downloadOfflineCopy }, "Download an offline copy of this app"),
+      h("p", { className: "help" }, "One file (about 5 MB) that opens in any browser with no internet, even if this website goes away. Keep it with the event file.")),
+
+    h("h2", {}, "Print for your team"),
+    h("div", { className: "stack" },
+      h("button", { className: "button wide", onclick: () => openPage(coordinatorGuideHtml(ev.title)) }, "Coordinator guide (2 pages)"),
+      h("button", { className: "button wide", onclick: () => openPage(roleCardsHtml(ev.title)) }, "Volunteer role cards"),
+      h("button", { className: "button wide", onclick: () => openPage(privacyNoteHtml()) }, "Privacy note for IT or a supervisor")),
+
+    h("h2", {}, "Rehearse"),
+    practiceOriginal
+      ? h("button", { className: "button wide primary", onclick: endPractice }, "End practice and go back to my event")
+      : h("button", { className: "button wide", disabled: !ev.plan, onclick: startPractice }, "Practice the night"),
+    h("p", { className: "help" }, ev.plan || practiceOriginal ? "Try cancellations, late alumni, and re-plans on a copy. Nothing you do in practice is kept." : "Make a schedule first, then practice the night on a copy."),
+
+    h("h2", {}, "Student names"),
+    ui.confirmNames ? h("div", { className: "msg warn" }, "Remove every student name from this event? The find-your-table page needs them.",
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: removeStudentNames }, "Remove names"),
+        h("button", { className: "button", onclick: () => { ui.confirmNames = false; renderSidebar(); } }, "Keep them")))
+      : h("button", { className: "button wide", disabled: !ev.fams.some((r) => (r.students ?? "").trim()), onclick: () => { ui.confirmNames = true; renderSidebar(); } }, "Remove student names"),
+    h("p", { className: "help" }, "For after the event, or before sharing the file. Alumni names and everything else stay."),
 
     h("h2", {}, "Start"),
     h("button", { className: "button wide", onclick: () => askStart("example") }, "Load the example dinner"),
@@ -242,12 +297,94 @@ function renderSidebar(): void {
       "Fill in a template in Google Sheets or Excel, save it as CSV (in Google Sheets: File, Download, Comma-separated values), and upload it here. " +
       "A Google Forms export works too: you pick which column holds what. Tags and interests are keywords separated by commas or semicolons. " +
       "Fams can be one row per fam, or one row per student with the fam name on each row."),
+    h("details", { className: "forms" }, h("summary", {}, "Collect sign-ups with Google Forms"),
+      h("p", { className: "help" }, "Two ready-made forms, one for alumni and one for students, with the same list of fields to tick, so the answers match exactly. Their answers upload here with no column matching."),
+      h("ol", { className: "help steps" },
+        h("li", {}, "Click Copy the script."),
+        h("li", {}, "Go to script.google.com, click New project, delete what is there, paste, and click Run. Allow access when Google asks."),
+        h("li", {}, "The two form links appear in the Execution log. Send them out."),
+        h("li", {}, "When answers are in, open each form, Responses, the three dots, Download responses (.csv), and upload the file below.")),
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: copyFormsScript }, "Copy the script"),
+        h("button", { className: "button", onclick: () => download("make_forms.gs", formsScript(ev.title), "text/plain") }, "Download it")),
+      noteEl("forms"),
+      h("p", { className: "help" }, `The fields: ${FIELDS.join(", ")}. Edit the list in the script before you run it if your event needs others.`)),
     h("div", { className: "row" },
       h("button", { className: "button", onclick: () => download("hosts_template.csv", templateCsv("hosts"), "text/csv") }, "Hosts template"),
       h("button", { className: "button", onclick: () => download("fams_template.csv", templateCsv("fams"), "text/csv") }, "Fams template")),
     uploads,
   );
   renderSaveStatus(saved);
+}
+
+function versionsBox(): HTMLElement | null {
+  const list = versions();
+  if (!list.length) return null;
+  return h("details", {}, h("summary", {}, `Earlier versions in this browser (${list.length})`),
+    h("p", { className: "help" }, "Saved automatically before big steps. Restoring one keeps your current version in this list too."),
+    h("ul", { className: "versions" }, list.map((v, i) => h("li", {}, h("span", {}, `${v.at}: ${v.why}`),
+      h("button", { className: "button small", onclick: () => {
+        snapshot("before restoring an earlier version");
+        try { startOver(loadEvent(list[i].event), `Restored the version from ${v.at}.`); } catch { note("file", "error", "That version could not be restored."); renderSidebar(); }
+      } }, "Restore")))));
+}
+
+function offlineText(): string {
+  if (location.protocol === "file:") return "This is the offline copy: it works with no internet.";
+  return navigator.serviceWorker?.controller
+    ? "This page is saved on this device, so it opens and plans with no internet."
+    : "After this page finishes loading once, it is saved on this device and works with no internet.";
+}
+
+async function copyFormsScript(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(formsScript(ev.title));
+    note("forms", "ok", "Copied. Now paste it at script.google.com.");
+  } catch {
+    download("make_forms.gs", formsScript(ev.title), "text/plain");
+    note("forms", "info", "Copying is blocked here, so the script was downloaded instead. Open it and copy everything.");
+  }
+  renderSidebar();
+  const d = document.querySelector<HTMLDetailsElement>("details.forms");
+  if (d) d.open = true;
+}
+
+function removeStudentNames(): void {
+  snapshot("before removing student names");
+  ev.fams = ev.fams.map((r) => ({ ...r, students: "" }));
+  ui.confirmNames = false;
+  note("top", "ok", "Student names removed. Re-plan to update the printouts.");
+  refresh({ tables: true, scrollTo: "top" });
+}
+
+function startPractice(): void {
+  practiceOriginal = ev;
+  ev = loadEvent(saveEvent(ev));
+  setNightMode(true);
+}
+
+function endPractice(): void {
+  if (!practiceOriginal) return;
+  ev = practiceOriginal;
+  practiceOriginal = null;
+  ui.solveError = null;
+  night.confirm = null;
+  setNightMode(false);
+  note("top", "ok", "Practice ended. Your event is exactly as it was.");
+  refresh({ scrollTo: "top" });
+}
+
+function practiceBanner(): HTMLElement | null {
+  return practiceOriginal ? h("div", { className: "msg warn row spread practice" },
+    h("span", {}, h("strong", {}, "Practice: "), "nothing here is kept. Try a cancellation, a late alum, and a re-plan."),
+    h("button", { className: "button", onclick: endPractice }, "End practice")) : null;
+}
+
+function notesField(): HTMLElement {
+  const box = h("textarea", { rows: 3, "aria-label": "Notes for next year", placeholder: "For example: Table 7 is by the kitchen and loud." }) as HTMLTextAreaElement;
+  box.value = ev.notes;
+  box.addEventListener("input", () => { ev.notes = box.value; persist(); renderSaveStatus(); });
+  return field("Notes for next year", box, "Kept in the event file and in the hand-off. No student names here, please.");
 }
 
 function renderSaveStatus(saved = fileHash(ev) === ui.savedHash): void {
@@ -287,10 +424,11 @@ What was kept
 The host tables, alum names, and tags; the fams, table numbers, sizes, and
 interests; the pairing rules; and the settings.
 
-What was removed
-Student names, the night's cancellations, finished rounds, and every schedule.
-Update the tables for your year, then click Find the best schedule.
-`;
+What was removed from the event file
+Student names, the night's cancellations, check-in, finished rounds, and
+every schedule. Update the tables for your year, then click Find the best
+schedule.
+${ev.notes.trim() ? `\nNotes from this year's coordinator\n${ev.notes.trim()}\n` : ""}${ev.nightLog.length ? `\nWhat happened on the night\n${ev.nightLog.map((e) => `${e.at}  ${e.text}`).join("\n")}\n` : ""}`;
   const zip = zipFiles([
     { name: `${base} handoff/README.txt`, text: readme },
     { name: `${base} handoff/${base} handoff.rotation.json`, text: saveEvent(handoffEvent(ev)) },
@@ -311,6 +449,7 @@ function askStart(kind: "example" | "blank"): void {
 }
 
 function replaceEvent(kind: "example" | "blank"): void {
+  if (!blank()) snapshot(kind === "example" ? "before loading the example" : "before starting a blank event");
   if (kind === "example") startOver(practiceEvent(), "Loaded the example dinner: 10 host tables and 10 fams. Click Find the best schedule.");
   else startOver(newEvent({ title: "New event" }), "Started a blank event. Add host tables and fams below, or upload them.");
 }
@@ -606,6 +745,22 @@ function renderChecks(): void {
   findBtn.disabled = ui.solving;
 }
 
+function renderFamTotals(): void {
+  const el = document.getElementById("fam-totals");
+  if (!el) return;
+  const fams = ev.fams.filter((r) => (r.fam_label ?? "").trim());
+  const size = (r: CleanRow) => Number(r.size) || (r.students ?? "").split(/[;\n]/).filter((x) => x.trim()).length;
+  const sized = fams.map((r) => [r.fam_label, size(r)] as const).filter(([, n]) => n > 0);
+  if (!sized.length) { replace(el); return; }
+  const total = sized.reduce((t, [, n]) => t + n, 0);
+  const big = sized.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const small = sized.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const missing = fams.length - sized.length;
+  replace(el, `${total} students in ${sized.length} fam${sized.length !== 1 ? "s" : ""}` +
+    (sized.length > 1 ? `. Largest: ${big[0]} (${big[1]}). Smallest: ${small[0]} (${small[1]}).` : ".") +
+    (missing ? ` ${missing} fam${missing !== 1 ? "s have" : " has"} no size or student names yet.` : ""));
+}
+
 function fixSpelling(m: NearMiss): void {
   applySpelling(ev, m);
   refresh({ tables: true });
@@ -617,9 +772,47 @@ function restoreRows(): void {
   refresh({ tables: true });
 }
 
+declare global { interface Window { HIGHS_WASM_BASE64?: string } }
+
 function getHighs(): Promise<HighsLike> {
   if (highs) return Promise.resolve(highs);
-  return highsLoader({ locateFile: (f: string) => new URL(f, document.baseURI).href }).then((x) => (highs = x as unknown as HighsLike));
+  // The one-file offline copy carries the solver inside the page.
+  const embedded = window.HIGHS_WASM_BASE64;
+  const opts = embedded
+    ? {
+      instantiateWasm: (imports: WebAssembly.Imports, done: (i: WebAssembly.Instance, m: WebAssembly.Module) => void) => {
+        WebAssembly.instantiate(Uint8Array.from(atob(embedded), (ch) => ch.charCodeAt(0)), imports).then((r) => done(r.instance, r.module));
+        return {};
+      },
+    }
+    : { locateFile: (f: string) => new URL(f, document.baseURI).href };
+  return highsLoader(opts as never).then((x) => (highs = x as unknown as HighsLike));
+}
+
+/** The whole app as one HTML file that opens from a USB stick or a laptop with no internet. */
+async function downloadOfflineCopy(): Promise<void> {
+  try {
+    const [js, css, wasm] = await Promise.all([
+      fetch("app.js").then((r) => r.text()), fetch("style.css").then((r) => r.text()),
+      fetch("highs.wasm").then((r) => r.arrayBuffer()),
+    ]);
+    const bytes = new Uint8Array(wasm);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const page = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rotation Optimizer (offline copy ${__VERSION__})</title>
+<style>${css}</style></head><body>
+<div id="app" aria-live="polite"><p class="loading">Loading the planner…</p></div>
+<script>window.HIGHS_WASM_BASE64 = "${btoa(bin)}";</script>
+<script type="module">${js.replace(/<\/script/gi, "<\\/script")}</script>
+</body></html>
+`;
+    download(`Rotation Optimizer ${__VERSION__} offline.html`, page, "text/html");
+  } catch {
+    note("file", "error", "The offline copy could not be made. Check your internet connection and try again.");
+    renderSidebar();
+  }
 }
 
 async function solve(keepPrinted: boolean, where: "tables" | "night"): Promise<boolean> {
@@ -647,6 +840,7 @@ async function findSchedule(): Promise<void> {
     refresh({ scrollTo: "checks" });
     return;
   }
+  if (ev.plan) snapshot("before re-planning");
   const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
   if (ok) note("schedule", "ok", "Schedule updated.");
   refresh({ tables: true, scrollTo: ok ? "schedule" : "checks" });
@@ -684,14 +878,11 @@ function renderSchedule(): void {
   const notes = p.warnings.filter((w) => !w.startsWith("Fairness check"));
   const unmatched = unmatchedShare(p);
   const pairings = p.assignments.length + openSlots(p).length;
-  const rows = scheduleRows(p);
   ui.tab = Math.min(ui.tab, p.rounds + 1);
   const tabs = h("div", { className: "tabs", role: "tablist" },
     [...Array.from({ length: p.rounds }, (_, i) => `Round ${i + 1}`), "Host view"].map((label, i) =>
       h("button", { role: "tab", "aria-selected": ui.tab === i + 1 ? "true" : "false", className: "tab", onclick: () => { ui.tab = i + 1; steady(renderSchedule); } }, label)));
-  const tabBody = ui.tab <= p.rounds
-    ? dataTable(rows.filter((r) => r.round === ui.tab).map(({ round: _r, ...rest }) => rest), NAMES)
-    : dataTable(hostViewRows(p), NAMES);
+  const tabBody = ui.tab <= p.rounds ? roundTable(p, ui.tab, current) : dataTable(hostViewRows(p), NAMES);
   const printouts: [string, string, () => string, string][] = [
     ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title), "One page per round for the room, then a find-your-table page."],
     ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title), "Half a page per host: where to go each round and what to talk about."],
@@ -708,10 +899,13 @@ function renderSchedule(): void {
       current ? null : h("p", {}, h("strong", {}, "Not current. "), "This is the old schedule, shown for reference only."),
       h("p", {}, "Planned for ", h("strong", {}, `${p.rounds} round${p.rounds !== 1 ? "s" : ""}`), `, ${p.fams.length} fams and ${p.hosts.length} host tables.`),
       h("div", { className: "metrics" },
-        metric("Total match score", String(p.totalScore), "The sum of every pairing's score. Higher is better."),
+        metric("Pairings that share an interest", `${sharedPairings(p)[0]} of ${sharedPairings(p)[1]}`, "A pairing shares an interest when the host and the fam list at least one of the same words. Open tables count as not sharing."),
         metric("Proven best possible", provenOptimal(p) ? "Yes" : "Not proven", "Yes means no other schedule with these tables and rules scores higher."),
-        metric("Weak pairings", String(weakCount(p)), "Pairings where the host and fam share no tags, plus rounds where a fam has no host.")),
-      h("p", { className: "help" }, `In a good plan most pairings share at least one tag. Here ${weakCount(p)} of ${pairings} share none` + (openSlots(p).length ? " or have no host." : ".")),
+        metric("Total match score", String(p.totalScore), "The sum of every pairing's score. Only useful to compare two plans for the same event.")),
+      h("p", { className: "help" }, `In a good plan most pairings share at least one interest. Here ${weakCount(p)} of ${pairings} share none` + (openSlots(p).length ? " or have no host." : ".") +
+        " Click Why? next to any pairing to see the reason, or to choose a different host."),
+      ui.pinned ? h("div", { className: "msg ok row spread" }, ui.pinned.text,
+        h("button", { className: "button", onclick: undoPin }, "Undo")) : null,
       fairness.length ? h("details", {}, h("summary", {}, `Fairness: ${fairness.length} thing${fairness.length !== 1 ? "s" : ""} to look at`),
         fairness.map((w) => h("p", {}, w.replace(/^Fairness check: /, "")))) : null,
       h("details", { open: unmatched > 0.3 }, h("summary", {}, "Notes on tags"),
@@ -732,8 +926,100 @@ function renderSchedule(): void {
           h("button", { className: "button", onclick: markPrinted }, "Mark as printed"),
           h("span", { className: "help" }, ev.printed && ev.printedAt ? `Printed at ${ev.printedAt}. Changes below are listed against that version.`
             : ev.printed ? "Printed version marked. Changes below are listed against it." : "Not marked as printed yet. Click Mark as printed after you print."))),
+      h("h3", {}, "For your team"),
+      h("div", { className: "cards" },
+        printCard("Backup packet", "backup packet", () => backupPacketHtml(p, ev.title, ev.printedAt), "The whole schedule on paper, for the coordinator, in case every device fails."),
+        printCard("Plan summary", "plan summary", () => planSummaryHtml(p, ev.title, rulesInWords(), ev.notes), "One or two pages for a director: how good the plan is, the rules, and every pairing.")),
     ] : null,
   );
+}
+
+function printCard(label: string, file: string, make: () => string, help: string): HTMLElement {
+  return h("div", { className: "card" }, h("strong", {}, label), h("p", { className: "help" }, help),
+    h("div", { className: "row" },
+      h("button", { className: "button primary", onclick: () => openPage(make()) }, "Open to print"),
+      h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download")));
+}
+
+function rulesInWords(): string[] {
+  return ev.rules.filter((r) => r.rule && r.host_table).map((r) => {
+    const when = r.rounds ? ` in round${/[,; ]/.test(r.rounds.trim()) ? "s" : ""} ${r.rounds}` : "";
+    if (r.rule === "only in rounds") return `${r.host_table} only comes for round${/[,; ]/.test(r.rounds.trim()) ? "s" : ""} ${r.rounds}`;
+    if (r.rule === "stays with") return `${r.host_table} stays with ${r.fam || "one fam"} all night`;
+    return `${r.host_table} ${r.rule} ${r.fam}${when}`;
+  });
+}
+
+function roundTable(p: EventPlan, round: number, current: boolean): HTMLElement {
+  const tables = tableNumbers(p);
+  const fams = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
+  const body: HTMLElement[] = [];
+  for (const f of fams) {
+    const a = p.assignments.find((x) => x.round === round && x.groupId === f.groupId);
+    const open = ui.explain && ui.explain.round === round && ui.explain.famId === f.groupId;
+    body.push(h("tr", { className: a && a.score > 0 ? "" : "weak" },
+      h("td", {}, String(tables[f.groupId])), h("td", {}, f.name), h("td", {}, slotText(p, round, f.groupId)), h("td", {}, a ? String(a.score) : "0"),
+      h("td", {}, h("button", { className: "button small", "aria-expanded": open ? "true" : "false", onclick: () => {
+        ui.explain = open ? null : { round, famId: f.groupId };
+        steady(renderSchedule);
+      } }, open ? "Close" : "Why?"))));
+    if (open) body.push(h("tr", { className: "explain" }, h("td", { colSpan: 5 }, explainPanel(p, round, f.groupId, current))));
+  }
+  return h("div", { className: "scroll" }, h("table", { className: "plain schedule" },
+    h("thead", {}, h("tr", {}, ["Table", "Fam", "Host table", "Score", ""].map((c) => h("th", {}, c)))), h("tbody", {}, body)));
+}
+
+function explainPanel(p: EventPlan, round: number, famId: string, current: boolean): HTMLElement {
+  const x = explainPairing(p, round, famId);
+  const pick = h("select", { "aria-label": `Host for ${famName(p, famId)} in round ${round}` },
+    x.options.map((o) => h("option", { value: o.hostId, selected: o.current }, `${o.label}: score ${o.score}, ${o.where}`))) as HTMLSelectElement;
+  return h("div", { className: "why" },
+    x.lines.map((l) => h("p", {}, l)),
+    current && !ev.plan!.lockedRounds.includes(round) && round > ev.finished ? h("div", { className: "row" },
+      h("label", { className: "field" }, h("span", { className: "label" }, `Choose the host for round ${round}`), pick),
+      h("button", { className: "button primary", onclick: () => pinHost(round, famId, pick.value) }, "Use this host")) :
+      h("p", { className: "help" }, round <= ev.finished ? "This round already happened." : "Re-plan first, then you can choose a host here."),
+    h("p", { className: "help" }, "Choosing a host adds a must meet rule for this round under Pairing rules, and re-plans everything else around it."));
+}
+
+async function pinHost(round: number, famId: string, hostId: string): Promise<void> {
+  const p = ev.plan!;
+  const host = p.hosts.find((x) => x.hostId === hostId)!;
+  const fam = p.fams.find((x) => x.groupId === famId)!;
+  if (p.assignments.some((a) => a.round === round && a.groupId === famId && a.hostId === hostId)) { ui.explain = null; steady(renderSchedule); return; }
+  const before = { score: p.totalScore, shared: sharedPairings(p) };
+  const rule: CleanRow = { rule: "must meet", host_table: host.name, fam: fam.name, rounds: String(round) };
+  ev.rules.push(rule);
+  const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
+  if (!ok) {
+    const why = ui.solveError?.text ?? "";
+    ev.rules = ev.rules.filter((r) => r !== rule);
+    ui.solveError = null;
+    note("schedule", "error", `${host.name} cannot meet ${fam.name} in round ${round}: ${why}`);
+    refresh({ tables: true });
+    return;
+  }
+  const q = ev.plan!;
+  ui.explain = null;
+  ui.pinned = {
+    rule,
+    text: `Done: ${host.name} meets ${fam.name} in round ${round}, kept as a must meet rule. ` +
+      `Pairings that share an interest: ${before.shared[0]} of ${before.shared[1]} before, ${sharedPairings(q)[0]} of ${sharedPairings(q)[1]} now. ` +
+      `Match score ${before.score} before, ${q.totalScore} now.`,
+  };
+  refresh({ tables: true });
+}
+
+async function undoPin(): Promise<void> {
+  const pin = ui.pinned;
+  if (!pin) return;
+  const same = (r: CleanRow) => r.rule === pin.rule.rule && r.host_table === pin.rule.host_table && r.fam === pin.rule.fam && r.rounds === pin.rule.rounds;
+  const i = ev.rules.findIndex(same);
+  if (i >= 0) ev.rules.splice(i, 1);
+  ui.pinned = null;
+  const ok = await solve(hasStarted(ev) || ev.printed !== null, "tables");
+  if (ok) note("schedule", "ok", "Undone: the rule is removed and the schedule is re-planned.");
+  refresh({ tables: true });
 }
 
 function metric(label: string, value: string, help: string): HTMLElement {
@@ -743,7 +1029,12 @@ function metric(label: string, value: string, help: string): HTMLElement {
 function markPrinted(): void {
   ev.printed = ev.plan;
   ev.printedAt = now();
-  note("printed", "ok", "Marked as printed. Later changes will be listed against this version.");
+  // A backup of exactly what was printed, in case this computer has trouble on the night.
+  download(fileName("printed backup", "rotation.json"), saveEvent(ev), "application/json");
+  ui.savedHash = fileHash(ev);
+  ui.savedAt = now();
+  snapshot("marked as printed");
+  note("printed", "ok", "Marked as printed, and a backup of the event file was downloaded. Keep it with the printouts, or on a second device. Later changes will be listed against this version.");
   refresh();
 }
 
@@ -799,6 +1090,8 @@ function renderNight(): void {
   const modeFresh = h("input", { type: "radio", name: "mode", value: "fresh" }) as HTMLInputElement;
   replace(box,
     h("h2", { id: "night-title" }, "5. Changes on the night"),
+    h("div", { className: "msg info row spread" }, "On the night, use night mode: one screen with the round, check-in, where everyone is, cancellations, and late alumni. It works on a phone.",
+      h("button", { className: "button primary", onclick: () => setNightMode(true) }, "Open night mode")),
     h("p", { className: "help" }, "In this order: set the rounds that already happened, cancel anyone who can't come, then click Re-plan. Finished rounds never change. Then reprint only the pages listed under Reprint."),
     field("Rounds already finished", finished),
     wantLower !== null ? h("div", { className: "msg warn" },
@@ -820,7 +1113,7 @@ function renderNight(): void {
       h("p", {}, "Cancel ", h("strong", {}, cc.name), ` from round ${cc.first}` + (cc.first < p.rounds ? " on?" : "?")),
       h("div", { className: "row" },
         h("button", { className: "button primary big", onclick: () => {
-          (cc.kind === "host" ? ev.cancelHosts : ev.cancelFams)[cc.id] = cc.first;
+          if (cc.kind === "host") cancelHost(ev, cc.id, cc.first, now()); else cancelFam(ev, cc.id, cc.first, now());
           ui.confirmCancel = null;
           note("cancellations", "info", `${cc.name} is cancelled from round ${cc.first}. Click Re-plan to update the schedule.`);
           refresh();
@@ -839,6 +1132,7 @@ function renderNight(): void {
       h("label", {}, modeKeep, " Keep the printed schedule where possible"),
       h("label", {}, modeFresh, " Re-plan from scratch (nothing printed yet)")),
     h("button", { className: "button primary big wide", disabled: !!problems.length || ui.solving, onclick: async () => {
+      snapshot("before re-planning on the night");
       const ok = await solve(modeKeep.checked, "night");
       if (ok) note("changes", "ok", "Schedule updated.");
       refresh({ tables: true, scrollTo: ok ? "changes" : "night-error" });
@@ -863,8 +1157,14 @@ function changesSincePrinted(): HTMLElement {
     Round: c.round, Table: tables[c.famId] ?? "", Fam: famName(p, c.famId),
     Printed: slotText(printed, c.round, c.famId), Now: slotText(p, c.round, c.famId),
   })), {}) : h("p", {}, "Nothing changed."));
+  if (isCurrent(ev)) { const tell = tellPeople(p, printed); if (tell) box.appendChild(tell); }
+  box.appendChild(reprintPanel(p, printed));
+  return box;
+}
+
+function reprintPanel(p: EventPlan, printed: EventPlan): HTMLElement {
   const out = reprintList(printed, p);
-  box.appendChild(h("p", {}, h("strong", {}, "Reprint: "), describeReprint(out, p).join("; ") || "nothing."));
+  const box = h("div", {}, h("p", {}, h("strong", {}, "Reprint: "), describeReprint(out, p).join("; ") || "nothing."));
   if (isCurrent(ev)) {
     const stamp = now();
     const buttons: HTMLElement[] = [];
@@ -879,11 +1179,232 @@ function changesSincePrinted(): HTMLElement {
   return box;
 }
 
+/** Who has to be told what, against the printed cards, for the rounds still to come. */
+function tellPeople(p: EventPlan, printed: EventPlan): HTMLElement | null {
+  const m = movesBetween(printed, p, ev.finished + 1);
+  if (!m.hosts.length && !m.fams.length) return null;
+  const at = now();
+  return h("div", { className: "panel tell" },
+    h("h3", {}, "What to tell people"),
+    m.hosts.length ? h("ul", {}, m.hosts.map((x) => h("li", {}, x.text))) : null,
+    m.fams.length ? h("ul", {}, m.fams.map((x) => h("li", {}, x.text))) : null,
+    m.mc.length ? [h("p", { className: "help" }, "For the MC to read out:"), h("ul", {}, m.mc.map((x) => h("li", {}, x)))] : null,
+    m.hosts.length ? h("div", { className: "row" },
+      h("button", { className: "button primary", onclick: () => openPage(changeSlipsHtml(p, m.hosts, ev.title, at)) }, "Print change slips"),
+      h("span", { className: "help" }, "One slip per alum, quicker than reprinting a whole card.")) : null);
+}
+
 function reprintButton(label: string, file: string, make: () => string): HTMLElement {
   return h("div", { className: "card" }, h("strong", {}, label),
     h("div", { className: "row" },
       h("button", { className: "button primary", onclick: () => openPage(make()) }, "Open to print"),
       h("button", { className: "button", onclick: () => download(fileName(file, "html"), make(), "text/html") }, "Download")));
+}
+
+
+// ----------------------------------------------------------------------
+// Night mode: one focused screen for the event itself.
+// ----------------------------------------------------------------------
+
+const MODE_KEY = "rotation-optimizer:mode";
+interface NightUi {
+  on: boolean; query: string; showNext: boolean; late: boolean; lateProblem: string;
+  confirm: { kind: "host" | "fam"; id: string; label: string; first: number; noShow: boolean } | null;
+  justFinished: number | null;
+  before: EventPlan | null; // the plan before the last re-plan, when nothing is marked printed
+}
+const night: NightUi = { on: false, query: "", showNext: false, late: false, lateProblem: "", confirm: null, justFinished: null, before: null };
+let clockTimer = 0;
+
+function setNightMode(on: boolean): void {
+  night.on = on;
+  try { localStorage.setItem(MODE_KEY, on ? "night" : "plan"); } catch { /* fine: it only remembers the screen */ }
+  clearInterval(clockTimer);
+  if (on) {
+    renderNightMode();
+    clockTimer = window.setInterval(() => {
+      const c = document.getElementById("night-clock");
+      if (c) c.textContent = now();
+    }, 15000);
+    window.scrollTo(0, 0);
+  } else {
+    renderShell();
+    renderTables();
+    refresh({ scrollTo: "night" });
+  }
+}
+
+function nightRefresh(): void {
+  persist();
+  const y = window.scrollY;
+  renderNightMode();
+  window.scrollTo(0, y);
+}
+
+function hostLabelRow(id: string): string {
+  const r = ev.hosts.find((x) => x.host_id === id);
+  return r ? (r.host_name ? `${r.host_name} (${r.table_label})` : r.table_label) : id;
+}
+
+function renderNightMode(): void {
+  const app = document.getElementById("app")!;
+  const p = ev.plan;
+  const exit = h("button", { className: "button", onclick: () => setNightMode(false) }, "Back to planning");
+  if (!p) {
+    replace(app, h("main", { className: "night-mode" },
+      h("div", { className: "night-bar" }, h("strong", {}, ev.title), exit),
+      h("div", { className: "msg info" }, "Make a schedule first: go back to planning and click Find the best schedule.")));
+    return;
+  }
+  const cur = currentRound(ev);
+  const last = cur >= p.rounds;
+  const current = isCurrent(ev);
+  const err = ui.solveError && ui.solveError.fp === fingerprint(ev) && ui.solveError.where === "night" ? ui.solveError.text : "";
+  const tables = tableNumbers(p);
+  const showRound = night.showNext && !last ? cur + 1 : cur;
+  const rows = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]).map((f) => {
+    const a = p.assignments.find((x) => x.round === showRound && x.groupId === f.groupId);
+    const host = a ? p.hosts.find((x) => x.hostId === a.hostId)! : null;
+    const gone = (p.famAway[f.groupId] ?? []).includes(showRound);
+    return h("li", { className: host ? "" : "empty" },
+      h("span", { className: "tn" }, `Table ${tables[f.groupId]}`),
+      h("span", { className: "fam" }, f.name),
+      h("span", { className: "who" }, gone ? "Fam cancelled" : host ? (host.person ? `${host.person} (${host.name})` : host.name) : "No host"));
+  });
+
+  // Where is...
+  const search = h("input", { type: "search", value: night.query, placeholder: "Type an alum, host table, fam, or student", "aria-label": "Where is" }) as HTMLInputElement;
+  const results = h("div", { id: "where-results" });
+  const showResults = () => replace(results, whereIs(p, night.query, cur).map((f) =>
+    h("div", { className: "found" }, h("strong", {}, f.title), h("ul", {}, f.lines.map((l) => h("li", {}, l))))),
+  night.query.trim().length >= 2 && !whereIs(p, night.query, cur).length ? h("p", { className: "help" }, "No match.") : null);
+  search.addEventListener("input", () => { night.query = search.value; showResults(); });
+  showResults();
+
+  // Check-in.
+  const expected = ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts));
+  const here = expected.filter((r) => ev.arrived.includes(r.host_id)).length;
+  const missing = notArrived(ev);
+  const checkIn = h("details", { className: "panel", open: ev.finished === 0 },
+    h("summary", {}, `Check-in: ${here} of ${expected.length} alumni here`),
+    h("ul", { className: "checkin" }, expected.map((r) => {
+      const isHere = ev.arrived.includes(r.host_id);
+      return h("li", {},
+        h("button", { className: `button ${isHere ? "primary" : ""}`, "aria-pressed": isHere ? "true" : "false", onclick: () => {
+          ev.arrived = isHere ? ev.arrived.filter((x) => x !== r.host_id) : [...ev.arrived, r.host_id];
+          nightRefresh();
+        } }, isHere ? "Here" : "Not here yet"),
+        h("span", {}, hostLabelRow(r.host_id)),
+        !isHere ? h("button", { className: "button small", onclick: () => {
+          night.confirm = { kind: "host", id: r.host_id, label: hostLabelRow(r.host_id), first: cur, noShow: true };
+          nightRefresh();
+        } }, "Didn't show") : null);
+    })),
+    missing.length && ev.finished === 0 ? h("p", { className: "help" }, `${missing.length} not here yet. If someone doesn't come, tap Didn't show next to their name, then Re-plan now.`) : null,
+    h("p", { className: "help" }, "A student who walks in just joins a fam: nothing to change here."));
+
+  // Someone has to leave.
+  const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
+  const leave = (kind: "host" | "fam") => {
+    const options = kind === "host"
+      ? ev.hosts.filter((r) => r.host_id && r.table_label && !(r.host_id in ev.cancelHosts)).map((r) => [r.host_id, hostLabelRow(r.host_id)])
+      : ev.fams.filter((r) => r.fam_id && r.fam_label && !(r.fam_id in ev.cancelFams)).map((r) => [r.fam_id, r.fam_label]);
+    const who = h("select", { "aria-label": kind === "host" ? "Alum who has to leave" : "Fam that has to leave" },
+      h("option", { value: "" }, kind === "host" ? "Choose an alum…" : "Choose a fam…"), options.map(([id, l]) => h("option", { value: id }, l))) as HTMLSelectElement;
+    const from = h("select", { "aria-label": kind === "host" ? "Alum misses from round" : "Fam misses from round" },
+      openRounds.map((r) => h("option", { value: r, selected: r === cur }, `from round ${r}`))) as HTMLSelectElement;
+    return h("div", { className: "row leave" }, who, from,
+      h("button", { className: "button", onclick: () => {
+        if (!who.value) return;
+        night.confirm = { kind, id: who.value, label: who.selectedOptions[0].textContent ?? "", first: Number(from.value), noShow: false };
+        nightRefresh();
+      } }, kind === "host" ? "Alum can't stay" : "Fam can't stay"));
+  };
+  const c = night.confirm;
+  const confirm = c ? h("div", { className: "panel confirm", role: "alertdialog" },
+    h("p", {}, c.noShow ? `${c.label} didn't show up. Cancel them from round ${c.first}?` : `Cancel ${c.label} from round ${c.first}` + (c.first < p.rounds ? " on?" : "?")),
+    h("div", { className: "row" },
+      h("button", { className: "button primary big", onclick: () => {
+        if (c.kind === "host") cancelHost(ev, c.id, c.first, now(), c.noShow);
+        else cancelFam(ev, c.id, c.first, now());
+        night.confirm = null;
+        nightRefresh();
+      } }, "Yes, cancel"),
+      h("button", { className: "button big", onclick: () => { night.confirm = null; nightRefresh(); } }, "No"))) : null;
+
+  // A late alum.
+  const lateBox = night.late ? (() => {
+    const table = h("input", { type: "text", "aria-label": "Host table name", placeholder: "Host table name, for example Real Estate" }) as HTMLInputElement;
+    const person = h("input", { type: "text", "aria-label": "Alum's name", placeholder: "Alum's name" }) as HTMLInputElement;
+    const tags = h("input", { type: "text", "aria-label": "Tags", placeholder: "Tags, for example finance; real estate" }) as HTMLInputElement;
+    const from = h("select", { "aria-label": "Joins from round" }, openRounds.map((r) => h("option", { value: r }, `Joins from round ${r}`))) as HTMLSelectElement;
+    return h("div", { className: "panel" },
+      h("h3", {}, "Add a late alum"),
+      table, person, tags, from,
+      night.lateProblem ? h("div", { className: "msg error" }, night.lateProblem) : null,
+      h("div", { className: "row" },
+        h("button", { className: "button primary", onclick: () => {
+          night.lateProblem = addLateHost(ev, { table: table.value, person: person.value, tags: tags.value, from: Number(from.value) }, now());
+          if (!night.lateProblem) night.late = false;
+          nightRefresh();
+        } }, "Add"),
+        h("button", { className: "button", onclick: () => { night.late = false; night.lateProblem = ""; nightRefresh(); } }, "Cancel")));
+  })() : h("button", { className: "button wide", onclick: () => { night.late = true; nightRefresh(); } }, "An alum arrived late, or a new one came");
+
+  replace(app, h("main", { className: "night-mode", id: "main" },
+    h("div", { className: "night-bar" },
+      h("div", {}, h("strong", {}, ev.title), " ", h("span", { id: "night-clock", className: "help" }, now())),
+      exit),
+    practiceBanner(),
+    h("section", { className: "panel round-now" },
+      h("p", { className: "big-round" }, `Round ${cur} of ${p.rounds}`),
+      last ? h("p", { className: "help" }, "Last round. Nobody moves after this one.")
+        : h("button", { className: "button primary big wide", onclick: () => {
+          finishRound(ev, now());
+          night.justFinished = ev.finished;
+          nightRefresh();
+        } }, `Round ${cur} is finished: hosts move now`),
+      night.justFinished === ev.finished && ev.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "help" }, `Round ${ev.finished} marked finished. `,
+        h("button", { className: "button link", onclick: () => {
+          ev.finished -= 1; night.justFinished = null;
+          logChange(ev, now(), `Round ${ev.finished + 1} un-finished.`);
+          nightRefresh();
+        } }, "Undo")) : null),
+    !current || err ? h("section", { className: "panel stale-panel" },
+      h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
+      h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {
+        snapshot("before re-planning on the night");
+        night.before = ev.plan;
+        const ok = await solve(true, "night");
+        if (ok) logChange(ev, now(), "Re-planned.");
+        nightRefresh();
+      } }, "Re-plan now"),
+      h("p", { id: "replan-status", className: "help" }),
+      err ? h("div", { className: "msg error", role: "alert" }, err) : null) : null,
+    current && (ev.printed || night.before) ? (() => {
+      const base = ev.printed ?? night.before!;
+      const tell = tellPeople(p, base);
+      return tell ? [tell, ev.printed ? h("section", { className: "panel" }, reprintPanel(p, ev.printed)) : null] : null;
+    })() : null,
+    confirm,
+    h("section", { className: "panel" },
+      h("div", { className: "row spread" },
+        h("h2", {}, showRound === cur ? `Round ${cur}: who is where` : `Next, round ${showRound}`),
+        last ? null : h("button", { className: "button small", onclick: () => { night.showNext = !night.showNext; nightRefresh(); } },
+          night.showNext ? `Show round ${cur}` : `Show round ${cur + 1}`)),
+      current ? null : h("p", { className: "help warn-text" }, "Old schedule: re-plan to see the changes."),
+      h("ul", { className: "now-list" }, rows)),
+    h("section", { className: "panel" }, h("h2", {}, "Where is…"), search, results),
+    checkIn,
+    h("section", { className: "panel" },
+      h("h2", {}, "Someone has to leave"),
+      openRounds.length ? [leave("host"), leave("fam")] : h("p", { className: "help" }, "Every round is finished."),
+      h("p", { className: "help" }, "Then tap Re-plan now at the top. Finished rounds never change.")),
+    h("section", { className: "panel" }, lateBox),
+    h("details", { className: "panel" }, h("summary", {}, `Tonight's log (${ev.nightLog.length})`),
+      ev.nightLog.length ? h("ul", {}, [...ev.nightLog].reverse().map((e) => h("li", {}, `${e.at}  ${e.text}`))) : h("p", { className: "help" }, "Nothing yet.")),
+    h("p", { className: "help" }, "Everything you do here is saved in this browser as you go. Keep the event file too: Back to planning, then Save event file."),
+  ));
 }
 
 // ----------------------------------------------------------------------
@@ -892,11 +1413,11 @@ function reprintButton(label: string, file: string, make: () => string): HTMLEle
 
 const START_HERE = [
   "**1. Your tables.** The page opens with an example dinner so you can try everything first. For your own event, click **Start a blank event** in the sidebar, or fill in the **Hosts template** and **Fams template** and upload them. A Google Forms export works too.",
-  "**2. Pairing rules (optional).** Add a rule when a host must meet a fam, must never meet one, or only comes for some rounds.",
+  "**2. Pairing rules (optional).** Add a rule when a host must meet a fam, must never meet one, only comes for some rounds, or stays at one table all night.",
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
-  "**6. On the night.** If someone cancels: set **Rounds already finished**, click **Cancel host** or **Cancel fam**, then **Re-plan**. Reprint only the pages listed under **Reprint**.",
+  "**6. On the night.** Click **Open night mode** (under the schedule). It shows the round, who is where, and check-in, and works on a phone. When someone cancels, doesn't show, or arrives late, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint.",
   "**7. Next year.** Click **Hand off to next year** for a copy without student names or the night's changes.",
 ];
 
@@ -910,7 +1431,7 @@ const GLOSSARY: [string, string][] = [
   ["Weak round", "a round where a fam's host shares none of its interests, or no host comes to the fam."],
   ["Open table", "a fam with no host for a round, when there are more fams than host tables."],
   ["No table this round", "a host with no fam for a round, when there are more host tables than fams."],
-  ["Pairing rule", "must meet, never meet, or only in rounds. Rules always hold; the score decides the rest."],
+  ["Pairing rule", "must meet, never meet, only in rounds, or stays with. Rules always hold; the score decides the rest."],
   ["Finished round", "a round that already happened. Re-planning never changes it."],
   ["Printed version", "the schedule you marked as printed. Changes are listed against it, so you reprint only what changed."],
   ["Event file", "the file Save event file downloads. It holds everything, and it is the copy to keep."],
@@ -942,8 +1463,9 @@ function renderShell(): void {
       h("h2", {}, "2. Fams"),
       h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. You can paste rows copied from a spreadsheet."),
       h("div", { id: "fams-table" }),
+      h("p", { id: "fam-totals", className: "help" }),
       h("h2", {}, "3. Pairing rules (optional)"),
-      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. Write rounds as 1 or 1, 2."),
+      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. Write rounds as 1 or 1, 2."),
       h("div", { id: "rules-table" }),
       h("p", { className: "help" }, "Your changes are checked as you type and kept in this browser."),
       h("div", { className: "row" }, find, h("span", { id: "find-status", className: "help" })),
@@ -962,7 +1484,7 @@ function renderShell(): void {
 function renderTopNote(): void {
   const el = document.getElementById("top-note");
   if (!el) return;
-  replace(el, ui.restored ? h("div", { className: "msg info row spread" }, ui.restored,
+  replace(el, practiceBanner(), ui.restored ? h("div", { className: "msg info row spread" }, ui.restored,
     h("button", { className: "button", onclick: () => { ui.restored = ""; renderTopNote(); } }, "OK")) : null, noteEl("top"));
 }
 
@@ -983,11 +1505,23 @@ function boot(): void {
     ev = practiceEvent();
     ui.savedHash = fileHash(ev);
   }
-  renderShell();
-  renderTopNote();
-  renderTables();
-  refresh();
+  let mode = "";
+  try { mode = localStorage.getItem(MODE_KEY) ?? ""; } catch { /* the planning screen is the default */ }
+  if (mode === "night" && ev.plan) setNightMode(true);
+  else {
+    renderShell();
+    renderTopNote();
+    renderTables();
+    refresh();
+  }
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(() => {
+      const el = document.getElementById("offline-status");
+      if (el) el.textContent = "This page is saved on this device, so it opens and plans with no internet.";
+    }).catch(() => { /* still works online */ });
+  }
   getHighs().catch(() => {
+    if (night.on) return; // night mode shows the error when a re-plan is tried
     note("checks", "error", "The schedule solver could not load. Check your internet connection and reload the page.");
     renderChecks();
   });

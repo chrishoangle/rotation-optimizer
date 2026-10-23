@@ -53,6 +53,8 @@ export interface ModelInput {
    */
   spreadHosts?: Record<string, number[]> | null;
   spreadFams?: Record<string, number[]> | null;
+  /** Hosts who stay with one fam all night: host id to fam id, or "" to let the solver choose. */
+  stayHosts?: Record<string, string>;
 }
 
 export interface ModelResult {
@@ -95,7 +97,26 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
   };
   for (const terms of group((x) => `h${x.hi}r${x.r}`).values()) add(terms, "<=", 1);
   for (const terms of group((x) => `f${x.fi}r${x.r}`).values()) add(terms, "<=", 1);
-  for (const terms of group((x) => `p${x.hi}_${x.fi}`).values()) if (terms.length > 1) add(terms, "<=", 1);
+  const stay = m.stayHosts ?? {};
+  const stayIdx = new Set(m.hosts.map((h, hi) => (h.hostId in stay ? hi : -1)).filter((hi) => hi >= 0));
+  for (const [key, terms] of group((x) => `p${x.hi}_${x.fi}`)) {
+    if (terms.length > 1 && !stayIdx.has(Number(key.slice(1).split("_")[0]))) add(terms, "<=", 1);
+  }
+  // Staying hosts: one fam all night (y), and with it in every round the slot is allowed.
+  const yVars: string[] = [];
+  m.hosts.forEach((h, hi) => {
+    if (!(h.hostId in stay)) return;
+    const want = stay[h.hostId];
+    const options = m.fams.map((f, fi) => [f, fi] as const).filter(([f]) => !want || f.groupId === want);
+    const ys = options.map(([, fi]) => `y_${hi}_${fi}`);
+    yVars.push(...ys);
+    add(ys, "=", 1);
+    for (const x of vars.filter((v) => v.hi === hi)) {
+      const y = `y_${hi}_${x.fi}`;
+      if (!ys.includes(y)) { add([x.v], "<=", 0); continue; }
+      cons.push(` c${c++}: + ${x.v} - ${y} = 0`);
+    }
+  });
   let infeasible = false;
   if (m.minPairsPerRound > 0) {
     const byRound = group((x) => `r${x.r}`);
@@ -175,7 +196,7 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
     ...fixed.map((v) => ` ${v} = 1`),
     ...bounds,
     "Binary",
-    " " + (vars.map((x) => x.v).join(" ") || "x_zero"),
+    " " + ([...vars.map((x) => x.v), ...yVars].join(" ") || "x_zero"),
     "End",
     "",
   ].join("\n");
