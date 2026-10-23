@@ -58,6 +58,7 @@ from rotation_optimizer.event import (  # noqa: E402
     EventState,
     apply_spelling,
     check_inputs,
+    fam_locations,
     fingerprint,
     has_started,
     is_current,
@@ -461,7 +462,7 @@ def tables() -> None:
         fams_df = st.data_editor(
             _frame(event.fams, FAM_COLUMNS), num_rows="dynamic", width="stretch", height=_height(event.fams), key=f"fams_{v}",
             placeholder="",
-            column_order=["table_number", "fam_label", "size", "interests", "students"],
+            column_order=["table_number", "fam_label", "size", "interests", "students", "location", "step_free"],
             column_config={
                 "table_number": st.column_config.TextColumn("Table #", width="small", default="",
                                                             help="The number on the table in the room."),
@@ -469,13 +470,17 @@ def tables() -> None:
                 "size": st.column_config.TextColumn("Size", width="small", default="", help="How many students sit at this fam."),
                 "interests": st.column_config.TextColumn("Interests", width="medium", default=""),
                 "students": st.column_config.TextColumn("Students", width="medium", default=""),
+                "location": st.column_config.TextColumn("Location in the room", width="medium", default="",
+                                                        help="Where the table is, for example by the stage. Printed on host cards."),
+                "step_free": st.column_config.TextColumn("Step-free", width="small", default="",
+                                                         help="yes if the table can be reached without steps."),
             },
         )
         st.subheader("3. Pairing rules (optional)")
         st.caption(
             "must meet: the pair meets once, in one of the listed rounds (blank means any round). "
             "never meet: the pair never meets in the listed rounds (blank means never). "
-            "only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. "
+            "only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. needs step-free: the alum only visits tables marked Step-free in the fams table; leave Fam and Rounds blank. "
             "Write rounds as 1 or 1, 2."
         )
         rules_df = st.data_editor(
@@ -616,9 +621,9 @@ def results(problems: list[str]) -> None:
         return
     st.markdown("**Print these four for the night**")
     d = st.columns(4)
-    d[0].download_button("Seating chart", seating_chart_html(plan, title=event.title), file_name=_file_name("seating chart", "html"),
+    d[0].download_button("Seating chart", seating_chart_html(plan, title=event.title, locations=fam_locations(event)), file_name=_file_name("seating chart", "html"),
                          mime="text/html", width="stretch", help="One page per round for the room, then a find-your-table page.")
-    d[1].download_button("Host cards", host_cards_html(plan, title=event.title), file_name=_file_name("host cards", "html"),
+    d[1].download_button("Host cards", host_cards_html(plan, title=event.title, locations=fam_locations(event)), file_name=_file_name("host cards", "html"),
                          mime="text/html", width="stretch", help="Half a page per host: where to go each round and what to talk about.")
     d[2].download_button("Table tents", table_tents_html(plan), file_name=_file_name("table tents", "html"), mime="text/html",
                          width="stretch", help="A big table number to fold and stand on each fam's table.")
@@ -779,12 +784,13 @@ def changes_since_printed() -> None:
     now = _now_text()
     c1, c2, c3 = st.columns(3)
     if out.host_ids:
-        c1.download_button("Reprint host cards", host_cards_html(plan, host_ids=out.host_ids, title=event.title, updated=now),
+        c1.download_button("Reprint host cards", host_cards_html(plan, host_ids=out.host_ids, title=event.title, updated=now,
+                                           locations=fam_locations(event)),
                            file_name=_file_name("host cards reprint", "html"), mime="text/html", key="reprint_cards")
     if out.seating_chart:
         c2.download_button("Reprint seating chart pages",
                            seating_chart_html(plan, title=event.title, rounds=out.seating_rounds or [], finder=out.finder_page,
-                                              updated=now),
+                                              updated=now, locations=fam_locations(event)),
                            file_name=_file_name("seating chart reprint", "html"), mime="text/html", key="reprint_chart")
     if out.fam_ids:
         c3.download_button("Reprint table tents", table_tents_html(plan, fam_ids=out.fam_ids, updated=now),

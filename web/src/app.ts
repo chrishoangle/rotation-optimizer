@@ -7,7 +7,7 @@ import practiceFams from "../../templates/practice_fams.csv";
 import practiceHosts from "../../templates/practice_hosts.csv";
 import { download, h, openPage, readFile, replace, rich } from "./dom";
 import {
-  EventState, FAM_COLUMNS, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
+  EventState, FAM_COLUMNS, famLocations, HOST_COLUMNS, NearMiss, RULE_COLUMNS, applySpelling, beforeTheNight, checkInputs, fingerprint,
   handoffEvent, hasStarted, isCurrent, loadEvent, maxRounds, nearMisses, newEvent, normalizeState, normalizeTable,
   removedRows, restoreRemovedRows, roundsLimitText, saveEvent, solveEvent,
 } from "./event";
@@ -548,11 +548,13 @@ const HOST_TABLE: Column[] = [
   { key: "tags", label: "Tags", width: "54%" },
 ];
 const FAM_TABLE: Column[] = [
-  { key: "table_number", label: "Table #", width: "9%", help: "The number on the table in the room." },
-  { key: "fam_label", label: "Fam name", width: "24%" },
-  { key: "size", label: "Size", width: "7%", help: "How many students sit at this fam." },
-  { key: "interests", label: "Interests", width: "30%" },
-  { key: "students", label: "Students", width: "30%" },
+  { key: "table_number", label: "Table #", width: "7%", help: "The number on the table in the room." },
+  { key: "fam_label", label: "Fam name", width: "19%" },
+  { key: "size", label: "Size", width: "6%", help: "How many students sit at this fam." },
+  { key: "interests", label: "Interests", width: "24%" },
+  { key: "students", label: "Students", width: "22%" },
+  { key: "location", label: "Location", width: "13%", help: "Where the table is in the room, for example by the stage. Printed on host cards." },
+  { key: "step_free", label: "Step-free", width: "9%", help: "yes if the table can be reached without steps." },
 ];
 const RULE_TABLE: Column[] = [
   { key: "rule", label: "Rule", width: "24%", kind: "rule" },
@@ -884,8 +886,8 @@ function renderSchedule(): void {
       h("button", { role: "tab", "aria-selected": ui.tab === i + 1 ? "true" : "false", className: "tab", onclick: () => { ui.tab = i + 1; steady(renderSchedule); } }, label)));
   const tabBody = ui.tab <= p.rounds ? roundTable(p, ui.tab, current) : dataTable(hostViewRows(p), NAMES);
   const printouts: [string, string, () => string, string][] = [
-    ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title), "One page per round for the room, then a find-your-table page."],
-    ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title), "Half a page per host: where to go each round and what to talk about."],
+    ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title, null, true, "", famLocations(ev)), "One page per round for the room, then a find-your-table page."],
+    ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title, "", famLocations(ev)), "Half a page per host: where to go each round and what to talk about."],
     ["Table tents", "table tents", () => tableTentsHtml(p), "A big table number to fold and stand on each fam's table."],
     ["Run sheet", "run sheet", () => runSheetHtml(p, ev.title, ev.startTime, ev.roundMinutes), "For you and the MC: a timeline for the night and check-in lists."],
   ];
@@ -1168,8 +1170,8 @@ function reprintPanel(p: EventPlan, printed: EventPlan): HTMLElement {
   if (isCurrent(ev)) {
     const stamp = now();
     const buttons: HTMLElement[] = [];
-    if (out.hostIds.length) buttons.push(reprintButton("Reprint host cards", "host cards reprint", () => hostCardsHtml(p, out.hostIds, ev.title, stamp)));
-    if (out.seatingChart) buttons.push(reprintButton("Reprint seating chart pages", "seating chart reprint", () => seatingChartHtml(p, ev.title, out.seatingRounds, out.finderPage, stamp)));
+    if (out.hostIds.length) buttons.push(reprintButton("Reprint host cards", "host cards reprint", () => hostCardsHtml(p, out.hostIds, ev.title, stamp, famLocations(ev))));
+    if (out.seatingChart) buttons.push(reprintButton("Reprint seating chart pages", "seating chart reprint", () => seatingChartHtml(p, ev.title, out.seatingRounds, out.finderPage, stamp, famLocations(ev))));
     if (out.famIds.length) buttons.push(reprintButton("Reprint table tents", "table tents reprint", () => tableTentsHtml(p, out.famIds, stamp)));
     if (buttons.length) {
       box.appendChild(h("div", { className: "cards" }, buttons));
@@ -1461,11 +1463,11 @@ function renderShell(): void {
       h("p", { className: "help" }, "One row per host table. Tags are keywords separated by commas or semicolons. Blank tags are fine while a host has not replied. Type in the empty last row to add a host table; press Enter to move down. You can also copy rows from Google Sheets or Excel and paste them into a cell."),
       h("div", { id: "hosts-table" }),
       h("h2", {}, "2. Fams"),
-      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. You can paste rows copied from a spreadsheet."),
+      h("p", { className: "help" }, "One row per fam. Table # is the number on the table in the room; blank ones get the next free number. Students is optional, names separated by semicolons, for the find-your-table page. Location says where the table is in the room, and is printed on host cards so alumni find it. Step-free is yes for tables reachable without steps. You can paste rows copied from a spreadsheet."),
       h("div", { id: "fams-table" }),
       h("p", { id: "fam-totals", className: "help" }),
       h("h2", {}, "3. Pairing rules (optional)"),
-      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. Write rounds as 1 or 1, 2."),
+      h("p", { className: "help" }, "must meet: the pair meets once, in one of the listed rounds (blank means any round). never meet: the pair never meets in the listed rounds (blank means never). only in rounds: the host comes only for the listed rounds; leave the fam blank. stays with: the alum stays at one fam's table all night instead of moving, for example if they cannot move between tables; leave the fam blank to let the tool choose, and leave Rounds blank. needs step-free: the alum only visits tables marked Step-free in the fams table; leave Fam and Rounds blank. Write rounds as 1 or 1, 2."),
       h("div", { id: "rules-table" }),
       h("p", { className: "help" }, "Your changes are checked as you type and kept in this browser."),
       h("div", { className: "row" }, find, h("span", { id: "find-status", className: "help" })),

@@ -89,7 +89,7 @@ function checkRules(
   const musts = rules.filter((r) => r.kind === "must");
   const nevers = rules.filter((r) => r.kind === "never");
   for (const rule of rules) {
-    if (rule.kind !== "must" && rule.kind !== "never" && rule.kind !== "stays") { problems.push(`Unknown rule type '${rule.kind}'. Use must, never, or stays.`); continue; }
+    if (!["must", "never", "stays", "access"].includes(rule.kind)) { problems.push(`Unknown rule type '${rule.kind}'. Use must, never, stays, or access.`); continue; }
     if (!known(`A ${rule.kind} rule`, rule.hostId, rule.famId || null)) continue;
     const bad = rule.rounds.filter((r) => !allRounds.has(r));
     if (bad.length) {
@@ -174,6 +174,7 @@ export interface PlanOptions {
   keep?: [number, string, string][];
   hostLimits?: Record<string, number[]>;
   weakLimit?: number | null;
+  stepFreeFams?: string[];
   timeLimitS?: number;
   diagnose?: boolean;
 }
@@ -219,7 +220,17 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
   }
   const hostIds = new Set(hosts.map((h) => h.hostId));
   const famIds = new Set(fams.map((f) => f.groupId));
+  const reachable = new Set(o.stepFreeFams ?? []);
+  for (const a of rules) {
+    if (a.kind === "access" && ![...famIds].some((f) => reachable.has(f))) {
+      throw new RuleConflictError(`${hosts.find((x) => x.hostId === a.hostId)!.name} needs a step-free table, but no fam table is marked as step-free. Mark the tables with step-free access in the fams table.`);
+    }
+  }
   const forbidden = new Set<string>();
+  const lockedRoundSet = new Set(locked.map(([r]) => r));
+  for (const a of rules.filter((x) => x.kind === "access")) {
+    for (const f of famIds) if (!reachable.has(f)) for (const r of range(rounds)) if (!lockedRoundSet.has(r)) forbidden.add(slotKey(r, a.hostId, f));
+  }
   const lockedRounds = new Set(locked.map(([r]) => r));
   for (const r of lockedRounds) for (const h of hostIds) for (const f of famIds) if (!lockedKeys.has(slotKey(r, h, f))) forbidden.add(slotKey(r, h, f));
   for (const nv of rules.filter((x) => x.kind === "never")) {
@@ -241,7 +252,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
   });
   if (result.status === "infeasible") {
     if (o.diagnose === false) throw new RuleConflictError("No schedule satisfies every rule.");
-    throw new RuleConflictError(explainConflict(highs, hosts, fams, rounds, rules, cancelled, famAway, locked, hostLimits, o.weakLimit ?? null));
+    throw new RuleConflictError(explainConflict(highs, hosts, fams, rounds, rules, cancelled, famAway, locked, hostLimits, o.weakLimit ?? null, o.stepFreeFams ?? []));
   }
   const real = [...result.assignments].sort((a, b) => a.round - b.round || (a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0));
   const freeRounds: Record<string, number[]> = {};
@@ -272,7 +283,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
 function explainConflict(
   highs: HighsLike, hosts: Host[], fams: GuestGroup[], rounds: number, rules: Rule[],
   hostAway: Record<string, number[]>, famAway: Record<string, number[]>, locked: [number, string, string][],
-  hostLimits: Record<string, number[]>, weakLimit: number | null,
+  hostLimits: Record<string, number[]>, weakLimit: number | null, stepFreeFams: string[] = [],
 ): string {
   const hname = Object.fromEntries(hosts.map((h) => [h.hostId, h.name]));
   const fname = Object.fromEntries(fams.map((f) => [f.groupId, f.name]));
@@ -283,7 +294,7 @@ function explainConflict(
     const k = `rule\u0000${i}`;
     items.push(k);
     const when = rule.rounds.length ? ` in ${roundText(rule.rounds)}` : "";
-    words[k] = rule.kind === "stays"
+    words[k] = rule.kind === "access" ? `${hname[rule.hostId]} needs a step-free table` : rule.kind === "stays"
       ? `${hname[rule.hostId]} stays with ${rule.famId ? fname[rule.famId] : "one fam"} all night`
       : `${hname[rule.hostId]} ${rule.kind === "must" ? "must meet" : "never meets"} ${fname[rule.famId]}${when}`;
   });
@@ -309,6 +320,7 @@ function explainConflict(
         hostLimits: Object.fromEntries(Object.entries(hostLimits).filter(([h]) => k.has(`limit\u0000${h}`))),
         locked: k.has("locked\u0000") ? locked : [],
         weakLimit: k.has("weak\u0000") ? weakLimit : null,
+        stepFreeFams,
         diagnose: false,
       });
       return true;

@@ -34,10 +34,12 @@ export const FRIENDLY: Record<string, string> = {
   size: "Size",
   interests: "Interests",
   students: "Students",
+  location: "Location in the room",
+  step_free: "Step-free access",
 };
 export const FILE_COLUMNS: Record<"hosts" | "fams", string[]> = {
   hosts: ["table_label", "host_name", "tags"],
-  fams: ["table_number", "fam_label", "size", "interests", "students"],
+  fams: ["table_number", "fam_label", "size", "interests", "students", "location", "step_free"],
 };
 export const REQUIRED: Record<"hosts" | "fams", string[]> = { hosts: ["table_label"], fams: ["fam_label"] };
 export const EXAMPLE_MARK = "(example)";
@@ -195,8 +197,9 @@ export function famIdByLabel(fams: GuestGroup[], label: string): string {
   return f.groupId;
 }
 
-export const RULE_KINDS: Record<string, "must" | "never" | "only" | "stays"> = {
+export const RULE_KINDS: Record<string, "must" | "never" | "only" | "stays" | "access"> = {
   "must meet": "must", "never meet": "never", "only in rounds": "only", "stays with": "stays",
+  "needs step-free": "access",
 };
 
 const PY_FLOAT = /^[+-]?((\d[\d_]*(\.[\d_]*)?|\.\d[\d_]*)([eE][+-]?\d+)?|inf(inity)?|nan)$/i;
@@ -220,7 +223,7 @@ export function parseRounds(text: string, rounds: number): number[] {
 }
 
 export interface Rule {
-  kind: "must" | "never" | "stays";
+  kind: "must" | "never" | "stays" | "access";
   hostId: string;
   famId: string;
   rounds: number[];
@@ -234,7 +237,7 @@ export function parseRuleRows(rows: Iterable<Row>, hosts: Host[], fams: GuestGro
   cleanRows(rows).forEach((row, idx) => {
     const i = idx + 1;
     const kind = RULE_KINDS[(row.rule ?? "").toLowerCase()];
-    if (!kind) { problems.push(`Pairing rule ${i}: choose must meet, never meet, only in rounds, or stays with.`); return; }
+    if (!kind) { problems.push(`Pairing rule ${i}: choose must meet, never meet, only in rounds, stays with, or needs step-free.`); return; }
     let h: string;
     try { h = hostIdByLabel(hosts, row.host_table ?? ""); } catch { problems.push(`Pairing rule ${i}: choose a host table from the list.`); return; }
     let rs: number[];
@@ -243,6 +246,11 @@ export function parseRuleRows(rows: Iterable<Row>, hosts: Host[], fams: GuestGro
       if (!rs.length) { problems.push(`Pairing rule ${i}: only in rounds needs at least one round.`); return; }
       const keep = new Set(rs);
       hostAway[h] = Array.from({ length: rounds }, (_, k) => k + 1).filter((r) => !keep.has(r));
+      return;
+    }
+    if (kind === "access") {
+      if (rs.length || (row.fam ?? "").trim()) { problems.push(`Pairing rule ${i}: needs step-free applies to every table, so leave Fam and Rounds blank.`); return; }
+      rules.push({ kind: "access", hostId: h, famId: "", rounds: [] });
       return;
     }
     if (kind === "stays") {
@@ -270,6 +278,8 @@ const SYNONYMS: Record<string, string[]> = {
   table_number: ["table", "table no", "table #", "number"],
   students: ["student", "student name", "names", "members", "admits", "student names", "name", "your name", "full name"],
   size: ["count", "students count", "number of students", "how many"],
+  location: ["location", "where", "where in the room", "zone", "spot", "room location"],
+  step_free: ["step free", "stepfree", "accessible", "wheelchair accessible", "access", "accessibility"],
 };
 
 const HINTS: Record<Kind, [string, string[], string[]][]> = {
@@ -344,7 +354,7 @@ export function columnReport(columns: string[], kind: Kind, mapping?: Record<str
     size: "fam sizes will be counted from the students, or left blank",
   };
   for (const col of FILE_COLUMNS[kind]) {
-    if (!(col in m) && !REQUIRED[kind].includes(col)) notices.push(`No ${FRIENDLY[col].toLowerCase()} column, so ${what[col]}.`);
+    if (!(col in m) && !REQUIRED[kind].includes(col) && col in what) notices.push(`No ${FRIENDLY[col].toLowerCase()} column, so ${what[col]}.`);
   }
   return [problems, notices, m];
 }
@@ -392,7 +402,7 @@ export function groupStudentRows(rows: Record<string, string>[]): [Record<string
 export function templateCsv(kind: Kind): string {
   const example = {
     hosts: ["(example) Physician (MD)", "Alum A", "medicine; healthcare; pre-med"],
-    fams: ["1", "(example) Bio & Chem", "6", "biology; chemistry; pre-med", "Student 01; Student 02"],
+    fams: ["1", "(example) Bio & Chem", "6", "biology; chemistry; pre-med", "Student 01; Student 02", "by the stage", "yes"],
   }[kind];
   return csvLine(FILE_COLUMNS[kind].map((c) => FRIENDLY[c])) + "\r\n" + csvLine(example) + "\r\n";
 }

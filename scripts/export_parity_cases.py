@@ -140,6 +140,14 @@ def main() -> None:
         {"rule": "must meet", "host_table": "Therapy & Rehab", "fam": "Bio & Chem", "rounds": ""}]))
     add("stays with, rounds given", event(practice_h, practice_f, 2, rules=[
         {"rule": "stays with", "host_table": "Pharmacy", "fam": "", "rounds": "1"}]))
+    free_f = [{**r, "Step-free access": "yes" if i % 3 == 0 else ""} for i, r in enumerate(practice_f)]
+    access = lambda host: {"rule": "needs step-free", "host_table": host, "fam": "", "rounds": ""}
+    add("needs step-free", event(practice_h, free_f, 3, rules=[access("Pharmacy")]))
+    add("needs step-free, no table marked", event(practice_h, practice_f, 2, rules=[access("Pharmacy")]))
+    add("conflict: needs step-free and must meet", event(practice_h, free_f, 2, rules=[
+        access("Pharmacy"), {"rule": "must meet", "host_table": "Pharmacy", "fam": "Cog Sci & Pre-Health", "rounds": ""}]))
+    add("needs step-free with a fam named", event(practice_h, free_f, 2, rules=[
+        {"rule": "needs step-free", "host_table": "Pharmacy", "fam": "Bio & Chem", "rounds": ""}]))
     add("one weak round", event(practice_h, practice_f, 3, one_weak_round=True))
     add("one weak round, real example", event(real_h, real_f, 2, one_weak_round=True))
     add("conflict: three musts", event(small_h, small_f, 2, rules=[
@@ -258,10 +266,17 @@ def main() -> None:
                                           "out": host_warnings(hosts, [Assignment(1, "h1", "f0", 5), Assignment(2, "h2", "f0", 5)], 2, away)})
 
     st = event(practice_h, practice_f, 2, arrived=["h01", "h03"], notes="Table 7 is by the kitchen.",
-               night_log=[{"at": "7:42 PM", "text": "Pharmacy cancelled from round 2."}])
+               night_log=[{"at": "7:42 PM", "text": "Pharmacy cancelled from round 2."}],
+               night={"roundTimes": {"1": {"start": "18:31", "end": "18:52"}}, "told": ["2|h03|fam_04"], "famArrived": {"fam_01": 5}})
     hand = handoff_event(st)
     messages["event_file"].append({"text": save_event(st), "arrived": st.arrived, "notes": st.notes, "night_log": st.night_log,
-                                   "handoff": {"arrived": hand.arrived, "notes": hand.notes, "night_log": hand.night_log}})
+                                   "night": st.night,
+                                   "handoff": {"arrived": hand.arrived, "notes": hand.notes, "night_log": hand.night_log, "night": hand.night}})
+    # Location never changes whether a schedule is up to date; step-free access only when filled in.
+    base = event(practice_h, practice_f, 2)
+    located = event(practice_h, [{**r, "Location in the room": "by the stage"} for r in practice_f], 2)
+    messages["fingerprint_location"] = {"plain": json.loads(save_event(base)), "located": json.loads(save_event(located)),
+                                        "same": fingerprint(base) == fingerprint(located)}
 
     # Printouts for fixed plans, byte for byte.
     printouts = []
@@ -285,7 +300,10 @@ def main() -> None:
             "run_sheet_blank": run_sheet_html(plan, title="Example dinner"),
             "schedule_csv": schedule_csv(plan),
             "host_view": host_view_rows(plan),
+            "locations": {f.group_id: f"Zone {'ABC'[i % 3]}, near {f.name}" for i, f in enumerate(plan.fams) if i % 2 == 0},
         }
+        entry["seating_chart_located"] = seating_chart_html(plan, title="Example dinner", locations=entry["locations"])
+        entry["host_cards_located"] = host_cards_html(plan, title="Example dinner", locations=entry["locations"])
         if st.printed is not None:
             out = reprint_list(st.printed, plan)
             entry["reprint"] = out.describe(plan)
