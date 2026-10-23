@@ -65,10 +65,12 @@ python -m pytest tests/ -v
 ## Plan your own event
 
 Open the planner at https://chrishoangle.github.io/rotation-optimizer/app/.
-New to it? **Take the 2-minute tour** on the first screen: seven short scenes
+The example in the planner, and in the tour, is the real STEW 2026 family
+dinner, seated as it ran: the alumni by name and what they do, with no
+contact details. New to it? **Take the 2-minute tour** on the first screen: seven short scenes
 walk through a whole dinner, from the two lists to next year's file. With an
 event open, the tour uses a copy of your own alumni and fams (it never changes
-your event); otherwise it uses an invented example dinner.
+your event); otherwise it uses the STEW 2026 dinner.
 It is organised around what a coordinator does, in four places: **Set up**
 (paste what you already have from Google Docs, Sheets, or Excel: last year's
 seating chart, with a column per round, gives the fams, the alumni and pairs,

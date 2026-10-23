@@ -1,18 +1,19 @@
 // A two-minute walkthrough of a whole dinner, from the lists to next year.
 //
 // It plays on a copy of the coordinator's own event when one is open, so
-// they meet their own alumni and fams, or on an invented example dinner
+// they meet their own alumni and fams, or on the STEW 2026 family dinner
 // otherwise. Nothing it does touches the real event. Seven short scenes,
 // each one picture and a line or two, with Back, Next, and Skip; the step
 // is remembered, so closing the tab and coming back resumes where it was.
 
 import { h, replace } from "./dom";
 import type { EventState } from "./event";
-import { loadEvent, newEvent, normalizeState, saveEvent } from "./event";
+import { loadEvent, saveEvent } from "./event";
 import { tableNumbers } from "./export";
 import { avatars, famHue, peopleIn } from "./faces";
 import { icon } from "./icons";
-import { hostSettings, setHostSettings, settingsWords } from "./people";
+import { stewDinner } from "./stew2026";
+import { settingsWords } from "./people";
 import type { EventPlan } from "./planning";
 
 export interface TourCtx {
@@ -53,39 +54,6 @@ const remember = (n: number | null) => {
 };
 
 // ----------------------------------------------------------------------
-// The example dinner: invented people, the size of a real one.
-// ----------------------------------------------------------------------
-
-const EXAMPLE_HOSTS: [string, string, string][] = [
-  ["Medicine", "Dr. Alex Chen", "medicine; pre-med; biology"],
-  ["Engineering", "Maya Ortiz & Sam Patel", "engineering; computer science"],
-  ["Law", "Jordan Lee", "law; policy; history"],
-  ["Public health", "Priya Nair", "public health; medicine; policy"],
-  ["Finance", "Chris Johnson", "business; economics; finance"],
-  ["Design", "Elena Rossi & Ben Carter", "design; art; film"],
-  ["Education", "Dana Kim", "education; psychology"],
-  ["Data", "Marcus Hall", "data; statistics; math"],
-  ["Environment", "Rosa Delgado", "environment; policy; biology"],
-];
-const EXAMPLE_FAMS: [string, string][] = [
-  ["Fam Gold", "medicine; pre-med; biology"], ["Fam Blue", "engineering; computer science; math"], ["Fam Red", "law; policy; history"],
-  ["Fam Green", "environment; biology; policy"], ["Fam Teal", "business; economics"], ["Fam Pink", "psychology; education"],
-  ["Fam Gray", "art; design; film"], ["Fam Navy", "data; statistics; math"],
-];
-
-function exampleDinner(): EventState {
-  const s = newEvent({
-    title: "Spring Alumni Dinner", rounds: 3,
-    hosts: EXAMPLE_HOSTS.map(([table_label, host_name, tags]) => ({ table_label, host_name, tags })),
-    fams: EXAMPLE_FAMS.map(([fam_label, interests], i) => ({ fam_label, interests, table_number: String(i + 1) })),
-  });
-  normalizeState(s);
-  const late = s.hosts.find((r) => r.host_name === "Marcus Hall")!;
-  setHostSettings(s, late.host_id, { ...hostSettings(s, late.host_id), from: 2 });
-  return s;
-}
-
-// ----------------------------------------------------------------------
 // Opening, moving between scenes, closing.
 // ----------------------------------------------------------------------
 
@@ -93,7 +61,7 @@ export function openTour(c: TourCtx, fromStep?: number): void {
   ctx = c;
   lastFocus = document.activeElement as HTMLElement | null;
   const mine = ctx.mine();
-  const ev = mine ? loadEvent(saveEvent(mine)) : exampleDinner();
+  const ev = mine ? loadEvent(saveEvent(mine)) : stewDinner();
   // The walkthrough starts the night fresh on its copy; the real event keeps its clock and notes.
   if (mine) { ev.finished = 0; ev.printed = null; ev.night = { ...ev.night, roundTimes: {}, told: [] }; }
   t = { step: fromStep ?? tourStep() ?? 1, mode: mine ? "mine" : "example", ev, plan: ev.plan, built: false, nightRound: 1 };
@@ -200,7 +168,7 @@ function meet(scene: HTMLElement): void {
   const pic = h("div", { className: "c-tour-pic" });
   pic.innerHTML = ROOM;
   replace(scene,
-    h("p", { className: "c-tour-kicker" }, t!.mode === "mine" ? "Let's walk through your event." : "Here's an example alumni dinner."),
+    h("p", { className: "c-tour-kicker" }, t!.mode === "mine" ? "Let's walk through your event." : "Here's a real one: the STEW 2026 family dinner."),
     heading(`Welcome to ${s.title || "your dinner"}`),
     h("div", { className: "c-tour-stats" },
       h("div", {}, h("strong", {}, String(people(s))), h("span", {}, "alumni")),

@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { handoffEvent, isCurrent, newEvent, normalizeState, solveEvent } from "../src/event";
 import { movesBetween } from "../src/moves";
 import { addLateHost, cancelHost, currentRound, finishRound, joinLate, moveFamTable, notArrived, setupMissing, toggleSetup, whereIs } from "../src/night";
+import { placeInGrid } from "../src/people";
 import type { HighsLike } from "../src/solver";
 
 let highs: HighsLike;
@@ -153,5 +154,26 @@ describe("night mode actions", () => {
     const next = handoffEvent(s);
     expect(next.fams.map((r) => r.table_number)).toEqual(s.printed!.fams.map((f) => String(f.tableNumber || "")).map((t, i) => t || String(i + 1)));
     expect(next.fams[0].location).toBe("balcony");
+  });
+});
+
+describe("a seating kept from a pasted chart", () => {
+  it("lets go of a cancelled alum's seats from that round on, so the re-plan works", () => {
+    const s = newEvent({
+      rounds: 2,
+      hosts: [["Law", "Ann Park"], ["Med", "Bo Lin"], ["Tech", "Cy Ruiz"]].map(([table_label, host_name]) => ({ table_label, host_name, tags: "" })),
+      fams: ["Fam 1", "Fam 2", "Fam 3"].map((fam_label) => ({ fam_label, interests: "" })),
+    });
+    normalizeState(s);
+    const seat = (host: string, fam: string, r: number) => placeInGrid(s, host, fam, r);
+    seat("Law", "Fam 1", 1); seat("Med", "Fam 2", 1); seat("Tech", "Fam 3", 1);
+    seat("Law", "Fam 2", 2); seat("Med", "Fam 3", 2); seat("Tech", "Fam 1", 2);
+    solveEvent(highs, s, false);
+    s.printed = s.plan;
+    s.finished = 1;
+    cancelHost(s, s.hosts[0].host_id, 2, "7:30 PM");
+    expect(s.rules.filter((r) => r.host_table === "Law").map((r) => r.rounds)).toEqual(["1"]);
+    expect(() => solveEvent(highs, s, true)).not.toThrow();
+    expect(s.plan!.assignments.filter((a) => a.round === 1).map((a) => a.hostId)).toEqual(s.printed!.assignments.filter((a) => a.round === 1).map((a) => a.hostId));
   });
 });

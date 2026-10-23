@@ -26,6 +26,7 @@ import {
   roomTables, setupMissing, toggleMoved, toggleSetup, toggleTold, transitions, whereIs,
 } from "./night";
 import { GuidedCtx, renderGuided } from "./guided";
+import { stewDinner } from "./stew2026";
 import { looksLikeHeader, parsePasted } from "./paste";
 import {
   backupPacketHtml, coordinatorGuideHtml, hostBadgesHtml, mcCueCardHtml, planSummaryHtml, privacyNoteHtml, roleCardsHtml, runnerSheetsHtml,
@@ -1301,7 +1302,7 @@ const guidedCtx: GuidedCtx = {
   endPractice,
   tryExample: () => {
     if (!practiceOriginal) practiceOriginal = ev;
-    ev = practiceEvent();
+    ev = stewDinner();
   },
   inPractice: () => practiceOriginal !== null,
   saveFile,

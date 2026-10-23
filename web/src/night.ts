@@ -86,9 +86,20 @@ export function addLateHost(s: EventState, late: LateHost, at: string): string {
   return "";
 }
 
+/**
+ * Seats placed by hand (or kept from a pasted seating chart) that involve
+ * someone who is gone from round `from` on. They cannot hold any more, so
+ * they are let go and the re-plan seats those rounds around the absence.
+ */
+function releaseSeats(s: EventState, from: number, who: { host?: string; fam?: string }): void {
+  const same = (a: string | undefined, b: string | undefined) => !!b && (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
+  s.rules = s.rules.filter((r) => !(r.by === "grid" && Number(r.rounds) >= from && (same(r.host_table, who.host) || same(r.fam, who.fam))));
+}
+
 /** A host who did not come, or has to leave: cancelled from `from` on. */
 export function cancelHost(s: EventState, hostId: string, from: number, at: string, noShow = false): void {
   s.cancelHosts[hostId] = from;
+  releaseSeats(s, from, { host: s.hosts.find((r) => r.host_id === hostId)?.table_label });
   s.arrived = s.arrived.filter((x) => x !== hostId);
   const row = s.hosts.find((r) => r.host_id === hostId);
   const who = row ? (row.host_name && row.host_name !== row.table_label ? `${row.host_name} (${row.table_label})` : row.table_label) : hostId;
@@ -97,6 +108,7 @@ export function cancelHost(s: EventState, hostId: string, from: number, at: stri
 
 export function cancelFam(s: EventState, famId: string, from: number, at: string): void {
   s.cancelFams[famId] = from;
+  releaseSeats(s, from, { fam: s.fams.find((r) => r.fam_id === famId)?.fam_label });
   const row = s.fams.find((r) => r.fam_id === famId);
   logChange(s, at, `${row?.fam_label ?? famId} cancelled from round ${from}.`);
 }

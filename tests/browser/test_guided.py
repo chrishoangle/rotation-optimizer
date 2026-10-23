@@ -188,21 +188,24 @@ def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p.locator(".c-tab", has_text="Set up").click()
     p.locator('[data-card="hosts"] .c-card-head').click()
     p.get_by_role("button", name="More options").first.click()
-    p.get_by_label("Choose an alum").select_option(label="Alum A")
-    p.get_by_label("Never meets, for Alum A").select_option("Bio & Chem")
-    assert "never meets Bio & Chem" in words(p)
+    # The example is the real STEW 2026 dinner: Kenneth Tran hosts Fam 6 in round 1.
+    p.get_by_label("Choose an alum").select_option(label="Kenneth Tran")
+    p.get_by_label("Never meets, for Kenneth Tran").select_option("Fam 3")
+    assert "never meets Fam 3" in words(p)
     button(p, "Update the schedule").click()
     p.wait_for_selector(".c-plan")
     button(p, "Adjust").click()
-    alum_a = p.locator('.c-seat-button[data-round="1"]', has_text="Alum A")
-    bio = p.locator(".c-plan-row", has_text="Bio & Chem").locator('.c-seat-button[data-round="1"]')
+    kenneth = p.locator('.c-seat-button[data-round="1"]', has_text="Kenneth Tran")
+    fam3 = p.locator(".c-plan-row", has_text="Fam 3").locator('.c-seat-button[data-round="1"]')
     before = p.inner_text(".c-plan")
-    alum_a.click()
-    assert bio.get_attribute("aria-disabled") == "true"
-    assert "Not possible: Alum A is set to never meet Bio & Chem." in bio.get_attribute("aria-label")
-    bio.click(force=True)
-    assert "Alum A is set to never meet Bio & Chem." in words(p)
-    assert p.inner_text(".c-plan").replace("\n", "") .count("Alum") == before.replace("\n", "").count("Alum")
+    kenneth.click()
+    assert fam3.get_attribute("aria-disabled") == "true"
+    assert "Not possible: Kenneth Tran is set to never meet Fam 3." in fam3.get_attribute("aria-label")
+    fam3.click(force=True)
+    assert "Kenneth Tran is set to never meet Fam 3." in words(p)
+    button(p, "Done adjusting").click()
+    button(p, "Adjust").click()
+    assert p.inner_text(".c-plan") == before, "nothing moved"
 
 
 def test_the_full_planner_is_at_its_own_address(url):
@@ -231,7 +234,7 @@ def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     button(p, "Start round 1").click()
     button(p, "Something came up").click()
     button(p, "An alum left or didn't come").click()
-    p.get_by_label("Alum who left").select_option(label="Alum A")
+    p.get_by_label("Alum who left").select_option(label="Kenneth Tran")
     p.get_by_label("Misses from round").select_option("2")
     button(p, "Work out who moves").click()
     p.wait_for_selector(".c-tell")
@@ -240,7 +243,7 @@ def test_a_move_already_passed_on_is_taken_back_out_loud(page):
     assert "Everyone has been told" in words(p)
     button(p, "Something came up").click()
     button(p, "An alum arrived late, or someone new came").click()
-    p.get_by_label("Alum who arrived").select_option(label="Alum A")
+    p.get_by_label("Alum who arrived").select_option(label="Kenneth Tran")
     p.get_by_label("Hosts from round").select_option("2")
     button(p, "Work out who moves").click()
     p.wait_for_selector(".c-tell")
@@ -295,8 +298,8 @@ def tour_text(p) -> str:
 def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
     p = page
     p.get_by_role("button", name="Take the 2-minute tour").click()
-    assert "Here's an example alumni dinner." in tour_text(p)
-    assert "Welcome to Spring Alumni Dinner" in tour_text(p)
+    assert "Here's a real one: the STEW 2026 family dinner." in tour_text(p)
+    assert "Welcome to STEW 2026 Family Dinner" in tour_text(p)
     seen = []
     for step in range(1, 8):
         p.wait_for_selector(f'.c-tour-scene[data-step="{step}"]')
