@@ -318,7 +318,7 @@ def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
         if step < 8:
             p.locator('[data-k="tour-next"]').click()
     assert "meets" in seen[3] and "because they share" in seen[3]
-    assert "can't make round 2" in seen[5] and "Round 1 is done" in seen[5]
+    assert "couldn't make round 2?" in seen[5] and "Round 1 is done" in seen[5]
     assert "Event complete" in seen[7]
     button(p, "Plan my dinner").click()
     assert p.locator(".c-tour").count() == 0
@@ -347,7 +347,7 @@ def test_the_tour_uses_the_coordinators_own_event(page):
     for _ in range(3):
         p.locator('[data-k="tour-next"]').click()
     p.wait_for_selector(".c-tour-flow")
-    assert re.search(r"Alum [A-F]( & Alum [A-F])? can't make round 2", tour_text(p))
+    assert re.search(r"Alum [A-F]( & Alum [A-F])? couldn't make round 2\?", tour_text(p))
     button(p, "Skip tour").click()
     assert p.locator(".c-tour").count() == 0
     assert ev_plan_is_untouched(p)

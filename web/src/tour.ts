@@ -367,6 +367,8 @@ async function change(scene: HTMLElement): Promise<void> {
       copy.plan = p;
       copy.printed = p;
       copy.finished = round - 1;
+      // Seats placed by hand from this round on would hold the absent alum in place; the what-if lets them go.
+      copy.rules = copy.rules.filter((x) => !(x.by === "grid" && Number(x.rounds) >= round));
       cancelHost(copy, solo.hostId, round, ctx.now());
       t.change.problem = await ctx.solveOn(copy, true);
       t.change.after = copy.plan !== p ? copy.plan : null;
@@ -384,7 +386,8 @@ async function change(scene: HTMLElement): Promise<void> {
   const n = moves ? moves.hosts.length + moves.fams.length : 0;
   replace(scene,
     heading("When something changes"),
-    h("div", { className: "c-tour-card c-tour-cancel" }, avatars(c.who), h("strong", {}, `${c.who} can't make round ${round}.`)),
+    line(t.mode === "mine" ? "A what-if, to show how the app handles it. Your event is not changed." : "Say someone cancels on the day."),
+    h("div", { className: "c-tour-card c-tour-cancel" }, avatars(c.who), h("strong", {}, `What if ${c.who} couldn't make round ${round}?`)),
     h("ol", { className: "c-tour-flow" },
       h("li", { style: "--i: 0" }, icon("bell"), round > 1 ? `Round 1 is done, so it stays exactly as it was.` : "Nothing has started yet."),
       h("li", { style: "--i: 1" }, icon("swap"), c.after ? `The app re-plans from round ${round}, moving as few people as it can.` : c.problem || "Nobody else needs to move."),

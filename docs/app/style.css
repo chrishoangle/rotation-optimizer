@@ -742,3 +742,4 @@ body.c-touring { overflow: hidden; }
   .c-tour-night ol { grid-template-columns: 1fr; }
   .c-tour-stats strong { font-size: 28px; }
 }
+.c-tour-where li > span:nth-child(2) { white-space: nowrap; }
