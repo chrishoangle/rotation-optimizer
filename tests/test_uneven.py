@@ -75,7 +75,7 @@ def test_open_tables_are_spread_when_fams_outnumber_hosts():
     hosts, fams = synthetic(8, 11)
     plan = plan_event(hosts, fams, 3)
     assert min(hosted(plan).values()) == 2
-    assert not [w for w in plan.warnings if "already shared out" in w]
+    assert not [w for w in plan.warnings if "some fams wait a round" in w]
 
 
 def test_unavoidable_gaps_are_named():
@@ -87,7 +87,7 @@ def test_unavoidable_gaps_are_named():
 
     hosts, fams = synthetic(2, 6)
     plan = plan_event(hosts, fams, 2)  # 8 open tables for 6 fams
-    shared = [w for w in plan.warnings if "already shared out as evenly as possible" in w]
+    shared = [w for w in plan.warnings if "some fams wait a round without a host" in w]
     assert len(shared) == 2
 
 

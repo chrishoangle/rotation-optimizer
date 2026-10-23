@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import math
+import re
 from pathlib import Path
 
 import pytest
@@ -314,7 +315,7 @@ def test_only_in_rounds_is_availability_not_cancellation(state):
     assert "Not hosting this round" in card
     assert "Cancelled" not in card and "None" not in card
     chart = seating_chart_html(plan)
-    assert "Not hosting this round: Pharmacy: round 1 only" in chart
+    assert re.search(r"Not hosting this round: [^<]*\(?Pharmacy\)?: round 1 only", chart)
     assert "Cancelled" not in chart and "None" not in chart
     row = next(r for r in host_view_rows(plan) if r["host_table"] == "Pharmacy")
     assert row["round 2"] == "Not hosting (round 1 only)"

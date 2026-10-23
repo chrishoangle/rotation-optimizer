@@ -50,4 +50,12 @@ describe("the clock for the night", () => {
     expect(status(s, at("10:22 PM"), "2026-10-20").lateBy).toBe(0);
     expect(status(s, at("6:30 PM"), "2026-10-30").lateBy).toBe(15);
   });
+
+  it("a practice run on another day is timed from its own round 1, not the doors", () => {
+    const s = newEvent({ rounds: 3, roundMinutes: 20, startTime: "6:00 PM" });
+    startRound(s, 1, at("11:01 PM"));
+    expect(status(s, at("11:05 PM"), "2026-10-20")).toMatchObject({ lateBy: 0, projectedEnd: at("11:01 PM") + 70 });
+    s.night = { ...s.night, date: "2026-10-30" };
+    expect(status(s, at("11:05 PM"), "2026-10-20").lateBy).toBe(0);
+  });
 });

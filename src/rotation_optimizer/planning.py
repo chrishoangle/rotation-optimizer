@@ -355,6 +355,10 @@ def plan_event(
             f"With {len(hosts)} host tables and {len(fams)} fams, the most rounds without any fam "
             f"meeting the same host twice is {n}. Lower the number of rounds to {n} or fewer."
         )
+    # A host who needs a step-free table can visit each step-free fam only
+    # once, so with fewer such fams than rounds they must sit some rounds
+    # out. Each of them may need a Break in any round.
+    n += _step_free_breaks(hosts, fams, rounds, rules, host_away, locked, step_free_fams)
     padded_hosts = list(hosts) + [
         Host.make(f"{OPEN_PREFIX}{i + 1}", "Open table", "Open table", []) for i in range(n - len(hosts))
     ]
@@ -475,6 +479,19 @@ def plan_event(
     )
 
 
+def _step_free_breaks(hosts, fams, rounds, rules, host_away, locked, step_free_fams) -> int:
+    """How many hosts that need a step-free table cannot host every round they are here."""
+    reachable = set(step_free_fams or ()) & {f.group_id for f in fams}
+    done = {r for r, _, _ in locked}
+    short = 0
+    for a in {r.host_id for r in rules if r.kind == "access"}:
+        met = {f for _, h, f in locked if h == a}
+        here = [r for r in range(1, rounds + 1) if r not in done and r not in host_away.get(a, [])]
+        if len(here) > len(reachable - met):
+            short += 1
+    return short
+
+
 def _explain_conflict(hosts, fams, rounds, rules, host_away, fam_away, locked, host_limits, weak_limit,
                       step_free_fams=None) -> str:
     """Find the few rules, cancellations, or settings that cannot hold together, and name them.
@@ -563,8 +580,8 @@ def _rounds_words(rounds: list[int]) -> str:
 
 
 OPEN_TABLES_SHARED = (
-    "There are more fams than host tables, so the open tables are already shared out as evenly as "
-    "possible. Add a host table to fix this."
+    "There are more fams than host tables, so some fams wait a round without a host. "
+    "Add another host table to fix this."
 )
 
 

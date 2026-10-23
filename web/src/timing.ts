@@ -37,10 +37,18 @@ export function endRound(s: EventState, r: number, at: number): void {
   s.night = { ...s.night, roundTimes: { ...(s.night.roundTimes ?? {}), [String(r)]: { ...(s.night.roundTimes?.[String(r)] ?? {}), end: hhmm(at) } } };
 }
 
-/** When round r was meant to start: from the run sheet's doors time, or from when round 1 actually started. */
-export function plannedStart(s: EventState, r: number): number | null {
+/**
+ * When round r was meant to start: from the run sheet's doors time, or from
+ * when round 1 actually started. The doors time counts on the event's date,
+ * or with no date when round 1 started within two hours of it; otherwise
+ * (a practice run on another day) the plan is counted from round 1.
+ */
+export function plannedStart(s: EventState, r: number, today = todayIso()): number | null {
   const doors = toMinutes(s.startTime);
-  const base = doors !== null ? doors + WELCOME + SETTLE : times(s, 1).start;
+  const first = times(s, 1).start;
+  const fromDoors = doors === null ? null : doors + WELCOME + SETTLE;
+  const onTheDay = s.night.date ? s.night.date === today : first === null || Math.abs(first - fromDoors!) <= 120;
+  const base = fromDoors !== null && onTheDay ? fromDoors : first;
   return base === null ? null : base + (r - 1) * (s.roundMinutes + SWITCH);
 }
 
@@ -64,8 +72,8 @@ export function status(s: EventState, now: number, today = todayIso()): Status {
   const r = Math.min(s.finished + 1, rounds);
   const { start, end } = times(s, r);
   const phase: Phase = end !== null && r === rounds ? "over" : start !== null && end === null ? "during" : r === 1 ? "before" : "moving";
-  const planned = plannedStart(s, r);
-  const plannedEnd = plannedStart(s, rounds) !== null ? plannedStart(s, rounds)! + s.roundMinutes : null;
+  const planned = plannedStart(s, r, today);
+  const plannedEnd = plannedStart(s, rounds, today) !== null ? plannedStart(s, rounds, today)! + s.roundMinutes : null;
   let lateBy = 0;
   // Before round 1 starts, lateness only means something on the day itself.
   const live = times(s, 1).start !== null || (!!s.night.date && s.night.date === today);

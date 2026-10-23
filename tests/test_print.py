@@ -146,7 +146,7 @@ def test_run_sheet_has_a_timeline_and_check_in_lists():
     for when, what in [("6:30 PM", "Doors open"), ("6:40 PM", "Welcome"), ("6:45 PM", "Round 1"),
                        ("7:10 PM", "Round 2"), ("7:30 PM", "Closing")]:
         assert re.search(rf"{when}\s+{what}", text), (when, what)
-    assert "Cancelled: Therapy &amp; Rehab." in text
+    assert re.search(r"Cancelled: [^.]*\(?Therapy &amp; Rehab\)?\.", text)
     assert "Check-in: alumni" in text and "Alum A" in text and "Check-in: fams" in text
     assert not re.search(r"\bNone\b", text)
     blank = run_sheet_html(plan, "Example dinner")

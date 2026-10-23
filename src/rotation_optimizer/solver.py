@@ -304,6 +304,7 @@ def solve(
             if weak:
                 model.Add(sum(weak) <= weak_limit)
     weight = top + 1
+    zero = []
     if spread_hosts and spread_groups:
         real_h = [host_index[h] for h in spread_hosts]
         real_g = [group_index[g] for g in spread_groups]
@@ -327,10 +328,17 @@ def solve(
                 worst += len(avail) - k
         score_expr = score_expr - weight * sum(penalty)
         weight = weight * (worst + 1)
-    if prefer:
-        model.Maximize(weight * sum(x[h, g, r] for h, g, r in prefer) + score_expr)
-    else:
-        model.Maximize(score_expr)
+        # Above everything else, even kept printed slots: no group goes the
+        # whole event without a host when some schedule avoids it.
+        for g_id, rs in spread_groups.items():
+            avail = sorted(set(rs))
+            if avail:
+                z = model.NewIntVar(0, 1, "")
+                model.Add(z >= 1 - sum(x[h, group_index[g_id], r - 1] for r in avail for h in real_h))
+                zero.append(z)
+    kept_expr = weight * sum(x[h, g, r] for h, g, r in prefer) if prefer else 0
+    zero_weight = weight * (len(prefer) + 1)
+    model.Maximize(kept_expr + score_expr - zero_weight * sum(zero))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_s

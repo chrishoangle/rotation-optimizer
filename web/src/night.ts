@@ -149,13 +149,18 @@ export function setupMissing(s: EventState): string[] {
  */
 export function moveFamTable(s: EventState, famId: string, table: number, at: string): string {
   if (!Number.isInteger(table) || table < 1) return "Type the number on the table where the fam is sitting, for example 7.";
-  const tables = currentTables(s);
+  const tables = roomTables(s);
   const row = s.fams.find((r) => r.fam_id === famId);
   if (!row) return "That fam is not in the event.";
   const old = tables[famId];
   if (old === table) return `${row.fam_label} is already at Table ${table}.`;
   for (const r of s.fams) if (r.fam_id && !String(r.table_number ?? "").trim()) r.table_number = String(tables[r.fam_id]);
   const other = s.fams.find((r) => r.fam_id !== famId && Number(r.table_number) === table);
+  const before = { ...(s.night.tablesBefore ?? {}) };
+  for (const r of [row, other]) {
+    if (r && !(r.fam_id in before)) before[r.fam_id] = { table_number: String(r.table_number ?? ""), location: r.location ?? "", step_free: r.step_free ?? "" };
+  }
+  s.night = { ...s.night, tablesBefore: before };
   row.table_number = String(table);
   // Where a table is, and whether it has steps, belong to the table, not the fam sitting at it.
   const place = (r: CleanRow) => [r.location ?? "", r.step_free ?? ""] as const;

@@ -160,6 +160,7 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
   const prefer = new Set(m.preferSlots.map(([r, h, f]) => index.get(slotKey(r, h, f))).filter((v): v is string => !!v));
   let weight = top + 1;
   const penalty: string[] = [];
+  const zero: string[] = [];
   const bounds: string[] = [];
   if (m.spreadHosts && m.spreadFams) {
     const items: [number[], string[]][] = [];
@@ -180,11 +181,24 @@ export function solveModel(highs: HighsLike, m: ModelInput): ModelResult {
       }
     }
     weight = weight * (worst + 1);
+    // Above everything else, even kept printed slots: no fam goes the whole
+    // event without a host when some schedule avoids it.
+    m.fams.forEach((f, fi) => {
+      const rs = m.spreadFams![f.groupId];
+      if (!rs || !rs.length) return;
+      const set = new Set(rs);
+      const terms = vars.filter((x) => x.fi === fi && set.has(x.r)).map((x) => x.v);
+      const z = `z_${zero.length}`;
+      zero.push(z);
+      add([z, ...terms], ">=", 1);
+      bounds.push(` 0 <= ${z} <= 1`);
+    });
   }
   const fairWeight = top + 1;
   const coef = new Map<string, number>();
   for (const x of vars) coef.set(x.v, k * x.s + 1 + (prefer.has(x.v) ? weight : 0));
-  const objTerms = [...vars.map((x) => `+ ${coef.get(x.v)} ${x.v}`), ...penalty.map((e) => `- ${fairWeight} ${e}`)];
+  const zeroWeight = weight * (prefer.size + 1);
+  const objTerms = [...vars.map((x) => `+ ${coef.get(x.v)} ${x.v}`), ...penalty.map((e) => `- ${fairWeight} ${e}`), ...zero.map((z) => `- ${zeroWeight} ${z}`)];
 
   const lp = [
     "Maximize",

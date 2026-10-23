@@ -2,7 +2,7 @@
 // src/rotation_optimizer/export.py; for the same plan, every page is the
 // same HTML byte for byte (checked by test/parity.test.ts).
 
-import { EventPlan, FAM_ABSENT, NO_HOST } from "./planning";
+import { EventPlan, FAM_ABSENT, NO_HOST, hostLabel } from "./planning";
 import { csvLine, htmlEscape as e } from "./py";
 
 const BASE_CSS = `
@@ -82,7 +82,7 @@ export function seatingChartHtml(
   const rows = scheduleRows(p);
   const where = Object.fromEntries(p.fams.map((f) => [f.name, locations[f.groupId] ?? ""]));
   const person: Record<string, string> = Object.fromEntries(p.hosts.filter((h) => h.person && h.person !== h.name).map((h) => [h.name, h.person]));
-  const hosts = Object.fromEntries(p.hosts.map((h) => [h.hostId, h.name]));
+  const hosts = Object.fromEntries(p.hosts.map((h) => [h.hostId, hostLabel(h)]));
   const sections: string[] = [];
   const st = stamp(updated);
   for (const r of rounds && rounds.length ? rounds : range(p.rounds)) {
@@ -280,9 +280,9 @@ export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", 
   for (const r of range(p.rounds)) {
     const notes: string[] = [];
     const idle = p.hosts.filter((h) => !byHost.has(`${h.hostId}\u0000${r}`));
-    const out = idle.filter((h) => has(p.hostAway, h.hostId, r)).map((h) => h.name);
-    const limited = idle.filter((h) => has(p.hostLimits, h.hostId, r) && !has(p.hostAway, h.hostId, r)).map((h) => h.name);
-    const breaks = idle.filter((h) => !has(p.hostAway, h.hostId, r) && !has(p.hostLimits, h.hostId, r)).map((h) => h.name);
+    const out = idle.filter((h) => has(p.hostAway, h.hostId, r)).map(hostLabel);
+    const limited = idle.filter((h) => has(p.hostLimits, h.hostId, r) && !has(p.hostAway, h.hostId, r)).map(hostLabel);
+    const breaks = idle.filter((h) => !has(p.hostAway, h.hostId, r) && !has(p.hostLimits, h.hostId, r)).map(hostLabel);
     const open = ordered.filter((f) => !p.assignments.some((a) => a.round === r && a.groupId === f.groupId) && !has(p.famAway, f.groupId, r)).map((f) => String(tables[f.groupId]));
     if (open.length) notes.push(`No host at table ${open.join(", ")} this round.`);
     if (breaks.length) notes.push(`No table this round: ${breaks.join(", ")}.`);
@@ -297,7 +297,7 @@ export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", 
   const when = (m: number) => { const c = clock(startTime, m); return c ? e(c) : '<span class="blank"></span>'; };
   const timeline = steps.map(([m, what, say]) => `<tr><td class="time">${when(m)}</td><td class="what">${e(what)}</td><td>${e(say)}</td></tr>`).join("");
   const named = p.hosts.some((h) => h.person);
-  const hostRows = p.hosts.map((h) => `<tr><td class="box"></td><td>${e(h.name)}</td>` + (named ? `<td>${e(h.person)}</td>` : "") +
+  const hostRows = p.hosts.map((h) => `<tr><td class="box"></td>` + (named ? `<td>${e(h.person)}</td>` : "") + `<td>${e(h.name)}</td>` +
     `<td>${firstTable(p, h.hostId, tables, byHost)}</td></tr>`).join("");
   const famRows = ordered.map((f) => `<tr><td class="box"></td><td>Table ${tables[f.groupId]}</td><td>${e(f.name)}</td><td>${f.size || f.members.length || ""}</td></tr>`).join("");
   return `<!doctype html>
@@ -325,7 +325,7 @@ Reprint only the pages the app lists under Reprint. Rounds already finished neve
 </section>
 <section>
 <h2>Check-in: alumni</h2>
-<table><tr><th></th><th>Host table</th>${named ? "<th>Alum</th>" : ""}<th>Round 1</th></tr>${hostRows}</table>
+<table><tr><th></th>${named ? "<th>Alum</th><th>Topic</th>" : "<th>Alum</th>"}<th>Round 1</th></tr>${hostRows}</table>
 <h2>Check-in: fams</h2>
 <table><tr><th></th><th>Table</th><th>Fam</th><th>Students</th></tr>${famRows}</table>
 </section>

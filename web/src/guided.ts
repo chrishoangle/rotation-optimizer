@@ -7,7 +7,7 @@
 import { h, openPage, readFile, replace } from "./dom";
 import {
   EventState, FAM_COLUMNS, HOST_COLUMNS, applySpelling, checkInputs, famLocations, hasStarted, isCurrent, loadEvent, maxRounds,
-  nearMisses, newEvent, normalizeState, normalizeTable,
+  nearMisses, newEvent, normalizeState, normalizeTable, stepFreeFams,
 } from "./event";
 import { explainPairing, sharedPairings } from "./explain";
 import { hostCardsHtml, runSheetHtml, seatingChartHtml, tableNumbers, tableTentsHtml } from "./export";
@@ -99,7 +99,7 @@ function header(): HTMLElement {
   return h("header", { className: "g-head" },
     h("div", { className: "g-top" },
       h("strong", { className: "g-title" }, step >= 0 ? s.title || "Your event" : "Rotation Optimizer"),
-      h("span", { className: "g-saved", title: "Everything is saved in this browser as you work." }, ctx.inPractice() ? "Practice: nothing is kept" : "Saved"),
+      ctx.inPractice() || step >= 0 ? h("span", { className: "g-saved", title: "Everything is saved in this browser as you work." }, ctx.inPractice() ? "Practice: nothing is kept" : "Saved") : null,
       h("div", { className: "g-more" },
         h("button", { className: "button small", "aria-expanded": more ? "true" : "false", onclick: () => { more = !more; render(); } }, "More"),
         more ? h("div", { className: "g-menu", role: "menu" },
@@ -266,7 +266,7 @@ function field(label: string, input: HTMLElement, help?: string): HTMLElement {
 interface Col { key: string; label: string; placeholder: string; wide?: boolean }
 
 const ALUMNI: Col[] = [
-  { key: "host_name", label: "Alum's name", placeholder: "Alum A" },
+  { key: "host_name", label: "Alum's name", placeholder: "e.g. Sam Rivera" },
   { key: "table_label", label: "Topic (optional)", placeholder: "e.g. Pharmacy" },
   { key: "tags", label: "Can talk about", placeholder: "pharmacy; healthcare; business", wide: true },
 ];
@@ -579,7 +579,7 @@ function gridView(p: EventPlan, current: boolean): HTMLElement {
     h("button", { className: "g-name", disabled: !can, "aria-pressed": isPicked ? "true" : "false", onclick: () => tapCell(p, r, famId) }, label),
     host && host.person && host.person !== host.name ? h("span", { className: "g-sub" }, host.name) : null,
     a && a.score === 0 ? h("span", { className: "g-sub warn-text" }, "nothing in common") : null,
-    h("button", { className: "g-why", title: "Why this pairing?", "aria-label": `Why ${label} at ${famId}`, onclick: () => { why = why?.round === r && why.famId === famId ? null : { round: r, famId }; render(); } }, "?"));
+    h("button", { className: "g-why", title: "Why this pairing?", "aria-label": `Why ${label} at ${p.fams.find((f) => f.groupId === famId)!.name} in round ${r}`, onclick: () => { why = why?.round === r && why.famId === famId ? null : { round: r, famId }; render(); } }, "?"));
     if (can) {
       td.addEventListener("dragstart", (e) => { picked = { round: r, famId }; (e as DragEvent).dataTransfer?.setData("text/plain", famId); });
       td.addEventListener("dragover", (e) => { if (picked?.round === r) e.preventDefault(); });
@@ -603,6 +603,7 @@ function gridView(p: EventPlan, current: boolean): HTMLElement {
 async function tapCell(p: EventPlan, r: number, famId: string): Promise<void> {
   if (!picked || picked.round !== r) { picked = { round: r, famId }; render(); return; }
   if (picked.famId === famId) { picked = null; render(); return; }
+  const picked0 = picked.famId;
   const s = ev();
   const rulesBefore = structuredClone(s.rules);
   const a = p.assignments.find((x) => x.round === r && x.groupId === picked!.famId);
@@ -622,10 +623,30 @@ async function tapCell(p: EventPlan, r: number, famId: string): Promise<void> {
     // The swap broke a setting: put everything back as it was.
     s.rules = rulesBefore;
     ctx.persist();
-    message = ["error", "That move doesn't fit: it would break someone's settings (arrival time, can't use stairs, stays at one table, must or never meet) or make a fam meet the same alum twice. Nothing was changed."];
+    const moves: [string, string][] = [];
+    if (a) moves.push([a.hostId, famId]);
+    if (b) moves.push([b.hostId, picked0]);
+    message = ["error", `${refusal(p, r, moves)} Nothing was changed.`];
     changed = [];
     render();
   }
+}
+
+/** Why a hand move was refused, naming the setting when one alum's settings rule it out. */
+function refusal(p: EventPlan, r: number, moves: [string, string][]): string {
+  const s = ev();
+  const free = new Set(stepFreeFams(s));
+  for (const [hostId, famId] of moves) {
+    const host = p.hosts.find((x) => x.hostId === hostId)!;
+    const fam = p.fams.find((f) => f.groupId === famId)!;
+    const who = host.person || host.name;
+    const x = hostSettings(s, hostId);
+    if (r < x.from || r > x.until) return `${who} isn't there in round ${r}.`;
+    if (x.stepFree && !free.has(famId)) return `${who} can't use stairs, and ${fam.name}'s table isn't step-free.`;
+    if (x.stays) return `${who} stays at one table all night.`;
+    if (x.never.some((n) => n.toLowerCase() === fam.name.toLowerCase())) return `${who} is set to never meet ${fam.name}.`;
+  }
+  return "That move doesn't fit: no schedule keeps everyone's settings (arrival time, stairs, must or never meet) with it while no fam meets the same alum twice.";
 }
 
 function whyBox(p: EventPlan): HTMLElement {
@@ -638,10 +659,13 @@ function whyBox(p: EventPlan): HTMLElement {
     return !(m && limited(m[1]));
   });
   const fam = p.fams.find((f) => f.groupId === why!.famId)!;
+  const seated = p.assignments.find((a) => a.round === why!.round && a.groupId === why!.famId)?.hostId;
+  const stepFree = stepFreeFams(s).includes(why!.famId);
   const reasons: string[] = [];
   for (const r of s.rules) {
     const who = s.hosts.find((x) => (x.table_label ?? "").toLowerCase() === (r.host_table ?? "").toLowerCase());
-    if (!who) continue;
+    if (!who || who.host_id === seated) continue;
+    if (r.rule === "needs step-free" && stepFree) continue;
     const name = who.host_name || who.table_label;
     const shares = (who.tags ?? "").toLowerCase().split(/[;,]/).map((t) => t.trim()).some((t) => t && fam.interests.includes(t));
     if (!shares) continue;
@@ -664,8 +688,12 @@ function thingsToLookAt(p: EventPlan): HTMLElement[] {
     out.push(h("div", { className: "g-item" }, `${m.spellings.join(" and ")} look like the same interest, but only exact words match.`,
       h("button", { className: "button small primary", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)));
   }
-  for (const w of p.warnings.filter((x) => x.startsWith("Fairness check"))) {
-    out.push(h("div", { className: "g-item" }, warningWords(w), h("span", { className: "help" }, " To fix it, tap a name in the grid and swap in an alum who shares an interest.")));
+  const fair = p.warnings.filter((x) => x.startsWith("Fairness check"));
+  const shared = (w: string) => warningWords(w).match(/ There are more fams than .+$/)?.[0] ?? "";
+  for (const w of fair) out.push(h("div", { className: "g-item" }, warningWords(w).replace(shared(w), "")));
+  if (fair.length) {
+    const why = fair.map(shared).find((x) => x);
+    out.push(h("p", { className: "help" }, why ? why.trim() : "To fix it, tap a name in the grid and swap in an alum who shares an interest."));
   }
   for (const w of p.warnings.filter((x) => x.startsWith("Host tags that no fam lists") || x.startsWith("Fam interests that no host lists"))) {
     out.push(h("div", { className: "g-item" }, warningWords(w),
@@ -744,7 +772,7 @@ function nextYearPage(): HTMLElement {
         if (!sure) { sure = true; render(); return; }
         sure = false; ctx.removeStudentNames(); say("ok", "Student names removed."); render();
       } }, sure ? "Yes, delete student names from this event" : "Delete student names from this event")),
-    h("p", { className: "help" }, "The hand-off folder already leaves out student names and the night's changes; it keeps alumni, fams, interests, settings, and your notes. Deleting names here is for after the event, if your office asks you not to keep them."),
+    h("p", { className: "help" }, "The hand-off folder's event file leaves out student names, this year's arrival times, cancellations, and schedules, and puts moved tables back where they were planned. It keeps alumni, fams, interests, lasting settings, and your notes; its README also lists what happened on the night, for context. Deleting names here is for after the event, if your office asks you not to keep them."),
     nav(5, null, () => undefined));
 }
 

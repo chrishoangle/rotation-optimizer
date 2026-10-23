@@ -92,7 +92,8 @@ def start_round_1(p) -> None:
     """Start the event in night mode, past the room setup warning."""
     if button(p, "Start anyway").count():
         button(p, "Start anyway").click()
-    button(p, "Start round 1").click()
+    else:
+        button(p, "Start round 1").click()
     p.wait_for_selector("text=minutes left")
 
 
@@ -323,7 +324,7 @@ def test_night_mode_check_in_no_show_and_late_alum(page):
     p.get_by_label("Where is").fill("alum k")
     assert "Round 2: Table" in p.inner_text("#where-results")
     start_round_1(p)
-    button(p, "Round 1 is finished: hosts move now").click()
+    button(p, "End round 1: alumni move to round 2").click()
     assert "Moving to round 2 of 2" in text(p)
     tool(p, "What happened tonight")
     log = text(p)
@@ -465,7 +466,7 @@ def test_room_setup_a_fam_at_the_wrong_table_and_a_late_alum(page):
     button(p, "Update the schedule").click()
     p.wait_for_selector("text=What to tell people")
     start_round_1(p)
-    button(p, "Round 1 is finished: hosts move now").click()
+    button(p, "End round 1: alumni move to round 2").click()
     button(p, "A missing alum arrived").click()
     p.locator(".changed .checkin li").first.get_by_role("button", name="They're here").click()
     p.locator(".changed").get_by_role("button", name="Add them back").click()
@@ -501,7 +502,7 @@ def test_rounds_on_a_clock_with_moves_ticked_and_changes_passed_on(page):
     first = p.locator(".panel.tell .told-list li").first
     first.get_by_role("button", name="Not told").click()
     assert p.locator(".panel.tell .told-list li").first.get_by_role("button", name="Told").count() == 1
-    button(p, "Round 1 is finished: hosts move now").click()
+    button(p, "End round 1: alumni move to round 2").click()
     p.wait_for_selector("text=Moving to round 2 of 3")
     moving = p.locator(".moves li")
     n = moving.count()
@@ -546,9 +547,9 @@ def test_volunteer_qr_view_students_runner_sheets_and_wrap_up(page):
     assert "Round 2:" in v.inner_text("body")
     v.close()
     start_round_1(p)
-    button(p, "Round 1 is finished: hosts move now").click()
+    button(p, "End round 1: alumni move to round 2").click()
     button(p, "Start round 2").click()
-    button(p, "Round 2 is finished: the event is over").click()
+    button(p, "End round 2: the event is over").click()
     p.wait_for_selector("text=what would you change next year?")
     p.get_by_label("What would you change next year?").fill("Start check-in 15 minutes earlier.")
     button(p, "Save to notes for next year").click()

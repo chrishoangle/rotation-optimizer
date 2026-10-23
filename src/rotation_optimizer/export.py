@@ -17,7 +17,7 @@ import io
 import math
 import re
 
-from .planning import FAM_ABSENT, NO_HOST, EventPlan
+from .planning import FAM_ABSENT, NO_HOST, EventPlan, host_label
 
 _BASE_CSS = """
 @page { size: letter; margin: 0.5in; }
@@ -111,7 +111,7 @@ def seating_chart_html(
     e = html.escape
     rows = schedule_rows(plan)
     where = {f.name: (locations or {}).get(f.group_id, "") for f in plan.fams}
-    hosts = {h.host_id: h.name for h in plan.hosts}
+    hosts = {h.host_id: host_label(h) for h in plan.hosts}
     person = {h.name: h.person for h in plan.hosts if h.person and h.person != h.name}
     sections = []
     stamp = _stamp(updated)
@@ -351,9 +351,9 @@ def run_sheet_html(
     for r in range(1, plan.rounds + 1):
         notes = []
         idle = [h for h in hosts if (h, r) not in by_host]
-        out = [hosts[h].name for h in idle if r in plan.host_away.get(h, [])]
-        limited = [hosts[h].name for h in idle if r in plan.host_limits.get(h, []) and r not in plan.host_away.get(h, [])]
-        breaks = [hosts[h].name for h in idle if r not in plan.host_away.get(h, []) and r not in plan.host_limits.get(h, [])]
+        out = [host_label(hosts[h]) for h in idle if r in plan.host_away.get(h, [])]
+        limited = [host_label(hosts[h]) for h in idle if r in plan.host_limits.get(h, []) and r not in plan.host_away.get(h, [])]
+        breaks = [host_label(hosts[h]) for h in idle if r not in plan.host_away.get(h, []) and r not in plan.host_limits.get(h, [])]
         open_tables = [str(tables[f.group_id]) for f in sorted(plan.fams, key=lambda f: tables[f.group_id])
                        if not any(a.round_number == r and a.group_id == f.group_id for a in plan.assignments)
                        and r not in plan.fam_away.get(f.group_id, [])]
@@ -378,7 +378,7 @@ def run_sheet_html(
     timeline = "".join(f'<tr><td class="time">{when(m)}</td><td class="what">{e(what)}</td><td>{e(say)}</td></tr>' for m, what, say in steps)
     named = any(h.person for h in plan.hosts)
     host_rows = "".join(
-        f'<tr><td class="box"></td><td>{e(h.name)}</td>' + (f"<td>{e(h.person)}</td>" if named else "")
+        '<tr><td class="box"></td>' + (f"<td>{e(h.person)}</td>" if named else "") + f"<td>{e(h.name)}</td>"
         + f'<td>{_first_table(plan, h.host_id, tables, by_host)}</td></tr>'
         for h in plan.hosts
     )
@@ -411,7 +411,7 @@ Reprint only the pages the app lists under Reprint. Rounds already finished neve
 </section>
 <section>
 <h2>Check-in: alumni</h2>
-<table><tr><th></th><th>Host table</th>{"<th>Alum</th>" if named else ""}<th>Round 1</th></tr>{host_rows}</table>
+<table><tr><th></th>{"<th>Alum</th><th>Topic</th>" if named else "<th>Alum</th>"}<th>Round 1</th></tr>{host_rows}</table>
 <h2>Check-in: fams</h2>
 <table><tr><th></th><th>Table</th><th>Fam</th><th>Students</th></tr>{fam_rows}</table>
 </section>

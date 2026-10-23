@@ -1415,17 +1415,18 @@ function roundSection(p: EventPlan): HTMLElement {
       ? h("div", { className: "msg warn" }, `Room setup is not finished: ${setupLeft.length > 2 ? `${setupLeft.length} tables` : setupLeft.join(" and ")} not checked yet.`,
         h("div", { className: "row" },
           h("button", { className: "button", onclick: () => { nightOpen.set("room", true); nightRefresh(); document.querySelector('[data-panel="room"]')?.scrollIntoView({ block: "start" }); } }, "Check the tables"),
-          h("button", { className: "button primary", onclick: () => { night.startAnyway = true; nightRefresh(); } }, "Start anyway")))
+          h("button", { className: "button primary", onclick: start }, "Start anyway")))
       : h("button", { className: "button primary big wide", onclick: start }, "Start round 1");
   } else if (st.phase === "moving") {
     action = h("button", { className: "button primary big wide", onclick: start }, `Start round ${r}`);
   } else if (st.phase === "during") {
     action = h("button", { className: "button primary big wide", onclick: () => {
       endRound(ev, r, nowMinutes());
+      night.showNext = false;
       if (r < p.rounds) { finishRound(ev, now()); night.justFinished = ev.finished; }
       else logChange(ev, now(), `Round ${r} finished. The event is over.`);
       nightRefresh();
-    } }, r < p.rounds ? `Round ${r} is finished: hosts move now` : `Round ${r} is finished: the event is over`);
+    } }, r < p.rounds ? `End round ${r}: alumni move to round ${r + 1}` : `End round ${r}: the event is over`);
   } else {
     action = h("p", {}, "The event is over. Thank the hosts and the fams.");
   }
@@ -1618,11 +1619,11 @@ function renderNightMode(): void {
         night.lateJoin === r.host_id ? lateRow(r.host_id) : null);
     }),
     noShows.map((r) => h("li", { className: "noshow" },
-      h("span", { className: "tag-out" }, "Didn't show"),
+      h("span", { className: "tag-out" }, (ev.cancelHosts[r.host_id] ?? 1) > 1 ? `Left after round ${ev.cancelHosts[r.host_id] - 1}` : "Didn't show"),
       h("span", {}, hostLabelRow(r.host_id)),
-      h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "Arrived late"),
+      h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, (ev.cancelHosts[r.host_id] ?? 1) > 1 ? "Came back" : "Arrived late"),
       night.lateJoin === r.host_id ? lateRow(r.host_id) : null))),
-    missing.length && ev.finished === 0 ? h("p", { className: "help" }, `${missing.length} not here yet. If someone doesn't come, tap Didn't show next to their name, then Re-plan now.`) : null,
+    missing.length && ev.finished === 0 ? h("p", { className: "help" }, `${missing.length} not here yet. If someone doesn't come, tap Didn't show next to their name, then Update the schedule.`) : null,
     h("p", { className: "help" }, "A student who walks in just joins a fam: nothing to change here."));
 
   // Someone has to leave.
@@ -1765,7 +1766,10 @@ function renderNightMode(): void {
     h("section", { className: "tools" }, h("span", { className: "help" }, "Tools: "), TOOLS.map(([key, label]) =>
       h("button", { className: `button small ${nightOpen.get(key) ? "primary" : ""}`, "aria-expanded": nightOpen.get(key) ? "true" : "false",
         onclick: () => {
-          nightOpen.set(key, !nightOpen.get(key));
+          // One tool at a time, so the page stays short on a phone.
+          const open = !nightOpen.get(key);
+          for (const [k] of TOOLS) nightOpen.set(k, false);
+          nightOpen.set(key, open);
           nightRefresh();
           if (nightOpen.get(key)) document.querySelector(`[data-tool="${key}"]`)?.scrollIntoView({ block: "start" });
         } }, label))),
@@ -1790,8 +1794,8 @@ const START_HERE = [
   "**3. Find the schedule.** Click **Find the best schedule**. Read any warnings, and the **Before the night** checklist under the schedule.",
   "**4. Print.** Open and print the **seating chart**, **host cards**, **table tents**, and **run sheet** on US Letter. Then click **Mark as printed**.",
   "**5. Save.** Your work is kept in this browser as you go. Click **Save event file** in the sidebar too, and keep the file: it is the copy you can move to another computer or share. Open it again with **Open a saved event file**.",
-  "**6. On the night.** Click **Open night mode** (under the schedule). It works on a phone: check the room setup, check people in, start and finish each round, and see who is where. When someone cancels, doesn't show, arrives late, or sits at the wrong table, tap it there, then **Re-plan now**. It tells you who to send where and which pages to reprint, and a QR code shows volunteers the schedule on their phones.",
-  "**7. Next year.** Click **Hand off to next year** for a copy without student names or the night's changes.",
+  "**6. On the night.** Click **Open night mode** (under the schedule). It works on a phone: check the room setup, check people in, start and finish each round, and see who is where. When someone cancels, doesn't show, arrives late, or sits at the wrong table, tap it under **Something changed?**, then **Update the schedule**. It tells you who to send where and which pages to reprint, and a QR code shows volunteers the schedule on their phones.",
+  "**7. Next year.** Click **Hand off to next year** for a copy without student names, cancellations, or schedules. The README lists what happened on the night.",
 ];
 
 const GLOSSARY: [string, string][] = [

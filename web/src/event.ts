@@ -49,6 +49,7 @@ export interface NightState {
   famArrived?: Record<string, number>; // students arrived per fam id
   wrapUp?: boolean; // the wrap-up question was answered or dismissed
   date?: string; // the event's date, "2026-11-14", so lateness is only shown on the day
+  tablesBefore?: Record<string, { table_number: string; location: string; step_free: string }>; // fam rows before a move on the night
 }
 
 export function newEvent(p: Partial<EventState> = {}): EventState {
@@ -389,7 +390,9 @@ function lasts(r: CleanRow): boolean {
 
 export function handoffEvent(s: EventState): EventState {
   return newEvent({
-    title: s.title, rounds: s.rounds, hosts: structuredClone(s.hosts), fams: s.fams.map((r) => ({ ...r, students: "" })),
+    title: s.title, rounds: s.rounds, hosts: structuredClone(s.hosts),
+    // Tables moved on the night go back to where they were planned.
+    fams: s.fams.map((r) => ({ ...r, ...(s.night.tablesBefore?.[r.fam_id] ?? {}), students: "" })),
     rules: structuredClone(s.rules.filter(lasts)), oneWeakRound: s.oneWeakRound, startTime: s.startTime, roundMinutes: s.roundMinutes,
     notes: s.notes,
   });

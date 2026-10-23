@@ -32,7 +32,7 @@ export function explainPairing(p: EventPlan, round: number, famId: string): Expl
   } else if (has(p.famAway, famId, round)) {
     lines.push(`${fam.name} is cancelled from round ${round}.`);
   } else {
-    lines.push(`${fam.name} has no host in round ${round}: there are more fams than host tables this round, and the open tables are shared out as evenly as possible.`);
+    lines.push(`${fam.name} has no host in round ${round}: there are more fams than host tables this round, so some fams wait a round.`);
   }
   if (!fam.interests.length) lines.push(`${fam.name} has no interests listed, so every host scores 0 with it. Add interests to get better matches.`);
   else {

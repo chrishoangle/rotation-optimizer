@@ -1,6 +1,6 @@
 import highsLoader from "highs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { isCurrent, newEvent, normalizeState, solveEvent } from "../src/event";
+import { handoffEvent, isCurrent, newEvent, normalizeState, solveEvent } from "../src/event";
 import { movesBetween } from "../src/moves";
 import { addLateHost, cancelHost, currentRound, finishRound, joinLate, moveFamTable, notArrived, setupMissing, toggleSetup, whereIs } from "../src/night";
 import type { HighsLike } from "../src/solver";
@@ -130,5 +130,17 @@ describe("night mode actions", () => {
     expect([s.fams[2].location, s.fams[2].step_free]).toEqual(["balcony", ""]);
     expect(moveFamTable(s, "fam_02", 9, "6:12 PM")).toBe("");
     expect([s.fams[1].table_number, s.fams[1].location]).toEqual(["9", ""]);
+  });
+
+  it("a moved fam can go back before a re-plan, and next year gets the planned tables", () => {
+    const s = dinner();
+    s.fams[0].location = "balcony";
+    expect(moveFamTable(s, "fam_01", 8, "6:10 PM")).toBe("");
+    expect(moveFamTable(s, "fam_01", 1, "6:11 PM")).toBe("");
+    expect(s.fams[0].table_number).toBe("1");
+    expect(moveFamTable(s, "fam_02", 3, "6:12 PM")).toBe("");
+    const next = handoffEvent(s);
+    expect(next.fams.map((r) => r.table_number)).toEqual(s.printed!.fams.map((f) => String(f.tableNumber || "")).map((t, i) => t || String(i + 1)));
+    expect(next.fams[0].location).toBe("balcony");
   });
 });

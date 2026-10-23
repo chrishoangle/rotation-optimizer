@@ -211,7 +211,7 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
     }
   }
   const mostAway = (away: Record<string, number[]>) => Math.max(0, ...range(rounds).map((r) => Object.values(away).filter((rs) => rs.includes(r)).length));
-  const n = Math.max(hosts.length + mostAway(famAway), fams.length + mostAway(hostAway));
+  let n = Math.max(hosts.length + mostAway(famAway), fams.length + mostAway(hostAway));
   if (rounds > n) {
     throw new InfeasibleProblemError(
       `With ${hosts.length} host tables and ${fams.length} fams, the most rounds without any fam meeting the same host twice is ${n}. ` +
@@ -221,6 +221,9 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
   const hostIds = new Set(hosts.map((h) => h.hostId));
   const famIds = new Set(fams.map((f) => f.groupId));
   const reachable = new Set(o.stepFreeFams ?? []);
+  // A host who needs a step-free table can visit each step-free fam only once,
+  // so with fewer such fams than rounds they must sit some rounds out.
+  n += stepFreeBreaks(rules, fams, rounds, hostAway, locked, reachable);
   for (const a of rules) {
     if (a.kind === "access" && ![...famIds].some((f) => reachable.has(f))) {
       throw new RuleConflictError(`${hosts.find((x) => x.hostId === a.hostId)!.name} needs a step-free table, but no fam table is marked as step-free. Mark the tables with step-free access in the fams table.`);
@@ -278,6 +281,19 @@ export function planEvent(highs: HighsLike, hosts: Host[], fams: GuestGroup[], r
     hostAway: cancelled, hostLimits, famAway, lockedRounds: [...lockedRounds].sort((a, b) => a - b),
     objectiveValue: result.objectiveValue, keptSlots: result.keptSlots,
   };
+}
+
+/** How many hosts that need a step-free table cannot host every round they are here. */
+function stepFreeBreaks(rules: Rule[], fams: GuestGroup[], rounds: number, hostAway: Record<string, number[]>, locked: [number, string, string][], reachable: Set<string>): number {
+  const can = fams.map((f) => f.groupId).filter((f) => reachable.has(f));
+  const done = new Set(locked.map(([r]) => r));
+  let short = 0;
+  for (const h of new Set(rules.filter((x) => x.kind === "access").map((x) => x.hostId))) {
+    const met = new Set(locked.filter(([, x]) => x === h).map(([, , f]) => f));
+    const here = range(rounds).filter((r) => !done.has(r) && !(hostAway[h] ?? []).includes(r));
+    if (here.length > can.filter((f) => !met.has(f)).length) short++;
+  }
+  return short;
 }
 
 function explainConflict(
@@ -349,7 +365,7 @@ function roundsWords(rounds: number[]): string {
 }
 
 export const OPEN_TABLES_SHARED =
-  "There are more fams than host tables, so the open tables are already shared out as evenly as possible. Add a host table to fix this.";
+  "There are more fams than host tables, so some fams wait a round without a host. Add another host table to fix this.";
 
 /** Host tables that are there for at least one round but never get a fam. */
 export function hostWarnings(hosts: Host[], real: Assignment[], rounds: number, hostAway: Record<string, number[]>): string[] {

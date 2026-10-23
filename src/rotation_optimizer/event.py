@@ -490,11 +490,13 @@ def handoff_event(state: EventState) -> EventState:
     Keeps the event name, rounds, host tables (names, alums, tags), fam
     names, sizes, and interests, the rules that last (never meet, must meet
     in any round, stays with, needs step-free), settings, and the notes for
-    next year. Drops this year's arrival times ("only in rounds"), rules
+    next year, with tables moved on the night put back as planned. Drops this year's arrival times ("only in rounds"), rules
     tied to one round, and moves made by hand in the schedule. Clears student names, cancellations, finished rounds, check-in,
     the night's log, and every schedule.
     """
-    fams = [{**r, "students": ""} for r in state.fams]
+    # Tables moved on the night go back to where they were planned.
+    before = (state.night or {}).get("tablesBefore") or {}
+    fams = [{**r, **before.get(r.get("fam_id", ""), {}), "students": ""} for r in state.fams]
     return EventState(
         title=state.title,
         rounds=state.rounds,
