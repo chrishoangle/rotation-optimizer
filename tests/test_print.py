@@ -101,9 +101,11 @@ def _named_plan():
     return solve_event(s)
 
 
-def test_host_card_shows_the_host_name():
+def test_host_card_leads_with_the_alum_name():
+    # People first: the alum's name is the headline, their field the small line.
     page = host_cards_html(_named_plan(), host_ids=["h02"])
-    assert '<div class="person">Host B</div>' in page
+    assert "<h2>Host B</h2>" in page
+    assert '<div class="person">' in page
 
 
 def test_host_card_lists_shared_interests_first():

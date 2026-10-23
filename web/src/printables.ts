@@ -40,10 +40,10 @@ ${body}
 /** Two pages: planning in steps, then "on the night, if this happens, do this". */
 export function coordinatorGuideHtml(title: string): string {
   const ifs: [string, string][] = [
-    ["An alum doesn't show up, or has to leave", "Run the event, Someone changed?, An alum left or didn't come. Choose them and the first round they miss, then Re-plan. Tell the people listed."],
-    ["An alum arrives late, or someone new comes", "Someone changed?, An alum arrived. Choose them, or Someone not on the list, and the round they start, then Re-plan."],
-    ["Students sit at the wrong table", "Don't move the students. Someone changed?, A fam is at another table: type the number they are at, then Re-plan. The alumni come to them."],
-    ["A whole fam leaves", "Someone changed?, A fam left, then Re-plan."],
+    ["An alum doesn't show up, or has to leave", "Run, Someone changed?, An alum left or didn't come. Choose them and the first round they miss, then Work out who moves. Tell the people listed."],
+    ["An alum arrives late, or someone new comes", "Someone changed?, An alum arrived late, or someone new came. Choose them, or Someone not on the list, and the round they start."],
+    ["Students sit at the wrong table", "Don't move the students. Someone changed?, A fam is sitting at a different table: type the number they are at. The alumni come to them."],
+    ["A whole fam leaves", "Someone changed?, A whole fam left."],
     ["A student walks in", "Nothing to change: they join any fam with space."],
     ["The laptop or wifi dies", "Run the night from the printed seating chart. The app also works offline on any device that opened it before."],
   ];
@@ -52,15 +52,15 @@ export function coordinatorGuideHtml(title: string): string {
 <p class="meta">Rotation Dinner, ${e(APP_URL)}. Students stay at their table all night; alumni move each round.</p>
 <h2>Before the night</h2>
 <ol>
-<li><strong>Your lists.</strong> Paste your alumni (name, then what they can talk about) and your fams (name, then interests) from your spreadsheet. Note anyone arriving late or who can't use stairs.</li>
-<li><strong>Schedule.</strong> Make the schedule. To swap two alumni, tap one, then another in the same round.</li>
-<li><strong>Print.</strong> Print everything: seating chart, host cards, table numbers, and run sheet in one file.</li>
+<li><strong>Set up.</strong> Paste your alumni (name, then what they can talk about) and your fams (name, then interests) from your spreadsheet. Anyone arriving late or who can't use stairs goes under More options.</li>
+<li><strong>Schedule.</strong> Make the schedule and read it as a room plan. To swap two alumni, tap Adjust, then tap one and another in the same round.</li>
+<li><strong>Print.</strong> Print everything: room chart, alumni cards, table numbers, and run sheet in one file.</li>
 </ol>
 <h2>On the night: if this happens, do this</h2>
-<p>Open <strong>Run the event</strong> on your phone. Tap <strong>Start round 1</strong>, and <strong>End round</strong> when each round ends. When something changes, tap <strong>Someone changed?</strong>; the app re-plans and lists exactly who to tell.</p>
+<p>Open <strong>Run</strong> on your phone. Tap <strong>Start round 1</strong>, and <strong>End round</strong> when each round ends. When something changes, tap <strong>Someone changed?</strong>; the app works out who moves and lists exactly who to tell.</p>
 ${ifs.map(([when, what]) => `<div class="if"><strong>${e(when)}</strong>${e(what)}</div>`).join("\n")}
 <h2>After the night</h2>
-<p>Choose Save for next year, jot what you'd change, and pass the folder on.</p>
+<p>Choose Wrap up, jot what you'd change, then Save for next year and pass the file on.</p>
 `);
 }
 

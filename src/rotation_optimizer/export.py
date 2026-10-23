@@ -120,8 +120,9 @@ def seating_chart_html(
             f'<div class="card"><div class="num">Table {row["table"]}</div><div class="fam">{e(row["fam"])}</div>'
             + (f'<div class="loc">{e(where[row["fam"]])}</div>' if where.get(row["fam"]) else "")
             + f'<div class="host{"" if row["score"] or row["host_table"] not in (NO_HOST, FAM_ABSENT) else " open"}">'
-            f'{e(str(row["host_table"]))}</div>'
-            + (f'<div class="who">{e(person[row["host_table"]])}</div>' if row["host_table"] in person else "")
+            # People first: the alum's name is the headline, their topic the small line.
+            f'{e(person.get(row["host_table"], str(row["host_table"])))}</div>'
+            + (f'<div class="who">{e(str(row["host_table"]))}</div>' if row["host_table"] in person else "")
             + '</div>'
             for row in rows if row["round"] == r
         )
@@ -211,8 +212,8 @@ def host_cards_html(
                 lines.append(f'<tr><td class="r">Round {r}</td><td class="t"></td><td><div class="fam">No table this round</div>'
                              '<div class="pts">More hosts than fams this round. Please wait near the front for the next round.</div></td></tr>')
         cards.append(
-            f'<article class="hc{" full" if _card_inches(h, lines) > 4.9 else ""}"><div class="head">{_stamp(updated)}<span class="lbl">Host table</span><h2>{e(h.name)}</h2>'
-            + (f'<div class="person">{e(h.person)}</div>' if h.person and h.person != h.name else "")
+            f'<article class="hc{" full" if _card_inches(h, lines) > 4.9 else ""}"><div class="head">{_stamp(updated)}<span class="lbl">Your tables tonight</span><h2>{e(h.person or h.name)}</h2>'
+            + (f'<div class="person">{e(h.name)}</div>' if h.person and h.person != h.name else "")
             + "</div>"
             f'<table>{"".join(lines)}</table><p class="foot">{e(title)}. Move when the MC calls the round.</p></article>'
         )
@@ -408,7 +409,7 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 <h2>MC timeline</h2>
 <table>{timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app, open Run the event, tap Someone changed?, then Re-plan.
+<p class="help">In the app, open Run, tap Someone changed?, and say what happened.
 Tell the people it lists, and hand out change slips if you print them. Rounds already finished never change.</p>
 </section>
 <section>

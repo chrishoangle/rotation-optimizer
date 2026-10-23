@@ -90,8 +90,9 @@ export function seatingChartHtml(
       `<div class="card"><div class="num">Table ${row.table}</div><div class="fam">${e(row.fam)}</div>` +
       (where[row.fam] ? `<div class="loc">${e(where[row.fam])}</div>` : "") +
       `<div class="host${row.score || ![NO_HOST, FAM_ABSENT].includes(row.host_table) ? "" : " open"}">` +
-      `${e(String(row.host_table))}</div>` +
-      (person[String(row.host_table)] ? `<div class="who">${e(person[String(row.host_table)])}</div>` : "") + "</div>").join("");
+      // People first: the alum's name is the headline, their topic the small line.
+      `${e(person[String(row.host_table)] ?? String(row.host_table))}</div>` +
+      (person[String(row.host_table)] ? `<div class="who">${e(String(row.host_table))}</div>` : "") + "</div>").join("");
     const breaks = Object.entries(p.hostBreaks).filter(([h, rs]) => rs.includes(r) && !has(p.hostAway, h, r) && !has(p.hostLimits, h, r)).map(([h]) => hosts[h]);
     const away = Object.entries(p.hostAway).filter(([, rs]) => rs.includes(r)).map(([h]) => hosts[h]);
     const limited = Object.entries(p.hostLimits).filter(([h, rs]) => rs.includes(r) && !has(p.hostAway, h, r)).map(([h]) => `${hosts[h]}: ${availabilityText(p, h)}`);
@@ -170,8 +171,8 @@ export function hostCardsHtml(
       }
     }
     cards.push(
-      `<article class="hc${cardInches(h.person, lines) > 4.9 ? " full" : ""}"><div class="head">${stamp(updated)}<span class="lbl">Host table</span><h2>${e(h.name)}</h2>` +
-      (h.person && h.person !== h.name ? `<div class="person">${e(h.person)}</div>` : "") + "</div>" +
+      `<article class="hc${cardInches(h.person, lines) > 4.9 ? " full" : ""}"><div class="head">${stamp(updated)}<span class="lbl">Your tables tonight</span><h2>${e(h.person || h.name)}</h2>` +
+      (h.person && h.person !== h.name ? `<div class="person">${e(h.name)}</div>` : "") + "</div>" +
       `<table>${lines.join("")}</table><p class="foot">${e(title)}. Move when the MC calls the round.</p></article>`,
     );
   }
@@ -321,7 +322,7 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 <h2>MC timeline</h2>
 <table>${timeline}</table>
 <h2>If someone cancels during the night</h2>
-<p class="help">In the app, open Run the event, tap Someone changed?, then Re-plan.
+<p class="help">In the app, open Run, tap Someone changed?, and say what happened.
 Tell the people it lists, and hand out change slips if you print them. Rounds already finished never change.</p>
 </section>
 <section>
