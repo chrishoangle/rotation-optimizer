@@ -86,3 +86,34 @@ export function careerWords(text: string): string[] {
   for (const [re, words] of CAREERS) if (re.test(text ?? "")) for (const w of words) if (!out.includes(w)) out.push(w);
   return out;
 }
+
+/**
+ * Close interests an alum's work implies, for words typed plainly in a list:
+ * an alum in "medicine" can talk to a "biology" or "pre-med" fam. Added to the
+ * alum's own interests when a list is read in, where the coordinator can see
+ * and remove them, so matching itself still counts identical words only.
+ */
+const CLOSE: [RegExp, string[]][] = [
+  [/^(medicine|pre-?med|doctor|physician|health ?care|nursing|dentistry|public health)$/, ["medicine", "biology", "pre-med"]],
+  [/^pharm(acy|acist)?$/, ["pharmacy", "chemistry", "biology", "pre-med"]],
+  [/^(engineering|mechanical engineering|electrical engineering|civil engineering|aerospace( engineering)?)$/, ["engineering", "math", "physics"]],
+  [/^(computer science|cs|software|software engineering|tech)$/, ["computer science", "math", "data", "engineering"]],
+  [/^(data|data science|statistics|analytics)$/, ["data", "statistics", "math", "computer science"]],
+  [/^(law|legal|pre-?law)$/, ["law", "political science", "public affairs"]],
+  [/^(business|finance|consulting|marketing|accounting)$/, ["business", "economics"]],
+  [/^economics$/, ["economics", "business"]],
+  [/^(education|teaching)$/, ["education", "sociology", "psychology"]],
+  [/^(psychology|counseling|mental health)$/, ["psychology", "cognitive science", "sociology"]],
+  [/^(biology|biochemistry|chemistry)$/, ["pre-med"]],
+];
+
+/** The close words to add for these interests, each with the word that brought it: [["biology", "medicine"], …]. */
+export function closeWords(tags: string[]): [string, string][] {
+  const have = new Set(tags.map((t) => t.trim().toLowerCase()));
+  const out: [string, string][] = [];
+  for (const t of have) {
+    const hit = CLOSE.find(([re]) => re.test(t));
+    for (const w of hit ? hit[1] : []) if (!have.has(w) && !out.some(([x]) => x === w)) out.push([w, t]);
+  }
+  return out;
+}

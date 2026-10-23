@@ -523,3 +523,38 @@ def test_each_printout_opens_on_its_own_as_a_pdf(page):
     # Once every printout has been opened, the app counts the event as printed.
     assert "You are ready for the event." in words(p)
     assert p.locator(".c-opened-tag").count() == 0 or p.locator(".c-docs li.opened").count() == 4
+
+
+def test_a_first_dinner_explains_itself(page):
+    # Nothing is assumed about what a first-time coordinator has, close words count, every table says why,
+    # the schedule is done only once they say it looks good, and the night has one timeline.
+    p = page
+    p.get_by_text("Start a dinner").click()
+    assert p.locator('.c-have .c-chip[aria-pressed="true"]').count() == 0, "no choice is made for them"
+    button(p, "Next: your alumni").click()
+    p.get_by_label("Paste or type your alumni").fill("Ann Lee, medicine\nBo Kim, engineering\nCy Park, law")
+    button(p, "Add these").click()
+    assert "Close words count too: medicine also matches biology and pre-med" in words(p)
+    p.get_by_label("Paste or type your fams").fill("Fam 1, biology\nFam 2, math\nFam 3, political science")
+    button(p, "Add these").click()
+    p.locator('[data-k="bar-setup"]').click()
+    p.wait_for_selector(".c-room")
+    # Three rounds of three tables: each alum meets every fam once, and one round in three is their match.
+    assert "3 of 9 conversations share an interest" in words(p)
+    assert p.locator(".c-tile-why").count() == 3 and p.locator(".c-tile-why.good").count() >= 1
+    schedule = p.locator(".c-tab", has_text="Schedule")
+    assert "ready" in schedule.get_attribute("aria-label"), "made is not the same as checked"
+    button(p, "Looks good: print").click()
+    assert "done" in schedule.get_attribute("aria-label")
+    assert p.locator('[data-k="no-doors"]').count() == 1, "the run sheet's blank times are pointed out"
+
+    p.locator(".c-tab", has_text="Set up").click()
+    p.locator('[data-card="dinner"] .c-card-head').click()
+    p.locator('[data-k="change-times"]').click()
+    p.get_by_label("Doors open").fill("6:30 PM")
+    p.get_by_label("Doors open").press("Tab")
+    p.get_by_label("Open floor at the end").select_option("30")
+    line = p.inner_text(".c-timing")
+    assert "30 min open floor" in line and "6:30 PM to 8:" in line
+    p.locator(".c-tab", has_text="Print").click()
+    assert p.locator('[data-k="no-doors"]').count() == 0

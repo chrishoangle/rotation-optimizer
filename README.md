@@ -79,7 +79,7 @@ alum does adds their interests, with the emails dropped; or paste your alumni
 and fams as plain lists; a title row is skipped and said so; alumni who
 share a field host one table together as a pair, and any pair can be split or
 two alumni paired by hand), **Schedule** (the room drawn one round at a time,
-with each alum or pair at their table; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
+with each alum or pair at their table and the interest they share, or "No shared interest", on every table, and one line saying how many conversations share an interest; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
 "Something came up", which turns any change into a list of people to tell,
@@ -92,7 +92,7 @@ anything removed or replaced can be undone for a few seconds; on a phone the
 next action floats above the tabs and Back sits in the header. Set up first
 asks what you have; each paste box can show real example rows for the three
 things coordinators paste (a seating chart, an alumni list, one per line),
-what was read is shown as a small table to confirm or undo, and **Send to your phone** carries the
+what was read is shown as a small table to confirm or undo; alumni typed one per line also get close interests (medicine also matches biology and pre-med), said in the note and editable; one timeline (doors, round length, changeover, an open floor at the end) sets the run sheet and the night; and **Send to your phone** carries the
 dinner to your phone in a link, without student names. Special
 arrangements (late arrivals, stairs, must or never meet) sit under More
 options; file actions and the extra night tools (check-in, room setup, QR

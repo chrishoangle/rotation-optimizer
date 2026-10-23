@@ -929,3 +929,23 @@ main.coord.stage .c-button.primary { background: #2563eb; color: #fff; }
   .c-tab { position: relative; }
   .c-tab .c-mark { position: absolute; top: 4px; left: calc(50% + 6px); width: 14px; height: 14px; margin: 0; }
 }
+
+/* Why each alum sits at each table, on the tile itself. */
+.c-tile-why { font-size: var(--t-xs); color: var(--ink-soft); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-tile-why.good { color: var(--success-ink, var(--success)); }
+.c-tile-why.good::before { content: "\2713\00a0"; font-weight: 700; }
+
+/* v0.17: a quiet saved mark, the example never sits on top of the box's own words, the locked next step says why. */
+.c-saved::before { content: "\2713\00a0"; color: var(--success); font-weight: 700; }
+.c-paste.demoing::placeholder { color: transparent; }
+.c-bar-why { display: none; }
+.c-timing { margin: 4px 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--sunken); }
+.c-timing .c-fields { margin-bottom: 4px; }
+.c-help.warn { color: var(--warning); }
+@media (max-width: 700px) {
+  main.coord .c-top .c-saved { display: inline-flex; font-size: 0; }
+  main.coord .c-top .c-saved::before { font-size: 14px; }
+  .c-nextbar .c-button.big[disabled] { display: inline-flex; background: var(--surface); color: var(--ink-soft); border: 1px solid var(--hairline-strong); box-shadow: 0 8px 24px rgb(16 24 40 / 12%); opacity: 1; }
+  .c-nextbar .c-button.big[disabled] .c-bar-label, .c-nextbar .c-button.big[disabled] .c-icon { display: none; }
+  .c-nextbar .c-button.big[disabled] .c-bar-why { display: inline; font-weight: 500; }
+}

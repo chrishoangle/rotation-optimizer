@@ -25,6 +25,17 @@ function stamp(updated: string): string {
   return updated ? `<div class="stamp">Updated ${e(updated)}. Replaces the earlier copy.</div>` : "";
 }
 
+/** How many alumni, counting each person in a pair: "Ann Lee & Bo Kim" is two. */
+function people(p: EventPlan): number {
+  return p.hosts.reduce((n, h) => n + ((h.person || h.name).split(/\s*[&+]\s*/).filter((x) => x.trim()).length || 1), 0);
+}
+
+/** The alumni count as words, with the tables when pairs share one: "13 alumni at 10 tables". */
+function alumniWords(p: EventPlan): string {
+  const n = people(p), tables = p.hosts.length;
+  return `${n} ${n === 1 ? "alum" : "alumni"}` + (n !== tables ? ` at ${tables} table${tables !== 1 ? "s" : ""}` : "");
+}
+
 function counts(p: EventPlan): string {
   const part = (n: number, noun: string, gone: Record<string, number[]>, plural = "") => {
     let text = `${n} ${n === 1 ? noun : plural || noun + "s"}`;
@@ -32,7 +43,9 @@ function counts(p: EventPlan): string {
     if (lists.length) text += ` (${lists.length} cancelled from round ${Math.min(...lists.map((rs) => Math.min(...rs)))})`;
     return text;
   };
-  return part(p.fams.length, "fam", p.famAway) + ", " + part(p.hosts.length, "alum", p.hostAway, "alumni") + `, ${p.rounds} round${p.rounds !== 1 ? "s" : ""}.`;
+  const away = Object.values(p.hostAway);
+  const alumni = alumniWords(p) + (away.length ? ` (${away.length} cancelled from round ${Math.min(...away.map((rs) => Math.min(...rs)))})` : "");
+  return part(p.fams.length, "fam", p.famAway) + ", " + alumni + `, ${p.rounds} round${p.rounds !== 1 ? "s" : ""}.`;
 }
 
 export function tableNumbers(p: EventPlan): Record<string, number> {
@@ -269,7 +282,7 @@ function firstTable(p: EventPlan, hostId: string, tables: Record<string, number>
   return "No table";
 }
 
-export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", roundMinutes = 20, welcomeMinutes = 10, switchMinutes = 5): string {
+export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", roundMinutes = 20, welcomeMinutes = 10, switchMinutes = 5, openMinutes = 0): string {
   const tables = tableNumbers(p);
   const byHost = new Map(p.assignments.map((a) => [`${a.hostId}\u0000${a.round}`, a.groupId]));
   const ordered = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
@@ -293,6 +306,10 @@ export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", 
       : `Thank your table. Alumni, move to the table on your card for round ${r}.`;
     steps.push([t, `Round ${r}`, [say, ...notes].join(" ")]);
     t += roundMinutes + (r < p.rounds ? switchMinutes : 0);
+  }
+  if (openMinutes) {
+    steps.push([t, "Open floor", "Open floor. Alumni and fams mix freely; nobody needs to move tables."]);
+    t += openMinutes;
   }
   steps.push([t, "Closing", "Thank the alumni and the fams. Collect the table numbers and alumni cards."]);
   const when = (m: number) => { const c = clock(startTime, m); return c ? e(c) : '<span class="blank"></span>'; };
@@ -318,7 +335,7 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 </style></head><body>
 <section>
 <h1>${e(title)}: run sheet</h1>
-<p class="meta">${p.rounds} rounds, ${p.hosts.length} alumni, ${p.fams.length} fams.</p>
+<p class="meta">${p.rounds} rounds, ${alumniWords(p)}, ${p.fams.length} fams.</p>
 <h2>MC timeline</h2>
 <table>${timeline}</table>
 <h2>If someone cancels during the night</h2>

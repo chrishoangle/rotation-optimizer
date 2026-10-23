@@ -56,6 +56,8 @@ class EventState:
     plan_tables: dict | None = None  # the host and fam rows the plan was made from
     start_time: str = ""  # for the run sheet, for example "6:30 PM"; blank leaves times to fill in
     round_minutes: int = 20  # for the run sheet
+    switch_minutes: int = 5  # for the run sheet: alumni moving between rounds
+    open_minutes: int = 0  # for the run sheet: an open floor after the last round, 0 for none
     printed_at: str = ""  # when Mark as printed was clicked, for example "7:12 PM"
     arrived: list[str] = field(default_factory=list)  # host ids checked in on the night
     notes: str = ""  # notes for next year's coordinator, kept in the hand-off
@@ -430,6 +432,9 @@ def save_event(state: EventState) -> str:
             "plan_tables": state.plan_tables,
             "start_time": state.start_time,
             "round_minutes": state.round_minutes,
+            # Written only when changed, so files from before these settings read the same.
+            **({"switch_minutes": state.switch_minutes} if state.switch_minutes != 5 else {}),
+            **({"open_minutes": state.open_minutes} if state.open_minutes else {}),
             "printed_at": state.printed_at,
             "arrived": state.arrived,
             "notes": state.notes,
@@ -467,6 +472,8 @@ def load_event(text: str | bytes) -> EventState:
             plan_tables=d.get("plan_tables"),
             start_time=str(d.get("start_time", "")),
             round_minutes=int(d.get("round_minutes", 20)),
+            switch_minutes=int(d.get("switch_minutes", 5)),
+            open_minutes=int(d.get("open_minutes", 0)),
             printed_at=str(d.get("printed_at", "")),
             arrived=[str(x) for x in d.get("arrived", [])],
             notes=str(d.get("notes", "")),
@@ -506,6 +513,8 @@ def handoff_event(state: EventState) -> EventState:
         one_weak_round=state.one_weak_round,
         start_time=state.start_time,
         round_minutes=state.round_minutes,
+        switch_minutes=state.switch_minutes,
+        open_minutes=state.open_minutes,
         notes=state.notes,
     )
 

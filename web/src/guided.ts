@@ -29,7 +29,7 @@ import { gridFromHtml, looksLikeHeader, parsePasted } from "./paste";
 import { ListedAlum, SeatingChart, pairKey, readAlumniList, readSeatingChart } from "./seating";
 import { qrSvg } from "./share";
 import { STEW_FAMS, STEW_PEOPLE, STEW_TABLES, stewChartGrid, stewInterests } from "./stew2026";
-import { careerWords, majorWords } from "./words";
+import { careerWords, closeWords, majorWords } from "./words";
 import { HostSettings, clearGrid, gridChanges, hostSettings, placeInGrid, renameInRules, setHostSettings, settingsWords } from "./people";
 import type { EventPlan } from "./planning";
 import { describeReprint, hostLabel, provenOptimal, reprintList } from "./planning";
@@ -101,6 +101,7 @@ let format: "chart" | "list" | "lines" = "chart"; // which example sits beside t
 let confirmNew = false; // "Start another dinner" asked, waiting for a yes
 let leaveRun = false; // "Back to planning" tapped during a round
 let swapSaved = false;
+let formatPicked = false; // the coordinator said what they have; until then no choice is shown as theirs
 let showExamples = false; // the example rows beside a paste box, folded away until asked for
 let dinnerSeen = false; // "Next: your alumni" was pressed, even with no name typed
 let opened: { plan: EventPlan | null; docs: Set<string> } = { plan: null, docs: new Set() }; // printouts opened one at a time, for this schedule
@@ -116,6 +117,7 @@ let changed: string[] = [];
 let moreSchedule = false;
 // Print
 let morePrint = false;
+let showTiming = false; // the timing fields under "Your dinner"
 // Run
 let change: "left" | "arrived" | "table" | "wrong" | "famLeft" | null = null;
 let changeOpen = false;
@@ -224,6 +226,9 @@ function reprintNeeded(s: EventState): string[] {
   return describeReprint(reprintList(s.printed, s.plan), s.plan);
 }
 
+/** Who sits where, as one string, so a later change to the seating is noticed. */
+const planSig = (p: EventPlan) => p.assignments.map((a) => `${a.round}:${a.groupId}:${a.hostId}`).sort().join(",");
+
 const eventOver = (s: EventState) => !!s.plan && status(s, nowMinutes()).phase === "over";
 
 function stateOf(t: Place): State {
@@ -234,7 +239,9 @@ function stateOf(t: Place): State {
     case "schedule":
       if (!lists) return "locked";
       if (!s.plan) return "ready";
-      return !isCurrent(s) || emptyFams(s.plan).length ? "attention" : "done";
+      if (!isCurrent(s) || emptyFams(s.plan).length) return "attention";
+      // Done once the coordinator has looked and said so, not the moment the app made it.
+      return s.printed || s.night.reviewed === planSig(s.plan) ? "done" : "ready";
     case "print":
       if (!s.plan) return "locked";
       if (s.printed && !isCurrent(s)) return "attention";
@@ -286,8 +293,7 @@ function topBar(): HTMLElement {
         : h("button", { className: "c-home-link", "aria-label": `Home: ${s.title || "Untitled dinner"}`, "data-k": "home-link", onclick: () => go("home") },
           logo(), h("strong", { className: `c-title ${s.title.trim() ? "" : "untitled"}` }, s.title || "Untitled dinner")),
       practising ? h("span", { className: "c-pill practice" }, "Example: nothing is saved ", h("button", { className: "c-link", "data-k": "exit-example", onclick: () => ctx.endPractice() }, "Exit"))
-        : place !== "home" ? h("span", { className: "c-saved" }, "Saved on this computer \u00b7 ",
-          h("button", { className: "c-link small", onclick: () => { ctx.saveFile(); say("ok", "A copy of your event was downloaded. Keep it with your event files, or open it on another computer."); render(); } }, "Download a copy")) : null,
+        : place !== "home" ? h("span", { className: "c-saved", role: "status", title: "Saved on this computer. Download a copy from the \u22ef menu.", "aria-label": "Saved on this computer" }, "Saved") : null,
       eventMenu()),
     place !== "home" ? h("nav", { className: "c-tabs", "aria-label": "Event" }, TABS.map(([key, label]) => {
       const st = stateOf(key);
@@ -504,7 +510,8 @@ function nextBar(): HTMLElement | null {
   let action: HTMLElement | null = null;
   let note = "";
   const primary = (label: string, onclick: () => void, glyph?: IconName, disabled = false) =>
-    h("button", { className: "c-button primary big", "data-k": `bar-${place}`, disabled, onclick }, glyph ? icon(glyph) : null, label, glyph ? null : icon("chevron"));
+    h("button", { className: "c-button primary big", "data-k": `bar-${place}`, disabled, onclick }, glyph ? icon(glyph) : null, h("span", { className: "c-bar-label" }, label), glyph ? null : icon("chevron"),
+      disabled && note ? h("span", { className: "c-bar-why" }, note) : null);
   const lists = hostsOf(s).length > 0 && famsOf(s).length > 0;
   if (place === "setup") {
     note = !hostsOf(s).length ? "Add your alumni to continue." : !famsOf(s).length ? "Add your fams to continue." : "";
@@ -512,7 +519,7 @@ function nextBar(): HTMLElement | null {
   } else if (place === "schedule") {
     if (!s.plan) action = lists ? primary("Make the schedule", () => update()) : primary("Go to Set up", () => go("setup"));
     else if (!isCurrent(s)) action = primary("Update the schedule", () => update(), undefined, busy);
-    else action = primary("Looks good: print", () => go("print"), "printer");
+    else action = primary("Looks good: print", () => { s.night = { ...s.night, reviewed: planSig(s.plan!) }; ctx.persist(); go("print"); }, "printer");
   } else if (place === "print") {
     if (!s.plan) action = primary(lists ? "Make the schedule" : "Go to Set up", () => (lists ? (go("schedule"), update()) : go("setup")));
     else if (s.printed && isCurrent(s) && !reprintNeeded(s).length) action = primary("Next: run the event", () => go("run"));
@@ -809,13 +816,14 @@ export function isHeaderRow(kind: "hosts" | "fams", row: string[], next: string[
  * position: alumni are name then interests, fams are name then interests,
  * with a table number first when the first column is all numbers.
  */
-function addRows(kind: "hosts" | "fams", grid: string[][]): void {
+function addRows(kind: "hosts" | "fams", grid: string[][], close = true): void {
   const s = ev();
   const list = kind === "hosts" ? s.hosts : s.fams;
   const header = isHeaderRow(kind, grid[0], grid[1]);
   const mapping = header ? matchColumns(grid[0], kind) : {};
   const byName = header && ((kind === "hosts" ? "table_label" : "fam_label") in mapping || "host_name" in mapping);
   const body = (header ? grid.slice(1) : grid).filter((r) => r.some((c) => c.trim()));
+  const fresh: CleanRow[] = [];
   const width = Math.max(...body.map((r) => r.length));
   const numbered = kind === "fams" && body.every((r) => /^\d+$/.test((r[0] ?? "").trim()));
   const order = kind === "hosts"
@@ -826,7 +834,9 @@ function addRows(kind: "hosts" | "fams", grid: string[][]): void {
     if (byName) for (const [ours, theirs] of Object.entries(mapping)) row[ours] = cells[grid[0].indexOf(theirs)] ?? "";
     else order.forEach((k, j) => { row[k] = (cells[j] ?? "").trim(); });
     list.push(row);
+    fresh.push(row);
   }
+  const added = kind === "hosts" && close ? addCloseWords(fresh) : [];
   tidy(s);
   if (kind === "hosts") paired = pairByField(s);
   ctx.persist();
@@ -835,7 +845,29 @@ function addRows(kind: "hosts" | "fams", grid: string[][]): void {
   const usedCols = new Set(Object.values(mapping));
   const ignored = byName ? grid[0].filter((c) => c.trim() && !usedCols.has(c) && !/e-?mail|phone|mobile/i.test(c)) : [];
   imported = { kind, skipped: header ? grid[0] : null, columns: used + (ignored.length ? `. We didn't use: ${ignored.map((c) => `"${c}"`).join(", ")}. If they hold late arrivals or stairs, add those under More options` : "") };
-  noted(kind, `Added ${kind === "hosts" ? alumni(body.length) : famsN(body.length)}.` + (paired.length && kind === "hosts" ? ` Alumni who share a field host one table together: ${paired.join(", ")}. You can split a pair below.` : ""));
+  noted(kind, `Added ${kind === "hosts" ? alumni(body.length) : famsN(body.length)}.` + (paired.length && kind === "hosts" ? ` Alumni who share a field host one table together: ${paired.join(", ")}. You can split a pair below.` : "") + closeNote(added));
+}
+
+/** Give each alum the close interests their own words imply ("medicine" also matches "biology"). Returns what was added, for the note. */
+function addCloseWords(rows: CleanRow[]): [string, string][] {
+  const added: [string, string][] = [];
+  for (const r of rows) {
+    const tags = (r.tags ?? "").split(/[;,]/).map((t) => t.trim()).filter(Boolean);
+    const more = closeWords(tags);
+    if (!more.length) continue;
+    r.tags = [...tags, ...more.map(([w]) => w)].join("; ");
+    for (const m of more) if (!added.some(([w, from]) => w === m[0] && from === m[1])) added.push(m);
+  }
+  return added;
+}
+
+/** " Close words count too: medicine also matches biology and pre-med." */
+function closeNote(added: [string, string][]): string {
+  if (!added.length) return "";
+  const by = new Map<string, string[]>();
+  for (const [w, from] of added) by.set(from, [...(by.get(from) ?? []), w]);
+  const parts = [...by].slice(0, 3).map(([from, ws]) => `${from} also matches ${ws.length > 1 ? ws.slice(0, -1).join(", ") + " and " + ws.at(-1) : ws[0]}`);
+  return ` Close words count too: ${parts.join("; ")}${by.size > 3 ? "; and more" : ""}. You can remove any in Edit alumni.`;
 }
 
 /** Say what a paste did inside the card it changed, with the first few names, and move on to the next card. */
@@ -914,7 +946,7 @@ function useExample(kind: "hosts" | "fams"): void {
   if (kind === "hosts" && format === "list") { undoable("Added the example alumni list.", () => importAlumniList(STEW_PEOPLE.map(([name, about]) => ({ name, about, interests: careerWords(about) })))); return; }
   undoable(kind === "hosts" ? "Added the example alumni." : "Added the example fams.", () => addRows(kind, kind === "hosts"
     ? STEW_TABLES.map(([, who]) => [who, stewInterests(who).join("; ")])
-    : STEW_FAMS.map(([n, fam, majors]) => [n, fam, majorWords(majors).join("; ")])));
+    : STEW_FAMS.map(([n, fam, majors]) => [n, fam, majorWords(majors).join("; ")]), false));
 }
 
 function undoHeader(): void {
@@ -979,7 +1011,7 @@ function formatPicker(kind: "hosts" | "fams"): HTMLElement {
 function pasteBox(kind: "hosts" | "fams"): HTMLElement {
   const shown = kind === "fams" && format === "list" ? "lines" : format;
   const id = `c-paste-${kind}`;
-  const box = h("textarea", { id, rows: 5, className: "c-paste", placeholder: SAMPLES[shown].placeholder[kind === "hosts" ? 0 : 1], }) as HTMLTextAreaElement;
+  const box = h("textarea", { id, rows: 5, className: "c-paste", placeholder: formatPicked ? SAMPLES[shown].placeholder[kind === "hosts" ? 0 : 1] : kind === "hosts" ? "Copy your alumni from your doc or sheet and paste here, or type one per line." : "Copy your fams from your doc or sheet and paste here, or type one per line." }) as HTMLTextAreaElement;
   const add = h("button", { className: "c-button primary", hidden: true, onclick: () => {
     const grid = typedGrid(box.value);
     if (!grid.length) return;
@@ -1002,7 +1034,7 @@ function pasteBox(kind: "hosts" | "fams"): HTMLElement {
   return h("div", { className: "c-paste-zone" },
     h("label", { for: id, className: "c-label" }, kind === "hosts" ? "Paste or type your alumni" : "Paste or type your fams",
       h("span", { className: "c-label-hint" }, kind === "hosts" ? "A seating chart, an alumni list, or one alum per line, from Docs, Sheets, or Excel" : "A seating chart, or one fam per line with its majors")),
-    h("div", { className: "c-paste-wrap" }, box, pasteDemo()),
+    h("div", { className: "c-paste-wrap" }, box, pasteDemo(box)),
     h("div", { className: "c-row" }, add, uploadButton(kind),
       h("button", { className: "c-link", "aria-expanded": showExamples ? "true" : "false", "data-k": `examples-${kind}`, onclick: () => { showExamples = !showExamples; render(); } }, showExamples ? "Hide examples" : "See examples"),
       ev()[kind].length ? h("button", { className: "c-link", onclick: () => { adding = null; render(); } }, "Cancel") : null),
@@ -1010,13 +1042,14 @@ function pasteBox(kind: "hosts" | "fams"): HTMLElement {
 }
 
 /** Once, the first time an empty paste box is shown: a sheet slides in and becomes a list. Any key or click stops it. */
-function pasteDemo(): HTMLElement | null {
+function pasteDemo(box: HTMLTextAreaElement): HTMLElement | null {
   try { if (localStorage.getItem("rotation-optimizer:paste-demo")) return null; localStorage.setItem("rotation-optimizer:paste-demo", "1"); } catch { return null; }
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return null;
   const demo = h("div", { className: "c-paste-demo", "aria-hidden": "true" },
     h("div", { className: "c-demo-sheet" }, ["Fam table", "Round 1", "Round 2"].map((c) => h("span", {}, c)), ["Table 1", "K. Tran", "S. Lew"].map((c) => h("span", {}, c)), ["Table 2", "D. Tran + A. Lim", "U. Tran"].map((c) => h("span", {}, c))),
     h("div", { className: "c-demo-list" }, h("span", {}, "\u2713 10 fams"), h("span", {}, "\u2713 13 alumni, 3 pairs")));
-  const stop = () => { demo.remove(); removeEventListener("keydown", stop, true); removeEventListener("pointerdown", stop, true); };
+  box.classList.add("demoing");
+  const stop = () => { demo.remove(); box.classList.remove("demoing"); removeEventListener("keydown", stop, true); removeEventListener("pointerdown", stop, true); };
   addEventListener("keydown", stop, true);
   addEventListener("pointerdown", stop, true);
   demo.addEventListener("animationend", (e) => { if ((e as AnimationEvent).animationName === "c-demo-out") stop(); });
@@ -1052,7 +1085,7 @@ function uploadButton(kind: "hosts" | "fams"): HTMLElement {
     noted(kind, `Read ${kind === "hosts" ? alumni(clean.length) : famsN(clean.length)} from ${f.name}` + (grouped ? `, grouping ${grouped} student answers by fam.` : ".") + " Email and phone columns are never kept.");
     render();
   });
-  return keyOpens(h("label", { className: "c-button", for: id, tabindex: 0 }, input, "Upload a CSV"));
+  return keyOpens(h("label", { className: "c-button", for: id, tabindex: 0 }, input, "Choose a file"));
 }
 
 function peopleList(kind: "hosts" | "fams", cols: Col[]): HTMLElement {
@@ -1214,8 +1247,8 @@ function setupPage(): HTMLElement {
   const name = h("input", { id: "c-name", type: "text", value: s.title, placeholder: "e.g. STEW 2026 Family Dinner" }) as HTMLInputElement;
   name.addEventListener("input", () => { s.title = name.value; ctx.persist(); const t = document.querySelector(".c-title"); if (t) t.textContent = s.title || "Untitled dinner"; });
   const rounds = h("select", { id: "c-rounds" }, [1, 2, 3, 4, 5, 6].map((n) => h("option", { value: n, selected: n === s.rounds }, `${n} round${n !== 1 ? "s" : ""}`))) as HTMLSelectElement;
-  rounds.addEventListener("change", () => { s.rounds = Number(rounds.value); s.finished = Math.min(s.finished, s.rounds - 1); ctx.persist(); });
-  const have = (k: "chart" | "list" | "lines", label: string) => h("button", { className: `c-chip ${format === k ? "on" : ""}`, "aria-pressed": format === k ? "true" : "false", onclick: () => { format = k; showExamples = k !== "lines"; render(); } }, label);
+  rounds.addEventListener("change", () => { s.rounds = Number(rounds.value); s.finished = Math.min(s.finished, s.rounds - 1); ctx.persist(); render(); });
+  const have = (k: "chart" | "list" | "lines", label: string) => h("button", { className: `c-chip ${formatPicked && format === k ? "on" : ""}`, "aria-pressed": formatPicked && format === k ? "true" : "false", onclick: () => { format = k; formatPicked = true; showExamples = k !== "lines"; render(); } }, label);
   const date = h("input", { id: "c-date", type: "date", value: s.night.date ?? "" }) as HTMLInputElement;
   date.addEventListener("change", () => { s.night = { ...s.night, date: date.value || undefined }; ctx.persist(); });
   const nPeople = peopleCount(s), nPairs = pairCount(s);
@@ -1268,9 +1301,11 @@ function setupPage(): HTMLElement {
       h("div", { className: "c-fields" },
         h("div", { className: "c-field" }, h("label", { for: "c-name", className: "c-label" }, "Name"), name),
         h("div", { className: "c-field" }, h("label", { for: "c-rounds", className: "c-label" }, "Rounds"), rounds,
-          h("span", { className: "c-help" }, "Alumni move to a new fam each round. 2 rounds suit about 90 minutes; 3 suit about 2 hours.")),
+          h("span", { className: "c-help", "data-k": "night-line" }, nightLine(s), " ",
+            h("button", { className: "c-link small", "aria-expanded": showTiming ? "true" : "false", "data-k": "change-times", onclick: () => { showTiming = !showTiming; render(); } }, showTiming ? "Hide times" : "Change times"))),
         h("div", { className: "c-field" }, h("label", { for: "c-date", className: "c-label" }, "Date (optional)"), date,
           h("span", { className: "c-help" }, "Shows a countdown on the home page."))),
+      showTiming ? timingFields() : null,
       h("button", { className: "c-button primary", "data-k": "next-alumni", onclick: () => { dinnerSeen = true; ctx.persist(); openCard = nHosts ? null : "hosts"; focusAfter = "card-hosts"; render(); } }, "Next: your alumni"),
     ]),
     setupCard("hosts", "Alumni", alumni(nPeople) + (nPairs ? ` at ${nHosts} tables · ${nPairs} pair${nPairs !== 1 ? "s" : ""}` : "") + (special.length ? ` · ${special.length} with special arrangements` : ""), nHosts > 0, () => [
@@ -1345,14 +1380,15 @@ function summary(p: EventPlan): HTMLElement {
   const seated = p.fams.every((f) => rounds.every((r) => (p.famAway[f.groupId] ?? []).includes(r) || p.assignments.some((a) => a.round === r && a.groupId === f.groupId)));
   const pairs = p.hosts.some((x) => peopleIn(x.person || x.name).length > 1);
   const meets = (n: number) => (pairs ? `${n} alumni table${n !== 1 ? "s" : ""}` : alumni(n));
+  const shares = p.assignments.filter((a) => a.score > 0).length;
   const lines = [
-    (seated ? "Everyone has a seat. " : "") + (lo === hi ? `Each fam meets ${meets(lo)}, a different one each round.` : `Each fam meets ${lo} to ${meets(hi)}, a different one each round.`),
+    (seated ? "Everyone has a seat" : "") + (anyInterests && p.assignments.length ? `${seated ? ", and" : ""} ${shares} of ${p.assignments.length} conversations share an interest. ` : seated ? ". " : "") + (lo === hi ? `Each fam meets ${meets(lo)}, a different one each round.` : `Each fam meets ${lo} to ${meets(hi)}, a different one each round.`),
     anyInterests && weak ? `${weak === 1 ? "One pairing is" : `${weak} of ${p.assignments.length} pairings are`} a weaker match: the alum and fam share no interest word.` +
       (weak * 2 > p.assignments.length ? " Matches only count identical words, so using the same words in both lists (for example \"computer science\" in both, not \"CS\" in one) gives better matches." : "") : "",
     provenOptimal(p) ? (p.keptSlots !== null ? "This is the best update, changing as little as possible." : "With these words, no other schedule shares more interests.") : "",
   ].filter(Boolean);
   return h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, icon("check")),
-    h("div", {}, h("p", { className: "c-answer-main" }, lines[0]),
+    h("div", {}, h("p", { className: "c-answer-main" }, lines[0].trim()),
       showMatches ? weakList(p) : null,
       lines.length > 1 ? h("button", { className: "c-link small", "aria-expanded": showMatches ? "true" : "false", "data-k": "matches", onclick: () => { showMatches = !showMatches; render(); } }, showMatches ? "Hide" : "How good are the matches?") : null,
       showMatches ? lines.slice(1).map((l) => h("p", { className: "c-help" }, l)) : null));
@@ -1517,6 +1553,7 @@ function room(p: EventPlan, r: number, current = true): HTMLElement {
   const tables = tableNumbers(p);
   const list = [...p.fams].sort((a, b) => tables[a.groupId] - tables[b.groupId]);
   const locked = new Set(p.lockedRounds);
+  const anyWords = p.fams.some((f) => f.interests.length) && p.hosts.some((x) => x.tags.length);
   return h("ul", { className: `c-plan c-room ${adjust ? "adjusting" : ""}`, "aria-label": `Round ${r}${r <= s.finished ? " (done)" : ""}: who sits at each table` },
     list.map((f) => {
       const a = p.assignments.find((x) => x.round === r && x.groupId === f.groupId);
@@ -1525,12 +1562,17 @@ function room(p: EventPlan, r: number, current = true): HTMLElement {
       const who = host ? host.person || host.name : "";
       const n = tables[f.groupId];
       const weak = !!a && a.score === 0 && f.interests.length > 0;
+      const shared = host ? host.tags.filter((t) => f.interests.includes(t)) : [];
+      const why = !host || !anyWords ? null : shared.length
+        ? h("span", { className: "c-tile-why good" }, h("span", { className: "visually-hidden" }, "Shared interest: "), shared.slice(0, 2).join(", ") + (shared.length > 2 ? ` +${shared.length - 2}` : ""))
+        : h("span", { className: "c-tile-why" }, "No shared interest");
       const inner = [
         h("span", { className: "c-disc", "aria-hidden": "true" }, String(n)),
         h("span", { className: "c-tile-text" },
           h("span", { className: "c-tile-fam" }, h("span", { className: "visually-hidden" }, `Table ${n}, `), f.name),
           host ? h("span", { className: "c-tile-who" }, avatars(who), h("span", { className: "c-seat-name" }, who), adjust && weak ? h("span", { className: "c-weak", title: "No shared interest word" }) : null)
-            : h("span", { className: "c-tile-who c-seat-name" }, gone ? "Fam not here this round" : "No alum this round")),
+            : h("span", { className: "c-tile-who c-seat-name" }, gone ? "Fam not here this round" : "No alum this round"),
+          why),
       ];
       if (!adjust) return h("li", { className: `c-tile c-seat ${host ? "" : "empty"}`, "data-round": r, style: `--h: ${famHue(n)}` }, ...inner);
       const isPicked = picked?.round === r && picked.famId === f.groupId;
@@ -1656,7 +1698,7 @@ function docs(s: EventState, p: EventPlan): Doc[] {
     { label: "Room chart", purpose: "For the wall or the door: who sits where, each round.", pages: p.rounds + (students ? 1 : 0), make: () => seatingChartHtml(p, title, null, true, "", loc) },
     { label: "Alumni cards", purpose: "One for each alum: where to go each round.", pages: Math.ceil(p.hosts.length / 2), make: () => hostCardsHtml(p, null, title, "", loc) },
     { label: "Table numbers", purpose: "Fold one and stand it on each table.", pages: p.fams.length, make: () => tableTentsHtml(p) },
-    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, title, s.startTime, s.roundMinutes) },
+    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, title, s.startTime, s.roundMinutes, 10, s.switchMinutes, s.openMinutes) },
   ];
 }
 
@@ -1677,10 +1719,6 @@ function printPage(): HTMLElement {
   const reprint = reprintNeeded(s);
   const loc = famLocations(s);
   const recorded = () => { ctx.markPrinted(); };
-  const doors = h("input", { id: "c-doors", type: "text", value: s.startTime, placeholder: "e.g. 6:30 PM" }) as HTMLInputElement;
-  doors.addEventListener("input", () => { s.startTime = doors.value; ctx.persist(); });
-  const minutes = h("select", { id: "c-minutes" }, [10, 15, 20, 25, 30, 40].map((n) => h("option", { value: n, selected: n === s.roundMinutes }, `${n} minutes`))) as HTMLSelectElement;
-  minutes.addEventListener("change", () => { s.roundMinutes = Number(minutes.value); ctx.persist(); });
   const name = h("input", { id: "c-print-name", type: "text", value: s.title }) as HTMLInputElement;
   name.addEventListener("input", () => { s.title = name.value; ctx.persist(); });
   const extra: [string, string, () => string][] = [
@@ -1720,17 +1758,54 @@ function printPage(): HTMLElement {
         h("div", { className: "c-doc-text" }, h("strong", {}, d.label), h("span", { className: "c-help" }, d.purpose), h("span", { className: "c-pages" }, `About ${d.pages} page${d.pages !== 1 ? "s" : ""}`),
           h("span", { className: "c-doc-open", "aria-hidden": "true" }, icon("printer"), "Open as PDF")));
     })),
+    toMinutes(s.startTime) === null ? h("p", { className: "c-note", "data-k": "no-doors" }, "The run sheet leaves its times blank until you say when doors open. ",
+      h("button", { className: "c-link", onclick: () => { morePrint = true; render(); (document.getElementById("c-doors") as HTMLInputElement | null)?.focus(); } }, "Add the time")) : null,
     h("p", { className: "c-help" }, `Tap a printout to open it on its own; the print window opens with it, where Save as PDF makes the file. Print everything does all of them at once, about ${total} pages in all (US Letter, 100% scale).`,
       printedOk ? [" ", h("button", { className: "c-link small", onclick: printEverything }, "Print everything again")] : null,
       !s.printed ? [" ", h("button", { className: "c-link small", onclick: () => go("run") }, "Skip printing for now")] : null),
     more(morePrint, () => { morePrint = !morePrint; render(); }, "More options",
       h("div", { className: "c-fields" },
-        h("div", { className: "c-field" }, h("label", { for: "c-print-name", className: "c-label" }, "Name on every page"), name),
-        h("div", { className: "c-field" }, h("label", { for: "c-doors", className: "c-label" }, "Doors open (adds times to the run sheet)"), doors),
-        h("div", { className: "c-field" }, h("label", { for: "c-minutes", className: "c-label" }, "Each round lasts"), minutes)),
+        h("div", { className: "c-field" }, h("label", { for: "c-print-name", className: "c-label" }, "Name on every page"), name)),
+      timingFields(),
       h("p", { className: "c-label" }, "Print one at a time"),
       h("ul", { className: "c-plain-list" }, [...list.map((d): [string, string, () => string] => [d.label, d.purpose.charAt(0).toLowerCase() + d.purpose.slice(1), d.make]), ...extra].map(([label, purpose, make]) =>
         h("li", {}, h("button", { className: "c-link", onclick: () => openPage(make()) }, label), h("span", { className: "c-help" }, `: ${purpose.replace(/\.$/, "")}`))))));
+}
+
+/** The night from doors to closing, in minutes, laid out as the run sheet lays it out. */
+function nightMinutes(s: EventState): number {
+  const r = s.plan?.rounds ?? s.rounds;
+  return 10 + s.switchMinutes + r * s.roundMinutes + (r - 1) * s.switchMinutes + s.openMinutes;
+}
+
+const duration = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
+
+/** "2 rounds of 20 min, 5 min to switch. About 1 h from doors to closing (6:30 PM to 7:30 PM)." */
+function nightLine(s: EventState): string {
+  const r = s.plan?.rounds ?? s.rounds, total = nightMinutes(s), doors = toMinutes(s.startTime);
+  const parts = [`${r} round${r !== 1 ? "s" : ""} of ${s.roundMinutes} min`, s.switchMinutes ? `${s.switchMinutes} min to switch` : "", s.openMinutes ? `${s.openMinutes} min open floor` : ""].filter(Boolean);
+  return `${parts.join(", ")}. About ${duration(total)} from doors to closing` + (doors !== null ? ` (${shown(doors)} to ${shown(doors + total)}).` : ".");
+}
+
+/** When doors open, how long each round and changeover lasts, and an open floor at the end: one timeline for the run sheet and the night. */
+function timingFields(): HTMLElement {
+  const s = ev();
+  const pick = (id: string, label: string, options: number[], value: number, word: (n: number) => string, set: (n: number) => void) => {
+    const el = h("select", { id }, options.map((n) => h("option", { value: n, selected: n === value }, word(n)))) as HTMLSelectElement;
+    el.addEventListener("change", () => { set(Number(el.value)); ctx.persist(); render(); });
+    return h("div", { className: "c-field" }, h("label", { for: id, className: "c-label" }, label), el);
+  };
+  const doors = h("input", { id: "c-doors", type: "text", value: s.startTime, placeholder: "e.g. 6:30 PM" }) as HTMLInputElement;
+  doors.addEventListener("change", () => { s.startTime = doors.value.trim(); ctx.persist(); render(); });
+  const bad = s.startTime.trim() && toMinutes(s.startTime) === null;
+  return h("div", { className: "c-timing" },
+    h("div", { className: "c-fields" },
+      h("div", { className: "c-field" }, h("label", { for: "c-doors", className: "c-label" }, "Doors open"), doors,
+        bad ? h("span", { className: "c-help warn" }, "Write it like 6:30 PM or 18:30.") : null),
+      pick("c-minutes", "Each round", [10, 15, 20, 25, 30, 40, 45, 60], s.roundMinutes, (n) => `${n} minutes`, (n) => { s.roundMinutes = n; }),
+      pick("c-switch", "Changeover", [0, 2, 3, 5, 10, 15], s.switchMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { s.switchMinutes = n; }),
+      pick("c-open", "Open floor at the end", [0, 10, 15, 20, 30, 45, 60], s.openMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { s.openMinutes = n; })),
+    h("p", { className: "c-help", "aria-live": "polite" }, nightLine(s)));
 }
 
 /** One printout on its own, named for the event, with the print window (and Save as PDF) open. Once all four are opened, the app counts it as printed. */
@@ -1849,14 +1924,15 @@ function roundCard(p: EventPlan): HTMLElement {
   } else action = null;
   const startedAt = toMinutes(s.night.roundTimes?.[String(r)]?.start ?? "");
   return h("div", { className: "c-card c-now" },
-    h("p", { className: "c-round" }, st.phase === "over" ? "All rounds done" : st.phase === "moving" ? `Alumni move to round ${r}` : `Round ${r} of ${p.rounds}`),
+    h("p", { className: "c-round" }, st.phase === "over" ? (s.openMinutes ? "Open floor" : "All rounds done") : st.phase === "moving" ? `Alumni move to round ${r}` : `Round ${r} of ${p.rounds}`),
     st.phase === "during" && st.minutesLeft !== null ? h("div", {},
       timer(s.roundMinutes, secondsLeft(s, r, st.minutesLeft)),
       startedAt !== null ? h("p", { className: "c-help center-text" }, `Ends at ${shown(startedAt + s.roundMinutes)}`) : null)
-      : st.phase === "before" ? h("p", { className: "c-help" }, `${p.rounds} rounds of ${s.roundMinutes} minutes. Tap start when everyone is seated.`)
+      : st.phase === "before" ? h("p", { className: "c-help" }, `${p.rounds} rounds of ${s.roundMinutes} minutes${s.openMinutes ? `, then ${s.openMinutes} minutes of open floor` : ""}. Tap start when everyone is seated.`)
+      : st.phase === "over" && s.openMinutes ? h("p", { className: "c-help" }, `Alumni and fams mix freely` + (st.projectedEnd !== null ? ` until ${shown(st.projectedEnd + s.openMinutes)}` : ` for ${s.openMinutes} minutes`) + ". Then thank everyone.")
       : st.phase === "moving" ? h("p", { className: "c-help" }, "Alumni go to the table on their card. Start the round when they are seated.") : null,
     action,
-    st.phase === "during" ? h("p", { className: "c-next" }, r < p.rounds ? `Next: round ${r + 1}. Alumni go to the table on their card.` : "Last round. Then thank everyone.") : null,
+    st.phase === "during" ? h("p", { className: "c-next" }, r < p.rounds ? `Next: round ${r + 1}. Alumni go to the table on their card.` : s.openMinutes ? `Last round. Then ${s.openMinutes} minutes of open floor.` : "Last round. Then thank everyone.") : null,
     justFinished === s.finished && st.phase === "moving" && s.finished > Math.max(0, ...p.lockedRounds) ? h("p", { className: "c-help" }, `Round ${s.finished} ended. `,
       h("button", { className: "c-link", onclick: () => {
         s.finished -= 1; justFinished = null;

@@ -208,18 +208,19 @@ ${sorted.map((r) => `<tr><td class="box"></td><td><b>${r.table}</b></td><td>${e(
 export function mcCueCardHtml(s: EventState, p: EventPlan, now: number): string {
   const st = status(s, now);
   const len = st.catchUp ?? s.roundMinutes;
+  const sw = s.switchMinutes ?? SWITCH;
   const rows: string[] = [];
   let t = st.phase === "during" ? toMinutes(s.night.roundTimes?.[String(st.round)]?.start ?? "") ?? now : Math.max(now, plannedStart(s, st.round) ?? now);
   for (let r = st.round; r <= p.rounds; r++) {
     const say = r === 1 ? "Alumni, go to the table on your card for round 1." : `Thank your table. Alumni, move to the table on your card for round ${r}.`;
     const started = st.phase === "during" && r === st.round;
     rows.push(`<tr><td class="t">${started ? "now" : e(shown(t))}</td><td><b>Round ${r}</b>${started ? " (under way)" : ""}</td><td>${started ? "" : e(say)}</td></tr>`);
-    rows.push(`<tr><td class="t">${e(shown(t + len))}</td><td>End of round ${r}</td><td>${r < p.rounds ? "Ask hosts to say goodbye; they move in a minute." : "Thank the hosts and the fams. Closing."}</td></tr>`);
-    t += len + SWITCH;
+    rows.push(`<tr><td class="t">${e(shown(t + len))}</td><td>End of round ${r}</td><td>${r < p.rounds ? "Ask hosts to say goodbye; they move in a minute." : s.openMinutes ? `Open floor until ${shown(t + len + s.openMinutes)}, then thank the hosts and the fams.` : "Thank the hosts and the fams. Closing."}</td></tr>`);
+    t += len + sw;
   }
   return page(`${s.title}: MC cue card`, `
 <h1>${e(s.title)}: MC cue card</h1>
-<p class="meta">Printed at ${e(shown(now))}. ${st.lateBy >= 5 ? `Running ${st.lateBy} minutes late. ` : ""}${st.catchUp ? `Rounds shortened to ${len} minutes to finish on time.` : `Rounds are ${len} minutes, with ${SWITCH} minutes to move.`}</p>
+<p class="meta">Printed at ${e(shown(now))}. ${st.lateBy >= 5 ? `Running ${st.lateBy} minutes late. ` : ""}${st.catchUp ? `Rounds shortened to ${len} minutes to finish on time.` : `Rounds are ${len} minutes, with ${sw} minutes to move.`}</p>
 <table class="cues">${rows.join("\n")}</table>
 <p class="meta">Students stay seated all night. Alumni move.</p>
 `, ".cues td { font-size: 16px; padding: 8px; } .cues .t { font-weight: 800; white-space: nowrap; width: 1.2in; }");

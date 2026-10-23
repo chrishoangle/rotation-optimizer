@@ -903,7 +903,7 @@ function renderSchedule(): void {
     ["Seating chart", "seating chart", () => seatingChartHtml(p, ev.title, null, true, "", famLocations(ev)), "One page per round for the room, then a find-your-table page."],
     ["Host cards", "host cards", () => hostCardsHtml(p, null, ev.title, "", famLocations(ev)), "Half a page per host: where to go each round and what to talk about."],
     ["Table tents", "table tents", () => tableTentsHtml(p), "A big table number to fold and stand on each fam's table."],
-    ["Run sheet", "run sheet", () => runSheetHtml(p, ev.title, ev.startTime, ev.roundMinutes), "For you and the MC: a timeline for the night and check-in lists."],
+    ["Run sheet", "run sheet", () => runSheetHtml(p, ev.title, ev.startTime, ev.roundMinutes, 10, ev.switchMinutes, ev.openMinutes), "For you and the MC: a timeline for the night and check-in lists."],
   ];
   replace(box,
     noteEl("schedule"),

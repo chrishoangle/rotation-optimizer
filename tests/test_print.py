@@ -172,3 +172,27 @@ def test_tags_read_as_words_on_host_cards():
 
     assert _tag_words("small-business") == "small business"
     assert _tag_words("pre-med") == "pre-med"
+
+
+def test_pairs_count_as_two_alumni_on_paper():
+    # Two people sharing one table are two alumni, so the page says how many tables they make.
+    from dataclasses import replace
+
+    from rotation_optimizer import run_sheet_html
+
+    plan = plan_event(load_hosts(ROOT / "templates" / "hosts.csv"), load_fams(ROOT / "templates" / "fams.csv"), 2)
+    plan.hosts[0] = replace(plan.hosts[0], person="Ann Lee & Bo Kim")
+    plan.hosts[1] = replace(plan.hosts[1], person="Cy Park + Dee Ng")
+    n = len(plan.hosts)
+    assert f"{n + 2} alumni at {n} tables" in seating_chart_html(plan)
+    assert f"{n + 2} alumni at {n} tables" in run_sheet_html(plan)
+
+
+def test_run_sheet_open_floor_and_changeover(plan):
+    from rotation_optimizer import run_sheet_html
+
+    page = run_sheet_html(plan, start_time="6:30 PM", round_minutes=25, switch_minutes=10, open_minutes=30)
+    # Doors 6:30, welcome 6:40, round 1 at 6:50, round 2 at 7:25, open floor at 7:50, closing at 8:20.
+    for clock, step in [("6:50 PM", "Round 1"), ("7:25 PM", "Round 2"), ("7:50 PM", "Open floor"), ("8:20 PM", "Closing")]:
+        assert f'<td class="time">{clock}</td><td class="what">{step}</td>' in page
+    assert "Open floor" not in run_sheet_html(plan, start_time="6:30 PM")

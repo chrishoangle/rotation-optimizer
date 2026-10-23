@@ -49,7 +49,7 @@ export function plannedStart(s: EventState, r: number, today = todayIso()): numb
   const fromDoors = doors === null ? null : doors + WELCOME + SETTLE;
   const onTheDay = s.night.date ? s.night.date === today : first === null || Math.abs(first - fromDoors!) <= 120;
   const base = fromDoors !== null && onTheDay ? fromDoors : first;
-  return base === null ? null : base + (r - 1) * (s.roundMinutes + SWITCH);
+  return base === null ? null : base + (r - 1) * (s.roundMinutes + (s.switchMinutes ?? SWITCH));
 }
 
 export type Phase = "before" | "moving" | "during" | "over";
@@ -84,14 +84,14 @@ export function status(s: EventState, now: number, today = todayIso()): Status {
   const minutesLeft = phase === "during" && start !== null ? start + s.roundMinutes - now : null;
   let projectedEnd: number | null = null;
   if (phase === "over") projectedEnd = end;
-  else if (phase === "during" && start !== null) projectedEnd = start + s.roundMinutes + (rounds - r) * (s.roundMinutes + SWITCH);
-  else projectedEnd = Math.max(now, planned ?? now) + s.roundMinutes + (rounds - r) * (s.roundMinutes + SWITCH);
+  else if (phase === "during" && start !== null) projectedEnd = start + s.roundMinutes + (rounds - r) * (s.roundMinutes + (s.switchMinutes ?? SWITCH));
+  else projectedEnd = Math.max(now, planned ?? now) + s.roundMinutes + (rounds - r) * (s.roundMinutes + (s.switchMinutes ?? SWITCH));
   let catchUp: number | null = null;
   if (live && plannedEnd !== null && projectedEnd !== null && projectedEnd - plannedEnd >= 5 && phase !== "over") {
     // Rounds still to start, plus the current one if it is under way and can be shortened.
     const left = rounds - r + 1;
     const from = phase === "during" && start !== null ? start : Math.max(now, planned ?? now);
-    const fit = Math.floor((plannedEnd - from - (left - 1) * SWITCH) / left);
+    const fit = Math.floor((plannedEnd - from - (left - 1) * (s.switchMinutes ?? SWITCH)) / left);
     catchUp = fit >= 8 && fit < s.roundMinutes ? fit : null;
   }
   return { phase, round: r, minutesLeft, lateBy, plannedEnd, projectedEnd, catchUp };

@@ -40,6 +40,18 @@ def _stamp(updated: str) -> str:
     return f'<div class="stamp">Updated {html.escape(updated)}. Replaces the earlier copy.</div>' if updated else ""
 
 
+def _people(plan: EventPlan) -> int:
+    """How many alumni, counting each person in a pair: "Ann Lee & Bo Kim" is two."""
+    return sum(len([x for x in re.split(r"\s*[&+]\s*", h.person or h.name) if x.strip()]) or 1 for h in plan.hosts)
+
+
+def _alumni(plan: EventPlan) -> str:
+    """The alumni count as words, with the tables when pairs share one: "13 alumni at 10 tables"."""
+    n, tables = _people(plan), len(plan.hosts)
+    text = f"{n} {'alum' if n == 1 else 'alumni'}"
+    return text + (f" at {tables} table{'s' if tables != 1 else ''}" if n != tables else "")
+
+
 def _counts(plan: EventPlan) -> str:
     """How many fams, alumni, and rounds, counting cancellations."""
     def part(n: int, noun: str, gone: dict, plural: str = "") -> str:
@@ -47,7 +59,10 @@ def _counts(plan: EventPlan) -> str:
         if gone:
             text += f" ({len(gone)} cancelled from round {min(min(rs) for rs in gone.values())})"
         return text
-    return (part(len(plan.fams), "fam", plan.fam_away) + ", " + part(len(plan.hosts), "alum", plan.host_away, "alumni")
+    alumni = _alumni(plan)
+    if plan.host_away:
+        alumni += f" ({len(plan.host_away)} cancelled from round {min(min(rs) for rs in plan.host_away.values())})"
+    return (part(len(plan.fams), "fam", plan.fam_away) + ", " + alumni
             + f", {plan.rounds} round{'s' if plan.rounds != 1 else ''}.")
 
 
@@ -332,7 +347,7 @@ def _clock(start: str, minutes: int) -> str:
 
 def run_sheet_html(
     plan: EventPlan, title: str = "Run sheet", start_time: str = "", round_minutes: int = 20, welcome_minutes: int = 10,
-    switch_minutes: int = 5,
+    switch_minutes: int = 5, open_minutes: int = 0,
 ) -> str:
     """The coordinator's page for the night: an MC timeline and a check-in list.
 
@@ -370,6 +385,9 @@ def run_sheet_html(
                if r == 1 else f"Thank your table. Alumni, move to the table on your card for round {r}.")
         steps.append((t, f"Round {r}", " ".join([say] + notes)))
         t += round_minutes + (switch_minutes if r < plan.rounds else 0)
+    if open_minutes:
+        steps.append((t, "Open floor", "Open floor. Alumni and fams mix freely; nobody needs to move tables."))
+        t += open_minutes
     steps.append((t, "Closing", "Thank the alumni and the fams. Collect the table numbers and alumni cards."))
 
     def when(minutes: int) -> str:
@@ -405,7 +423,7 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 </style></head><body>
 <section>
 <h1>{e(title)}: run sheet</h1>
-<p class="meta">{plan.rounds} rounds, {len(plan.hosts)} alumni, {len(plan.fams)} fams.</p>
+<p class="meta">{plan.rounds} rounds, {_alumni(plan)}, {len(plan.fams)} fams.</p>
 <h2>MC timeline</h2>
 <table>{timeline}</table>
 <h2>If someone cancels during the night</h2>
