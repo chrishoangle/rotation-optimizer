@@ -121,6 +121,17 @@ describe("night mode actions", () => {
     expect(s.nightLog.at(-1)!.text).toBe("Alum B (Art) arrived late and hosts from round 2.");
   });
 
+  it("an alum who left and came back keeps the rounds before they left", () => {
+    const s = dinner();
+    cancelHost(s, "h02", 2, "7:00 PM");
+    expect(joinLate(s, "h02", 2, "7:05 PM")).toBe("");
+    expect(s.cancelHosts).toEqual({});
+    expect(s.rules.filter((r) => r.rule === "only in rounds")).toEqual([]);
+    cancelHost(s, "h02", 2, "7:10 PM");
+    expect(joinLate(s, "h02", 3, "7:15 PM")).toBe("");
+    expect(s.rules.at(-1)).toEqual({ rule: "only in rounds", host_table: "Art", fam: "", rounds: "1, 3" });
+  });
+
   it("where a table is stays with the table when a fam moves", () => {
     const s = dinner();
     s.fams[0].location = "balcony"; s.fams[0].step_free = "";

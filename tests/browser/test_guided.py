@@ -207,3 +207,32 @@ def test_the_full_planner_is_at_its_own_address(url):
         button(p, "Back to the guided planner").click()
         p.wait_for_selector("text=Plan your rotation dinner")
         browser.close()
+
+
+def test_a_move_already_passed_on_is_taken_back_out_loud(page):
+    # Someone is told to move; a later change undoes that move. They must be told again.
+    p = page
+    p.get_by_text("Try an example").click()
+    p.wait_for_selector(".c-plan")
+    button(p, "Looks good: print").click()
+    with p.expect_popup() as pop:
+        button(p, "Print everything").click()
+    pop.value.close()
+    button(p, "Next: run the event").click()
+    button(p, "Start round 1").click()
+    button(p, "Someone changed?").click()
+    button(p, "An alum left or didn't come").click()
+    p.get_by_label("Alum who left").select_option(label="Alum A")
+    p.get_by_label("Misses from round").select_option("2")
+    button(p, "Work out who moves").click()
+    p.wait_for_selector(".c-tell")
+    for box in p.locator(".c-tell input[type=checkbox]").all():
+        box.check()
+    assert "Everyone has been told" in words(p)
+    button(p, "Someone changed?").click()
+    button(p, "An alum arrived late, or someone new came").click()
+    p.get_by_label("Alum who arrived").select_option(label="Alum A")
+    p.get_by_label("Hosts from round").select_option("2")
+    button(p, "Work out who moves").click()
+    p.wait_for_selector(".c-tell")
+    assert "change of plan for round 2" in words(p)

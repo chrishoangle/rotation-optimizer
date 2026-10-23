@@ -429,7 +429,7 @@ sheet, and re-plans when someone cancels.
 
 How to open it
 1. Go to https://chrishoangle.github.io/rotation-optimizer/app/
-2. Choose Open a saved event, and pick "${base} handoff.rotation.json"
+2. Choose Open last year's file, and pick "${base} handoff.rotation.json"
    from this folder.
 3. Check the alumni and fams for your year, then click Make the schedule.
    The steps at the top of the page walk you through the rest.

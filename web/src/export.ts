@@ -167,7 +167,7 @@ export function hostCardsHtml(
         lines.push(`<tr><td class="r">Round ${r}</td><td class="t"></td><td><div class="fam">Not hosting this round</div></td></tr>`);
       } else {
         lines.push(`<tr><td class="r">Round ${r}</td><td class="t"></td><td><div class="fam">No table this round</div>` +
-          '<div class="pts">More hosts than fams this round. Please wait near the front for the next round.</div></td></tr>');
+          '<div class="pts">More alumni than fams this round. Please wait near the front for the next round.</div></td></tr>');
       }
     }
     cards.push(
@@ -289,12 +289,12 @@ export function runSheetHtml(p: EventPlan, title = "Run sheet", startTime = "", 
     if (breaks.length) notes.push(`No table this round: ${breaks.join(", ")}.`);
     if (limited.length) notes.push(`Not hosting this round: ${limited.join(", ")}.`);
     if (out.length) notes.push(`Cancelled: ${out.join(", ")}.`);
-    const say = r === 1 ? `Round ${r} starts. Hosts, go to the table on your host card for round ${r}.`
-      : `Thank your table. Hosts, move to the table on your host card for round ${r}.`;
+    const say = r === 1 ? `Round ${r} starts. Alumni, go to the table on your card for round ${r}.`
+      : `Thank your table. Alumni, move to the table on your card for round ${r}.`;
     steps.push([t, `Round ${r}`, [say, ...notes].join(" ")]);
     t += roundMinutes + (r < p.rounds ? switchMinutes : 0);
   }
-  steps.push([t, "Closing", "Thank the hosts and the fams. Collect table tents and host cards."]);
+  steps.push([t, "Closing", "Thank the alumni and the fams. Collect the table numbers and alumni cards."]);
   const when = (m: number) => { const c = clock(startTime, m); return c ? e(c) : '<span class="blank"></span>'; };
   const timeline = steps.map(([m, what, say]) => `<tr><td class="time">${when(m)}</td><td class="what">${e(what)}</td><td>${e(say)}</td></tr>`).join("");
   // A topic column only when some alum has a topic that is not just their name.

@@ -210,7 +210,7 @@ def host_cards_html(
                 lines.append(f'<tr><td class="r">Round {r}</td><td class="t"></td><td><div class="fam">Not hosting this round</div></td></tr>')
             else:
                 lines.append(f'<tr><td class="r">Round {r}</td><td class="t"></td><td><div class="fam">No table this round</div>'
-                             '<div class="pts">More hosts than fams this round. Please wait near the front for the next round.</div></td></tr>')
+                             '<div class="pts">More alumni than fams this round. Please wait near the front for the next round.</div></td></tr>')
         cards.append(
             f'<article class="hc{" full" if _card_inches(h, lines) > 4.9 else ""}"><div class="head">{_stamp(updated)}<span class="lbl">Your tables tonight</span><h2>{e(h.person or h.name)}</h2>'
             + (f'<div class="person">{e(h.name)}</div>' if h.person and h.person != h.name else "")
@@ -366,11 +366,11 @@ def run_sheet_html(
             notes.append(f"Not hosting this round: {', '.join(limited)}.")
         if out:
             notes.append(f"Cancelled: {', '.join(out)}.")
-        say = (f"Round {r} starts. Hosts, go to the table on your host card for round {r}."
-               if r == 1 else f"Thank your table. Hosts, move to the table on your host card for round {r}.")
+        say = (f"Round {r} starts. Alumni, go to the table on your card for round {r}."
+               if r == 1 else f"Thank your table. Alumni, move to the table on your card for round {r}.")
         steps.append((t, f"Round {r}", " ".join([say] + notes)))
         t += round_minutes + (switch_minutes if r < plan.rounds else 0)
-    steps.append((t, "Closing", "Thank the hosts and the fams. Collect table tents and host cards."))
+    steps.append((t, "Closing", "Thank the alumni and the fams. Collect the table numbers and alumni cards."))
 
     def when(minutes: int) -> str:
         clock = _clock(start_time, minutes)

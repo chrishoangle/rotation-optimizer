@@ -383,7 +383,8 @@ main.coord select { width: auto; min-width: 10rem; }
 .c-seat-button.empty { color: var(--ink-soft); border-style: dashed; }
 .c-seat-button.picked { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .c-seat-button.target { border-color: var(--accent); background: var(--accent-wash); }
-.c-seat-button.blocked { opacity: .5; text-decoration: line-through; cursor: not-allowed; }
+.c-seat-button.blocked { opacity: .55; border-style: dotted; cursor: not-allowed; flex-wrap: wrap; }
+.c-blocked-note { font-size: 11px; color: var(--ink-soft); width: 100%; }
 .c-seat-button[disabled] { cursor: default; opacity: .6; }
 .c-pin { font-size: 11px; color: inherit; opacity: .7; margin-left: auto; }
 

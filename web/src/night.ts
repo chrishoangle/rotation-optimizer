@@ -188,16 +188,19 @@ export function joinLate(s: EventState, hostId: string, from: number, at: string
   const rounds = s.plan?.rounds ?? s.rounds;
   if (!row) return "That alum is not in the event.";
   if (from < s.finished + 1 || from > rounds) return `Choose a round from ${s.finished + 1} to ${rounds}.`;
+  // Someone who left after hosting and came back keeps the rounds before they left.
+  const leftAt = s.cancelHosts[hostId];
   delete s.cancelHosts[hostId];
-  if (from > 1) {
-    const label = (row.table_label ?? "").trim().toLowerCase();
-    const rule = s.rules.find((r) => r.rule === "only in rounds" && (r.host_table ?? "").trim().toLowerCase() === label);
-    const before = rule ? (rule.rounds ?? "").split(/[^0-9]+/).map(Number).filter((n) => n >= 1 && n <= rounds) : Array.from({ length: rounds }, (_, k) => k + 1);
-    const keep = before.filter((r) => r >= from);
-    if (!keep.length) return `${row.table_label} only comes for rounds before ${from}. Change their rule under Pairing rules instead.`;
+  const label = (row.table_label ?? "").trim().toLowerCase();
+  const rule = s.rules.find((r) => r.rule === "only in rounds" && (r.host_table ?? "").trim().toLowerCase() === label);
+  const all = Array.from({ length: rounds }, (_, k) => k + 1);
+  const had = rule ? (rule.rounds ?? "").split(/[^0-9]+/).map(Number).filter((n) => n >= 1 && n <= rounds) : all;
+  const keep = had.filter((r) => r >= from || (leftAt !== undefined && leftAt > 1 && r < leftAt));
+  if (!keep.some((r) => r >= from)) return `${row.table_label} only comes for rounds before ${from}. Change their arrangement in Set up instead.`;
+  if (keep.length < all.length) {
     if (rule) rule.rounds = keep.join(", ");
     else s.rules.push({ rule: "only in rounds", host_table: row.table_label, fam: "", rounds: keep.join(", ") });
-  }
+  } else if (rule) s.rules = s.rules.filter((r) => r !== rule);
   if (!s.arrived.includes(hostId)) s.arrived.push(hostId);
   const who = row.host_name && row.host_name !== row.table_label ? `${row.host_name} (${row.table_label})` : row.table_label;
   logChange(s, at, `${who} arrived late and hosts from round ${from}.`);

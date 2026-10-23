@@ -398,9 +398,11 @@ function tidy(s: EventState): void {
 function uniqueFields(s: EventState): void {
   const count = new Map<string, number>();
   for (const r of s.hosts) { const k = (r.table_label ?? "").trim().toLowerCase(); if (k) count.set(k, (count.get(k) ?? 0) + 1); }
+  // If any field repeats, every alum is known by name, so printouts stay consistent.
+  if (![...count.values()].some((n) => n > 1)) return;
   for (const r of s.hosts) {
     const field = (r.table_label ?? "").trim();
-    if (!field || (count.get(field.toLowerCase()) ?? 0) < 2 || !(r.host_name ?? "").trim()) continue;
+    if (!field || !(r.host_name ?? "").trim() || field === r.host_name.trim()) continue;
     const tags = (r.tags ?? "").split(/[;,]/).map((t) => t.trim()).filter(Boolean);
     if (!tags.some((t) => t.toLowerCase() === field.toLowerCase())) r.tags = [field.toLowerCase(), ...tags].join("; ");
     r.table_label = r.host_name.trim();
@@ -447,7 +449,9 @@ function addRows(kind: "hosts" | "fams", grid: string[][]): void {
   ctx.persist();
   const words: Record<string, string> = { host_name: "names", table_label: "fields", tags: "interests", fam_label: "fam names", interests: "interests", table_number: "table numbers", students: "students" };
   const used = byName ? Object.entries(mapping).filter(([k]) => words[k]).map(([k, v]) => `${words[k]} from "${v}"`).join(", ") : "";
-  imported = { kind, skipped: header ? grid[0] : null, columns: used };
+  const usedCols = new Set(Object.values(mapping));
+  const ignored = byName ? grid[0].filter((c) => c.trim() && !usedCols.has(c) && !/e-?mail|phone|mobile/i.test(c)) : [];
+  imported = { kind, skipped: header ? grid[0] : null, columns: used + (ignored.length ? `. We didn't use: ${ignored.map((c) => `"${c}"`).join(", ")}. If they hold late arrivals or stairs, add those under More options` : "") };
   say("ok", `Added ${kind === "hosts" ? alumni(body.length) : famsN(body.length)}.`);
 }
 
@@ -545,7 +549,8 @@ function peopleList(kind: "hosts" | "fams", cols: Col[]): HTMLElement {
       [...rows(), null].map((row, i) => {
         const r = row ?? ({} as CleanRow);
         const cells = cols.map((c) => {
-          const input = h("input", { type: "text", value: r[c.key] ?? "", placeholder: row ? "" : c.placeholder, "aria-label": `${c.label}, row ${i + 1}`, className: c.wide ? "wide" : "", "data-col": c.key }) as HTMLInputElement;
+          const shown = c.key === "table_label" && row && r.table_label === r.host_name ? "" : r[c.key] ?? "";
+          const input = h("input", { type: "text", value: shown, placeholder: row ? (c.key === "table_label" ? "optional" : "") : c.placeholder, "aria-label": `${c.label}, row ${i + 1}`, className: c.wide ? "wide" : "", "data-col": c.key }) as HTMLInputElement;
           const before = r[c.key] ?? "";
           input.addEventListener("input", () => {
             if (!row) {
@@ -560,7 +565,7 @@ function peopleList(kind: "hosts" | "fams", cols: Col[]): HTMLElement {
               again?.setSelectionRange(again.value.length, again.value.length);
               return;
             }
-            r[c.key] = input.value;
+            r[c.key] = c.key === "table_label" && !input.value.trim() ? r.host_name ?? "" : input.value;
             ctx.persist();
           });
           input.addEventListener("change", () => {
@@ -745,8 +750,9 @@ function summary(p: EventPlan): HTMLElement {
   const weak = p.assignments.filter((a) => a.score === 0).length;
   const lines = [
     lo === hi ? `Every fam meets ${alumni(lo)}, a different one each round.` : `Each fam meets ${lo} to ${alumni(hi)}, a different one each round.`,
-    anyInterests && weak ? `${weak === 1 ? "One pairing is" : `${weak} pairings are`} a weaker match because no closer match exists.` : "",
-    provenOptimal(p) ? (p.keptSlots !== null ? "This is the best update, changing as little as possible." : "This is the best schedule available for these lists.") : "",
+    anyInterests && weak ? `${weak === 1 ? "One pairing is" : `${weak} of ${p.assignments.length} pairings are`} a weaker match: the alum and fam share no interest word.` +
+      (weak * 2 > p.assignments.length ? " Matches only count identical words, so using the same words in both lists (for example \"computer science\" in both, not \"CS\" in one) gives better matches." : "") : "",
+    provenOptimal(p) ? (p.keptSlots !== null ? "This is the best update, changing as little as possible." : "With these words, no other schedule shares more interests.") : "",
   ].filter(Boolean);
   return h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, "✓"),
     h("div", {}, h("p", { className: "c-answer-main" }, lines[0]), lines.slice(1).map((l) => h("p", { className: "c-help" }, l))));
@@ -762,7 +768,8 @@ function needsYou(p: EventPlan): HTMLElement[] {
     if (!x.stepFree) continue;
     const who = p.hosts.find((y) => y.hostId === hostId)!;
     const sitOut = rs.filter((r) => r >= x.from && r <= x.until && !(p.hostAway[hostId] ?? []).includes(r));
-    if (sitOut.length) out.push(h("li", {}, `${who.person || who.name} sits out round${sitOut.length !== 1 ? "s" : ""} ${sitOut.join(" and ")}: only ${free.length} table${free.length !== 1 ? "s are" : " is"} step-free. `,
+    const here = Array.from({ length: p.rounds }, (_, k) => k + 1).filter((r) => r >= x.from && r <= x.until && !(p.hostAway[hostId] ?? []).includes(r)).length;
+    if (sitOut.length && here > free.length) out.push(h("li", {}, `${who.person || who.name} sits out round${sitOut.length !== 1 ? "s" : ""} ${sitOut.join(" and ")}: only ${free.length} table${free.length !== 1 ? "s are" : " is"} step-free. `,
       h("button", { className: "c-link", onclick: () => { go("setup"); moreHosts = true; noteFor = hostId; openCard = "hosts"; render(); } }, "Mark more tables step-free")));
   }
   return out;
@@ -820,10 +827,23 @@ function adjustBar(p: EventPlan): HTMLElement {
   const who = host ? host.person || host.name : "This empty seat";
   return h("div", { className: "c-adjust", role: "status" },
     h("p", {}, h("strong", {}, `${who}, round ${picked.round}. `), `Now tap where they should go in round ${picked.round}.`),
+    blockedReasons(p).length ? h("ul", { className: "c-help" }, blockedReasons(p).map((x) => h("li", {}, x))) : null,
     h("div", { className: "c-row" },
       host ? h("button", { className: "c-link", "aria-expanded": why ? "true" : "false", onclick: () => { why = !why; render(); } }, why ? "Hide why" : `Why is ${who} here?`) : null,
       h("button", { className: "c-link", onclick: () => { picked = null; why = false; render(); } }, "Cancel")),
     why && host ? whyBox(p) : null);
+}
+
+/** Why some seats in the picked round are not possible, once each. */
+function blockedReasons(p: EventPlan): string[] {
+  if (!picked) return [];
+  const out = new Set<string>();
+  for (const f of p.fams) {
+    if (f.groupId === picked.famId) continue;
+    const why = swapBlock(p, picked.round, picked.famId, f.groupId);
+    if (why) out.add(`Seats marked "not possible": ${why}`);
+  }
+  return [...out];
 }
 
 /** The schedule as a room plan: one row per table, one column per round. */
@@ -860,7 +880,8 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
             "aria-label": `Table ${tables[f.groupId]}, ${f.name}, round ${r}: ${label}${weak ? ", weaker match" : ""}${pinned ? ", placed by hand" : ""}${blocked ? `. Not possible: ${blocked}` : ""}`,
             "data-k": `seat-${r}-${f.groupId}`, title: blocked || null,
             onclick: () => { if (blocked) { say("info", blocked); render(); return; } tapSeat(p, r, f.groupId); },
-          }, h("span", { className: "c-round-tag", "aria-hidden": "true" }, `R${r}`), h("span", { className: "c-seat-name" }, label), pinned ? h("span", { className: "c-pin", "aria-hidden": "true" }, "placed") : null));
+          }, h("span", { className: "c-round-tag", "aria-hidden": "true" }, `R${r}`), h("span", { className: "c-seat-name" }, label), pinned ? h("span", { className: "c-pin", "aria-hidden": "true" }, "placed") : null,
+            blocked ? h("span", { className: "c-blocked-note", "aria-hidden": "true" }, "not possible") : null));
       }))));
 }
 
@@ -965,7 +986,7 @@ function docs(s: EventState, p: EventPlan): Doc[] {
     { label: "Room chart", purpose: "For the wall or the door: who sits where, each round.", pages: p.rounds + (students ? 1 : 0), make: () => seatingChartHtml(p, s.title, null, true, "", loc) },
     { label: "Alumni cards", purpose: "One for each alum: where to go each round.", pages: Math.ceil(p.hosts.length / 2), make: () => hostCardsHtml(p, null, s.title, "", loc) },
     { label: "Table numbers", purpose: "Fold one and stand it on each table.", pages: p.fams.length, make: () => tableTentsHtml(p) },
-    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 2, make: () => runSheetHtml(p, s.title, s.startTime, s.roundMinutes) },
+    { label: "Run sheet", purpose: "For you and the MC: the order of the night and a check-in list.", pages: 1 + Math.ceil((p.hosts.length + p.fams.length) / 26), make: () => runSheetHtml(p, s.title, s.startTime, s.roundMinutes) },
   ];
 }
 
@@ -982,7 +1003,7 @@ function printPage(): HTMLElement {
   const s = ev();
   const p = s.plan!;
   const list = docs(s, p);
-  const total = list.reduce((n, d) => n + d.pages, 0);
+  const total = list.reduce((n, d) => n + d.pages, 0); // an estimate: long names can add a page
   const reprint = reprintNeeded(s);
   const loc = famLocations(s);
   const recorded = () => { ctx.markPrinted(); say("ok", "You are ready for the event. If anything changes, the app will tell you exactly what to reprint."); };
@@ -1020,9 +1041,9 @@ function printPage(): HTMLElement {
         render();
       } }, "Print only the changed pages")) : null,
     h("ul", { className: "c-docs" }, list.map((d) => h("li", {}, thumb(d.make(), d.label),
-      h("div", { className: "c-doc-text" }, h("strong", {}, d.label), h("span", { className: "c-help" }, d.purpose), h("span", { className: "c-pages" }, `${d.pages} page${d.pages !== 1 ? "s" : ""}`))))),
+      h("div", { className: "c-doc-text" }, h("strong", {}, d.label), h("span", { className: "c-help" }, d.purpose), h("span", { className: "c-pages" }, `About ${d.pages} page${d.pages !== 1 ? "s" : ""}`))))),
     h("div", { className: "c-actions" },
-      h("span", { className: "c-help" }, `${total} pages in all, on US Letter.`),
+      h("span", { className: "c-help" }, `About ${total} pages in all, on US Letter.`),
       h("button", { className: `c-button ${printedOk ? "" : "primary"} big`, disabled: !isCurrent(s), onclick: () => {
         if (!s.title.trim()) s.title = "Alumni dinner";
         openPage(printEverythingHtml(s.title, list.map((d) => [d.label, d.make()])));
@@ -1035,7 +1056,7 @@ function printPage(): HTMLElement {
         h("div", { className: "c-field" }, h("label", { for: "c-doors", className: "c-label" }, "Doors open (adds times to the run sheet)"), doors),
         h("div", { className: "c-field" }, h("label", { for: "c-minutes", className: "c-label" }, "Each round lasts"), minutes)),
       h("p", { className: "c-label" }, "Print one at a time"),
-      h("ul", { className: "c-plain-list" }, [...list.map((d): [string, string, () => string] => [d.label, d.purpose.toLowerCase(), d.make]), ...extra].map(([label, purpose, make]) =>
+      h("ul", { className: "c-plain-list" }, [...list.map((d): [string, string, () => string] => [d.label, d.purpose.charAt(0).toLowerCase() + d.purpose.slice(1), d.make]), ...extra].map(([label, purpose, make]) =>
         h("li", {}, h("button", { className: "c-link", onclick: () => openPage(make()) }, label), h("span", { className: "c-help" }, `: ${purpose.replace(/\.$/, "")}`))))),
     h("div", { className: "c-actions" }, h("span"), h("button", { className: "c-button big", onclick: () => go("run") }, "Next: run the event")));
 }
@@ -1087,7 +1108,7 @@ function runPage(): HTMLElement {
     runNote ? h("div", { className: "c-msg ok" }, runNote) : null,
     current || busy ? null : h("div", { className: "c-msg warn c-row spread" }, "The schedule is out of date.",
       h("button", { className: "c-button primary", onclick: () => applyChange(() => "") }, "Update it")),
-    current && !busy ? tellList(p) : null,
+    current && !busy && !over ? tellList(p) : null,
     over || busy ? null : changeSheet(p),
     over ? h("div", { className: "c-card" }, h("p", {}, "That's a wrap. Thank your alumni and your fams."),
       h("button", { className: "c-button primary big wide", onclick: () => go("wrap") }, "Wrap up")) : null,
@@ -1146,7 +1167,6 @@ function tellList(p: EventPlan): HTMLElement | null {
   const base = s.printed ?? beforeChange;
   if (!base) return null;
   const m = movesBetween(base, p, s.finished + 1);
-  if (!m.hosts.length && !m.fams.length) return null;
   const told = new Set(s.night.told ?? []);
   const keyOf = (x: { round: number; hostId: string; now: string }) => `${x.round}|${x.hostId}|${x.now}`;
   const item = (key: string, text: string) => {
@@ -1154,11 +1174,40 @@ function tellList(p: EventPlan): HTMLElement | null {
     box.addEventListener("change", () => { toggleTold(s, key); ctx.persist(); render(); });
     return h("li", { className: told.has(key) ? "told" : "" }, h("label", { className: "c-checkline" }, box, h("span", {}, text)));
   };
-  const left = [...m.hosts.map(keyOf), ...m.fams.map((x) => `fam|${x.round}|${x.famId}`)].filter((k) => !told.has(k)).length;
+  // Someone already told to move, whose move a later change undid, must be told again.
+  const tables = tableNumbers(p);
+  const live = new Set(m.hosts.map(keyOf));
+  const redo: [string, string][] = [];
+  for (const k of told) {
+    if (k.startsWith("fam|")) {
+      const [, round, famId] = k.split("|");
+      const r = Number(round);
+      if (r <= s.finished || m.fams.some((x) => x.round === r && x.famId === famId)) continue;
+      const a = p.assignments.find((x) => x.round === r && x.groupId === famId);
+      const fam = p.fams.find((f) => f.groupId === famId);
+      if (!a || !fam) continue;
+      const host = p.hosts.find((x) => x.hostId === a.hostId)!;
+      redo.push([`redo|${k}|${a.hostId}`, `Table ${tables[famId]} (${fam.name}): change of plan for round ${r}. ${host.person || host.name} is coming after all.`]);
+      continue;
+    }
+    const [round, hostId, was] = k.split("|");
+    const r = Number(round);
+    if (k.startsWith("fam|") || k.startsWith("redo|") || live.has(k) || r <= s.finished || !p.hosts.some((x) => x.hostId === hostId)) continue;
+    if (m.hosts.some((x) => x.round === r && x.hostId === hostId)) continue; // the new instruction already covers it
+    const now = p.assignments.find((a) => a.round === r && a.hostId === hostId)?.groupId;
+    if (now === was) continue;
+    const host = p.hosts.find((x) => x.hostId === hostId)!;
+    const fam = p.fams.find((f) => f.groupId === now);
+    redo.push([`redo|${k}|${now ?? ""}`, `${host.person || host.name}: change of plan for round ${r}. ` + (fam ? `Go to Table ${tables[fam.groupId]} (${fam.name}), not the table you were told earlier.` : "No table in that round after all; wait near the front.")]);
+  }
+  const keys = [...m.hosts.map(keyOf), ...m.fams.map((x) => `fam|${x.round}|${x.famId}`), ...redo.map(([k]) => k)];
+  const left = keys.filter((k) => !told.has(k)).length;
+  if (!m.hosts.length && !m.fams.length && !redo.length) return null;
+  const cardWord = (t: string) => (s.printed ? t : t.replace(/your card said/gi, "before, you had").replace(/as your card says/gi, "as planned"));
   return h("section", { className: "c-card c-tell" },
     h("h2", {}, left ? `Tell these people to move (${left} left)` : "Everyone has been told"),
     h("p", { className: "c-help" }, "Everyone else stays where their card says."),
-    h("ul", {}, m.hosts.map((x) => item(keyOf(x), x.text)), m.fams.map((x) => item(`fam|${x.round}|${x.famId}`, x.text))),
+    h("ul", {}, redo.map(([k, t]) => item(k, t)), m.hosts.map((x) => item(keyOf(x), cardWord(x.text))), m.fams.map((x) => item(`fam|${x.round}|${x.famId}`, cardWord(x.text)))),
     m.hosts.length ? h("button", { className: "c-link", onclick: () => openPage(changeSlipsHtml(p, m.hosts, s.title, ctx.now())) }, "Print a slip for each person") : null);
 }
 
@@ -1208,7 +1257,7 @@ function changeSheet(p: EventPlan): HTMLElement {
   } else if (change === "table") {
     const fam = h("select", { "aria-label": "Fam at another table" }, h("option", { value: "" }, "Which fam?"), famsOf(s).map((r) => h("option", { value: r.fam_id }, r.fam_label))) as HTMLSelectElement;
     const table = h("input", { type: "number", min: 1, step: 1, inputmode: "numeric", placeholder: "Table number they are at", "aria-label": "Table they are at" }) as HTMLInputElement;
-    form = h("div", { className: "c-form" }, fam, table, h("p", { className: "c-help" }, "Don't move the students. The alumni come to them."),
+    form = h("div", { className: "c-form" }, fam, table, h("p", { className: "c-help" }, "Don't move the students: the alumni come to them. If another fam has that table number, the two fams swap numbers."),
       run("Work out who moves", () => (fam.value ? moveFamTable(s, fam.value, Number(table.value), ctx.now()) : "Choose the fam.")));
   } else if (change === "wrong") {
     const tables = tableNumbers(p);

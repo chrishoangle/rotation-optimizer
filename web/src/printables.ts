@@ -211,7 +211,7 @@ export function mcCueCardHtml(s: EventState, p: EventPlan, now: number): string 
   const rows: string[] = [];
   let t = st.phase === "during" ? toMinutes(s.night.roundTimes?.[String(st.round)]?.start ?? "") ?? now : Math.max(now, plannedStart(s, st.round) ?? now);
   for (let r = st.round; r <= p.rounds; r++) {
-    const say = r === 1 ? "Hosts, go to the table on your host card for round 1." : `Thank your table. Hosts, move to the table on your host card for round ${r}.`;
+    const say = r === 1 ? "Alumni, go to the table on your card for round 1." : `Thank your table. Alumni, move to the table on your card for round ${r}.`;
     const started = st.phase === "during" && r === st.round;
     rows.push(`<tr><td class="t">${started ? "now" : e(shown(t))}</td><td><b>Round ${r}</b>${started ? " (under way)" : ""}</td><td>${started ? "" : e(say)}</td></tr>`);
     rows.push(`<tr><td class="t">${e(shown(t + len))}</td><td>End of round ${r}</td><td>${r < p.rounds ? "Ask hosts to say goodbye; they move in a minute." : "Thank the hosts and the fams. Closing."}</td></tr>`);
