@@ -40,42 +40,27 @@ ${body}
 /** Two pages: planning in steps, then "on the night, if this happens, do this". */
 export function coordinatorGuideHtml(title: string): string {
   const ifs: [string, string][] = [
-    ["An alum cancels before the night", "Open the event, click Open night mode or use Changes on the night, cancel them from round 1, and Re-plan. Reprint only the pages listed."],
-    ["An alum doesn't show up", "In night mode, under Check-in, tap Didn't show next to their name, then Update the schedule. Hand out the change slips, or tell the runner what the page says."],
-    ["An alum has to leave early", "Night mode, Someone has to leave: choose them and the first round they miss, then Update the schedule."],
-    ["An alum arrives late, or an extra one comes", "Night mode, tap An alum arrived late, fill in their table name and fields, choose the round they join, then Update the schedule. If every fam already has a host, seat them with a host table that shares their fields."],
+    ["An alum doesn't show up, or has to leave", "Run the event, Someone changed?, An alum left or didn't come. Choose them and the first round they miss, then Re-plan. Tell the people listed."],
+    ["An alum arrives late, or someone new comes", "Someone changed?, An alum arrived. Choose them, or Someone not on the list, and the round they start, then Re-plan."],
+    ["Students sit at the wrong table", "Don't move the students. Someone changed?, A fam is at another table: type the number they are at, then Re-plan. The alumni come to them."],
+    ["A whole fam leaves", "Someone changed?, A fam left, then Re-plan."],
     ["A student walks in", "Nothing to change: they join any fam with space."],
-    ["A whole fam leaves", "Night mode, Someone has to leave, choose the fam, then Update the schedule."],
-    ["A round runs long, or the night is late", "Tap Start and Finished as rounds really happen. Night mode shows how late you are, when the night will now end, and how short the remaining rounds would need to be. Print the MC cue card with the new times."],
-    ["Students sit at the wrong table, or tents are misplaced", "Don't move the students. In Room setup, tap Different table next to the fam and type the number they are at, then Update the schedule. Every alum whose table changed is listed."],
-    ["Two alumni end up at the same table", "Who is where shows who should be there. If moving them would be worse, tap Not right? on that table, choose who is really there, then Update the schedule."],
-    ["A table can't be reached without steps", "Mark tables in the Step-free column, and give the alum a needs step-free rule. On the night, a fam can move to a step-free table with Different table."],
-    ["A volunteer disappears", "Hand their role card and runner sheet to someone else, or let anyone scan the QR code under Show volunteers who is where."],
-    ["An alum who didn't show turns up later", "Under Check-in, tap Arrived late next to them, choose the round they join, then Update the schedule."],
-    ["The wifi is down", "The page still opens on any device that visited it before. If not, open the offline copy file you downloaded, then Open a saved event file."],
-    ["The laptop dies", "Use the backup packet on paper to run the night, or open the printed backup event file on a phone or a second laptop."],
-    ["Something looks wrong in the schedule", "Click Why? next to the pairing. To change it, choose a different host there; it becomes a rule, and Undo puts it back."],
+    ["The laptop or wifi dies", "Run the night from the printed seating chart. The app also works offline on any device that opened it before."],
   ];
   return page(`${title}: coordinator guide`, `
 <h1>${e(title)}: coordinator guide</h1>
-<p class="meta">Rotation Optimizer, ${e(APP_URL)}. Fams stay seated all night; alumni host tables move each round.</p>
+<p class="meta">Rotation Dinner, ${e(APP_URL)}. Students stay at their table all night; alumni move each round.</p>
 <h2>Before the night</h2>
 <ol>
-<li><strong>Collect sign-ups.</strong> In the sidebar, Collect sign-ups with Google Forms makes one form for alumni and one for students with the same list of fields. Or fill in the Hosts and Fams templates.</li>
-<li><strong>Upload or paste.</strong> Upload each form's CSV, or paste rows from a spreadsheet into the tables. Check the warnings under the tables.</li>
-<li><strong>Add rules if needed.</strong> must meet, never meet, only in rounds (for alumni who come late or leave early), or stays with (for an alum who cannot move between tables).</li>
-<li><strong>Find the best schedule.</strong> Read the fairness notes. Click Why? on anything that looks odd, and choose a different host there if you know better.</li>
-<li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, backup packet, runner sheets, and host badges. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
-<li><strong>Brief volunteers.</strong> Print the volunteer role cards and hand one to each person.</li>
-<li><strong>Set up the room.</strong> Before doors open, open night mode, put each tent on its table, walk the room with the setup sheet, and tap Check for each table.</li>
+<li><strong>Your lists.</strong> Paste your alumni (name, then what they can talk about) and your fams (name, then interests) from your spreadsheet. Note anyone arriving late or who can't use stairs.</li>
+<li><strong>Schedule.</strong> Make the schedule. To swap two alumni, tap one, then another in the same round.</li>
+<li><strong>Print.</strong> Print everything: seating chart, host cards, table numbers, and run sheet in one file.</li>
 </ol>
-<h2>The 30-second explanation for staff</h2>
-<p>Students stay seated with their fam. Alumni move tables every round. The tool picks who goes where so every fam meets people in their fields and nobody meets the same alum twice. If someone cancels, we press one button and it tells us who to send where and what to reprint.</p>
-<h2 class="break">On the night: if this happens, do this</h2>
-<p>Open the event and click <strong>Open night mode</strong>. It works on a phone. Tap <strong>Start round 1</strong> when the first round begins, then <strong>Finished</strong> and <strong>Start</strong> for each round as it really happens. The chips at the top say what needs you. Show the QR code to volunteers so they can see who is where.</p>
+<h2>On the night: if this happens, do this</h2>
+<p>Open <strong>Run the event</strong> on your phone. Tap <strong>Start round 1</strong>, and <strong>End round</strong> when each round ends. When something changes, tap <strong>Someone changed?</strong>; the app re-plans and lists exactly who to tell.</p>
 ${ifs.map(([when, what]) => `<div class="if"><strong>${e(when)}</strong>${e(what)}</div>`).join("\n")}
 <h2>After the night</h2>
-<p>Write what you learned in Notes for next year (sidebar), then click Hand off to next year and pass the folder on.</p>
+<p>Choose Save for next year, jot what you'd change, and pass the folder on.</p>
 `);
 }
 
@@ -297,4 +282,40 @@ export function hostBadgesHtml(p: EventPlan, title: string, locations: Record<st
 .ev { font-size: 9px; color: #5c5c63; text-transform: uppercase; letter-spacing: .05em; } .nm { font-size: 15px; font-weight: 800; } .tb { font-size: 11px; color: #3a3a3f; margin-bottom: 4px; }
 .r { font-size: 11px; line-height: 1.35; } .r span { display: inline-block; width: 52px; color: #5c5c63; } .r i { color: #5c5c63; }
 `);
+}
+
+/**
+ * Several printouts as one document, so a coordinator prints once. Each part
+ * keeps its own styles inside a shadow root, so the seating chart's styles
+ * never reach the host cards; every part starts on a new page.
+ */
+export function printEverythingHtml(title: string, parts: [string, string][]): string {
+  const tpl = parts.map(([label, html], i) => {
+    const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n")
+      .replace(/@page\s*\{[^}]*\}/g, "").replace(/\bhtml,\s*body\b/g, ":host").replace(/\bbody\b/g, ":host");
+    const body = html.match(/<body[^>]*>([\s\S]*)<\/body>/)?.[1] ?? html;
+    return `<div class="part" data-label="${e(label)}"></div><template><style>:host { display: block; } ${styles}</style>${body}</template>`;
+  }).join("\n");
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${e(title)}: everything to print</title>
+<style>
+@page { size: letter; margin: 0.5in; }
+body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1c1c1e; }
+.part { break-before: page; } .part:first-of-type { break-before: auto; }
+.bar { position: sticky; top: 0; background: #0f6b5f; color: #fff; padding: 12px 24px; display: flex; gap: 16px; align-items: center; justify-content: space-between; z-index: 2; }
+.bar button { font: inherit; font-weight: 700; padding: 8px 18px; border-radius: 8px; border: none; background: #fff; color: #0f6b5f; cursor: pointer; }
+@media screen { .part { margin: 24px; } }
+@media print { .bar { display: none; } }
+</style></head><body>
+<div class="bar"><span>${e(title)}: ${parts.map(([l]) => e(l)).join(", ")}. Print on US Letter.</span><button onclick="print()">Print</button></div>
+${tpl}
+<script>
+document.querySelectorAll(".part").forEach(function (host) {
+  var t = host.nextElementSibling;
+  host.attachShadow({ mode: "open" }).appendChild(t.content.cloneNode(true));
+});
+</script>
+</body></html>
+`;
 }
