@@ -120,4 +120,15 @@ describe("night mode actions", () => {
     expect(s.plan!.assignments.filter((a) => a.hostId === "h02").map((a) => a.round)).toEqual([2, 3]);
     expect(s.nightLog.at(-1)!.text).toBe("Alum B (Art) arrived late and hosts from round 2.");
   });
+
+  it("where a table is stays with the table when a fam moves", () => {
+    const s = dinner();
+    s.fams[0].location = "balcony"; s.fams[0].step_free = "";
+    s.fams[2].location = "near the door"; s.fams[2].step_free = "yes";
+    expect(moveFamTable(s, "fam_01", 3, "6:10 PM")).toBe("");
+    expect([s.fams[0].location, s.fams[0].step_free]).toEqual(["near the door", "yes"]);
+    expect([s.fams[2].location, s.fams[2].step_free]).toEqual(["balcony", ""]);
+    expect(moveFamTable(s, "fam_02", 9, "6:12 PM")).toBe("");
+    expect([s.fams[1].table_number, s.fams[1].location]).toEqual(["9", ""]);
+  });
 });

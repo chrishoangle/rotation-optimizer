@@ -41,17 +41,17 @@ ${body}
 export function coordinatorGuideHtml(title: string): string {
   const ifs: [string, string][] = [
     ["An alum cancels before the night", "Open the event, click Open night mode or use Changes on the night, cancel them from round 1, and Re-plan. Reprint only the pages listed."],
-    ["An alum doesn't show up", "In night mode, under Check-in, tap Didn't show next to their name, then Re-plan now. Hand out the change slips, or tell the runner what the page says."],
-    ["An alum has to leave early", "Night mode, Someone has to leave: choose them and the first round they miss, then Re-plan now."],
-    ["An alum arrives late, or an extra one comes", "Night mode, tap An alum arrived late, fill in their table name and fields, choose the round they join, then Re-plan now. If every fam already has a host, seat them with a host table that shares their fields."],
+    ["An alum doesn't show up", "In night mode, under Check-in, tap Didn't show next to their name, then Update the schedule. Hand out the change slips, or tell the runner what the page says."],
+    ["An alum has to leave early", "Night mode, Someone has to leave: choose them and the first round they miss, then Update the schedule."],
+    ["An alum arrives late, or an extra one comes", "Night mode, tap An alum arrived late, fill in their table name and fields, choose the round they join, then Update the schedule. If every fam already has a host, seat them with a host table that shares their fields."],
     ["A student walks in", "Nothing to change: they join any fam with space."],
-    ["A whole fam leaves", "Night mode, Someone has to leave, choose the fam, then Re-plan now."],
+    ["A whole fam leaves", "Night mode, Someone has to leave, choose the fam, then Update the schedule."],
     ["A round runs long, or the night is late", "Tap Start and Finished as rounds really happen. Night mode shows how late you are, when the night will now end, and how short the remaining rounds would need to be. Print the MC cue card with the new times."],
-    ["Students sit at the wrong table, or tents are misplaced", "Don't move the students. In Room setup, tap Different table next to the fam and type the number they are at, then Re-plan now. Every alum whose table changed is listed."],
-    ["Two alumni end up at the same table", "Who is where shows who should be there. If moving them would be worse, tap Not right? on that table, choose who is really there, then Re-plan now."],
+    ["Students sit at the wrong table, or tents are misplaced", "Don't move the students. In Room setup, tap Different table next to the fam and type the number they are at, then Update the schedule. Every alum whose table changed is listed."],
+    ["Two alumni end up at the same table", "Who is where shows who should be there. If moving them would be worse, tap Not right? on that table, choose who is really there, then Update the schedule."],
     ["A table can't be reached without steps", "Mark tables in the Step-free column, and give the alum a needs step-free rule. On the night, a fam can move to a step-free table with Different table."],
     ["A volunteer disappears", "Hand their role card and runner sheet to someone else, or let anyone scan the QR code under Show volunteers who is where."],
-    ["An alum who didn't show turns up later", "Under Check-in, tap Arrived late next to them, choose the round they join, then Re-plan now."],
+    ["An alum who didn't show turns up later", "Under Check-in, tap Arrived late next to them, choose the round they join, then Update the schedule."],
     ["The wifi is down", "The page still opens on any device that visited it before. If not, open the offline copy file you downloaded, then Open a saved event file."],
     ["The laptop dies", "Use the backup packet on paper to run the night, or open the printed backup event file on a phone or a second laptop."],
     ["Something looks wrong in the schedule", "Click Why? next to the pairing. To change it, choose a different host there; it becomes a rule, and Undo puts it back."],
@@ -67,7 +67,7 @@ export function coordinatorGuideHtml(title: string): string {
 <li><strong>Find the best schedule.</strong> Read the fairness notes. Click Why? on anything that looks odd, and choose a different host there if you know better.</li>
 <li><strong>Print and save.</strong> Print the seating chart, host cards, table tents, run sheet, backup packet, runner sheets, and host badges. Click Mark as printed: it also downloads a backup file. Keep that file on a second device. Download the offline copy of the app too.</li>
 <li><strong>Brief volunteers.</strong> Print the volunteer role cards and hand one to each person.</li>
-<li><strong>Set up the room.</strong> Before doors open, open night mode, put each tent on its table, walk the room with the setup sheet, and tap Checked for each table.</li>
+<li><strong>Set up the room.</strong> Before doors open, open night mode, put each tent on its table, walk the room with the setup sheet, and tap Check for each table.</li>
 </ol>
 <h2>The 30-second explanation for staff</h2>
 <p>Students stay seated with their fam. Alumni move tables every round. The tool picks who goes where so every fam meets people in their fields and nobody meets the same alum twice. If someone cancels, we press one button and it tells us who to send where and what to reprint.</p>
@@ -211,7 +211,7 @@ export function setupSheetHtml(rows: SetupRow[], title: string): string {
 <li>Put each table tent on its table. The tent shows the table number and the fam name.</li>
 <li>Walk the room with this sheet. Tick a table when the right tent is on it and the table is where it says.</li>
 <li>Check that the step-free tables can be reached without steps.</li>
-<li>In night mode, tap Checked for each table, so the tool knows the room is ready.</li>
+<li>In night mode, tap Check for each table, so the tool knows the room is ready.</li>
 </ol>
 <table><tr><th>Done</th><th>Table</th><th>Fam</th><th>Where</th><th>Step-free</th><th>Students</th></tr>
 ${sorted.map((r) => `<tr><td class="box"></td><td><b>${r.table}</b></td><td>${e(r.fam)}</td><td>${e(r.location)}</td><td>${r.stepFree ? "Yes" : ""}</td><td>${r.students || ""}</td></tr>`).join("\n")}

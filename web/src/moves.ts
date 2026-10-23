@@ -74,7 +74,7 @@ export function movesBetween(before: EventPlan, after: EventPlan, from: number):
       else if (has(after.hostLimits, h.hostId, r)) continue;
       else text = `${who}: no table in round ${r}. Your card said ${wasText}. Take a break, and thank you.`;
       hosts.push({ hostId: h.hostId, round: r, text, now: now ? nowText : "No table this round", was: was ? wasText : known ? "No table" : "New host" });
-      if (now) lines.push(`${h.name} goes to Table ${tableNumbers(after)[now]}`);
+      if (now) lines.push(`${h.person ? `${h.person} (${h.name})` : h.name} goes to Table ${tableNumbers(after)[now]}`);
     }
     for (const f of after.fams) {
       if (has(after.famAway, f.groupId, r)) continue;

@@ -72,6 +72,7 @@ function remember(): void {
 
 function go(n: number): void {
   step = n;
+  changed = [];
   problems = [];
   picked = null;
   why = null;
@@ -126,7 +127,7 @@ function openFileItem(): HTMLElement {
       ctx.set(loadEvent(await readFile(f)));
       say("ok", `Opened ${f.name}.`);
       more = false;
-      go(Math.min(furthest(), 3));
+      go(ev().plan ? 3 : 1);
     } catch {
       say("error", "That file is not a saved event. Choose a file you downloaded from this app.");
       render();
@@ -157,6 +158,14 @@ function nav(back: number | null, nextLabel: string | null, next: () => void, ex
     extra,
     nextLabel ? h("button", { className: "button primary big", disabled: busy, onclick: next }, nextLabel) : null);
 }
+
+// The More menu closes with a tap outside it or with Escape.
+document.addEventListener("click", (e) => {
+  if (more && !(e.target as HTMLElement).closest(".g-more")) { more = false; render(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (more && e.key === "Escape") { more = false; render(); }
+});
 
 export function renderGuided(c: GuidedCtx): void {
   ctx = c;
@@ -206,7 +215,7 @@ function startOpenInput(): HTMLElement {
     try {
       ctx.set(loadEvent(await readFile(f)));
       say("ok", `Opened ${f.name}.`);
-      go(Math.min(furthest(), 3));
+      go(ev().plan ? 3 : 1);
     } catch {
       say("error", "That file is not a saved event. Choose a file you downloaded from this app.");
       render();
@@ -227,6 +236,8 @@ function eventPage(): HTMLElement {
   rounds.addEventListener("change", () => { s.rounds = Number(rounds.value); s.finished = Math.min(s.finished, s.rounds - 1); ctx.persist(); });
   const doors = h("input", { type: "text", value: s.startTime, placeholder: "6:30 PM", "aria-label": "Doors open at" }) as HTMLInputElement;
   doors.addEventListener("input", () => { s.startTime = doors.value; ctx.persist(); });
+  const date = h("input", { type: "date", value: s.night.date ?? "", "aria-label": "Date of the event" }) as HTMLInputElement;
+  date.addEventListener("change", () => { s.night = { ...s.night, date: date.value }; ctx.persist(); });
   const minutes = h("select", { "aria-label": "Minutes per round" }, [10, 15, 20, 25, 30, 40].map((n) => h("option", { value: n, selected: n === s.roundMinutes }, `${n} minutes`))) as HTMLSelectElement;
   minutes.addEventListener("change", () => { s.roundMinutes = Number(minutes.value); ctx.persist(); });
   return h("section", { className: "g-page" },
@@ -234,6 +245,7 @@ function eventPage(): HTMLElement {
     h("div", { className: "g-form" },
       field("Event name", name),
       field("How many rounds?", rounds, "Each round, every alum sits with a different fam."),
+      field("Date", date, "Optional. On the day, night mode tells you if you are running late."),
       field("Doors open at", doors, "Optional. Used for the run sheet and the clock on the night."),
       field("Each round lasts", minutes)),
     nav(-1, "Next: alumni", () => {
@@ -255,13 +267,13 @@ interface Col { key: string; label: string; placeholder: string; wide?: boolean 
 
 const ALUMNI: Col[] = [
   { key: "host_name", label: "Alum's name", placeholder: "Alum A" },
-  { key: "table_label", label: "Table name", placeholder: "Their field, for example Pharmacy" },
-  { key: "tags", label: "Fields", placeholder: "pharmacy; healthcare; business", wide: true },
+  { key: "table_label", label: "Topic (optional)", placeholder: "e.g. Pharmacy" },
+  { key: "tags", label: "Can talk about", placeholder: "pharmacy; healthcare; business", wide: true },
 ];
 const FAMS: Col[] = [
   { key: "table_number", label: "Table", placeholder: "1" },
   { key: "fam_label", label: "Fam name", placeholder: "Fam Red" },
-  { key: "interests", label: "Fields", placeholder: "biology; pre-med", wide: true },
+  { key: "interests", label: "Interested in", placeholder: "biology; pre-med", wide: true },
   { key: "students", label: "Students (optional)", placeholder: "Student 01; Student 02", wide: true },
 ];
 const FAM_EXTRA: Col[] = [
@@ -322,7 +334,7 @@ function peopleList(kind: "hosts" | "fams", cols: Col[]): HTMLElement {
         const extra = kind === "hosts" && row ? settingsButton(row) : null;
         return [
           h("div", { className: `g-row ${row ? "" : "new"}` }, cells,
-            row ? h("button", { className: "button icon g-x", title: "Remove", "aria-label": `Remove row ${i + 1}`, onclick: () => {
+            row ? h("button", { className: "button icon g-x", title: "Remove", tabindex: -1, "aria-label": `Remove row ${i + 1}`, onclick: () => {
               rows().splice(i, 1);
               ctx.persist();
               draw();
@@ -429,7 +441,7 @@ function alumniPage(): HTMLElement {
   const s = ev();
   return h("section", { className: "g-page" },
     h("h1", {}, "Alumni"),
-    h("p", { className: "lead" }, "One row per alum. Fields are what they can talk about, separated by semicolons. Type here, or copy rows from your spreadsheet and paste them into the first box."),
+    h("p", { className: "lead" }, "One row per alum: their name, an optional topic for the signs (their name is used if you leave it blank), and what they can talk about, separated by semicolons. Type here, or copy rows from your spreadsheet and paste them into the first box."),
     h("div", { className: "row" }, uploadButton("hosts"), fieldsHelp()),
     problemsBox(),
     peopleList("hosts", ALUMNI),
@@ -449,7 +461,7 @@ function famsPage(): HTMLElement {
   const s = ev();
   return h("section", { className: "g-page" },
     h("h1", {}, "Fams"),
-    h("p", { className: "lead" }, "One row per fam, with the table number they will sit at. Fields are what the fam is interested in. Student names are optional; they print a find-your-table page."),
+    h("p", { className: "lead" }, "One row per fam: the table number they will sit at, the fam's name, and what its students are interested in. Student names are optional; they print a find-your-table page."),
     h("div", { className: "row" }, uploadButton("fams"), fieldsHelp(),
       h("button", { className: "button link", onclick: () => { showMoreColumns = !showMoreColumns; render(); } }, showMoreColumns ? "Fewer columns" : "More columns: size, where in the room, step-free")),
     problemsBox(),
@@ -466,8 +478,8 @@ function famsPage(): HTMLElement {
 }
 
 function fieldsHelp(): HTMLElement {
-  return h("details", { className: "g-fields" }, h("summary", {}, "Suggested fields"),
-    h("p", { className: "help" }, "Alumni and fams match on the same words, so use the same list on both sides: " + FIELDS.map((f) => f.toLowerCase()).join(", ") + "."));
+  return h("details", { className: "g-fields" }, h("summary", {}, "Suggested interests"),
+    h("p", { className: "help" }, "Alumni and fams match on the same words, so use the same words on both sides, for example: " + FIELDS.map((f) => f.toLowerCase()).join(", ") + "."));
 }
 
 function problemsBox(): HTMLElement | null {
@@ -477,26 +489,40 @@ function problemsBox(): HTMLElement | null {
 
 /** The planner's words, in a coordinator's. */
 function plain(text: string): string {
-  return text.replace(/host tables?/g, (m) => (m.endsWith("s") ? "alumni" : "alum")).replace(/\btags\b/g, "fields").replace(/\binterests\b/g, "fields")
+  return text.replace(/host tables?/g, (m) => (m.endsWith("s") ? "alumni" : "alum")).replace(/\bHost tables?\b/g, (m) => (m.endsWith("s") ? "Alumni" : "Alum"))
+    .replace(/\btags?\b/g, "interests").replace(/\bhosts\b/g, "alumni").replace(/\bhost\b/g, "alum")
     .replace(/Pairing rule \d+: /, "").replace(/pairing rule/g, "setting");
+}
+
+/** A planner warning in a coordinator's words, for Things to look at and Details. */
+function warningWords(w: string): string {
+  if (w.startsWith("Host tags that no fam lists") || w.startsWith("Fam interests that no host lists")) {
+    const list = w.slice(w.indexOf(": ") + 2).replace(/\.$/, "");
+    return w.startsWith("Host") ? `No fam is interested in: ${list}.` : `No alum talks about: ${list}.`;
+  }
+  return plain(w.replace(/^Fairness check: /, ""))
+    .replace(/gets no alum or a 0-score alum in (\d) rounds/, "has no alum, or one with nothing in common, in $1 rounds")
+    .replace(/, no shared interests/g, ", nothing in common")
+    .replace(/ Consider a must meet rule for this fam\./, "").replace(/ or turn on "No fam gets more than one weak round"/, "")
+    .replace(/scores (\d+) in total, far below the typical fam \((\d+)\)\./, "matches its alumni much less than the other fams do.");
 }
 
 // ----------------------------------------------------------------------
 // Schedule: one grid, tap two names to swap them.
 // ----------------------------------------------------------------------
 
-async function update(): Promise<void> {
+async function update(keepAll = false): Promise<void> {
   const s = ev();
   const before = s.plan;
   busy = true;
   render();
-  const err = await ctx.solve(hasStarted(s) || s.printed !== null);
+  const err = await ctx.solve(keepAll || hasStarted(s) || s.printed !== null);
   busy = false;
   if (err) {
     say("error", plain(err));
   } else if (before && s.plan) {
     const m = movesBetween(before, s.plan, s.finished + 1);
-    changed = m.hosts.map((x) => x.text).slice(0, 6);
+    changed = m.hosts.map((x) => x.text);
   } else changed = [];
   render();
 }
@@ -505,7 +531,7 @@ function schedulePage(): HTMLElement {
   const s = ev();
   const p = s.plan;
   if (busy) return h("section", { className: "g-page" }, h("h1", {}, "Schedule"), h("p", { className: "lead" }, h("span", { className: "spinner" }), " Working out the best schedule…"));
-  if (!p) return h("section", { className: "g-page" }, h("h1", {}, "Schedule"), h("button", { className: "button primary big", onclick: update }, "Make the schedule"));
+  if (!p) return h("section", { className: "g-page" }, h("h1", {}, "Schedule"), h("button", { className: "button primary big", onclick: () => update() }, "Make the schedule"));
   const current = isCurrent(s);
   const [shared, all] = sharedPairings(p);
   const look = thingsToLookAt(p);
@@ -514,20 +540,22 @@ function schedulePage(): HTMLElement {
   return h("section", { className: "g-page" },
     h("h1", {}, "Schedule"),
     current ? null : h("div", { className: "msg warn row spread" }, "You changed something since this schedule was made.",
-      h("button", { className: "button primary", disabled: busy, onclick: update }, "Update the schedule")),
-    h("p", { className: "g-headline" }, h("strong", {}, `${shared} of ${all}`), " pairings share a field. No fam meets the same alum twice."),
-    changed.length ? h("div", { className: "msg info" }, h("strong", {}, "Updated. "), changed.join(" ")) : null,
+      h("button", { className: "button primary", disabled: busy, onclick: () => update() }, "Update the schedule")),
+    h("p", { className: "g-headline" }, h("strong", {}, `${shared} of ${all}`), " pairings share an interest. No fam meets the same alum twice."),
+    changed.length ? h("div", { className: "msg info" }, h("strong", {}, `Updated: ${changed.length} change${changed.length !== 1 ? "s" : ""}. `), changed.slice(0, 4).join(" "),
+      changed.length > 4 ? h("details", {}, h("summary", {}, `${changed.length - 4} more`), changed.slice(4).map((c) => h("p", {}, c))) : null) : null,
     look.length ? h("div", { className: "g-look" }, h("h2", {}, "Things to look at"), look.slice(0, 3),
       look.length > 3 ? h("details", {}, h("summary", {}, `${look.length - 3} more`), look.slice(3)) : null) : null,
-    h("p", { className: "help" }, current ? "To move someone, tap their name, then tap where they should go in the same round. The rest of the night is fixed up around it." : "Update the schedule first, then you can move people."),
+    h("p", { className: "help" }, current ? (picked ? h("strong", {}, `Now tap where they should go in round ${picked.round}. Tap them again to cancel.`) : "To move someone, tap their name, then tap where they should go in the same round. Everything else stays as it is where possible.") : "Update the schedule first, then you can move people."),
+    h("p", { className: "help g-swipe" }, "Swipe the schedule sideways to see every round."),
     grid,
     why ? whyBox(p) : null,
-    mine.length ? h("div", { className: "g-mine" }, `You moved ${mine.length} alum${mine.length !== 1 ? "ni" : ""} by hand. `,
+    mine.length ? h("div", { className: "g-mine" }, `${mine.length} alum${mine.length !== 1 ? "ni" : ""} placed by hand. `,
       h("button", { className: "button link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, "Undo my moves")) : null,
     h("details", { className: "g-details", open: details, ontoggle: (e: Event) => { details = (e.target as HTMLDetailsElement).open; } },
       h("summary", {}, "Details"),
-      h("p", {}, `Match score ${p.totalScore}. ` + (provenOptimal(p) ? "No other schedule scores higher with these people and settings." : "The tool stopped before proving this is the best.")),
-      p.warnings.length ? h("ul", {}, p.warnings.map((w) => h("li", {}, plain(w.replace(/^Fairness check: /, ""))))) : null),
+      h("p", {}, provenOptimal(p) ? "This is the best possible schedule for these people and settings: no other one gives more shared interests." : "The tool stopped before checking every possible schedule."),
+      p.warnings.length ? h("ul", {}, p.warnings.map((w) => h("li", {}, warningWords(w)))) : null),
     nav(2, current ? "Next: print" : null, () => go(4)));
 }
 
@@ -550,7 +578,7 @@ function gridView(p: EventPlan, current: boolean): HTMLElement {
     },
     h("button", { className: "g-name", disabled: !can, "aria-pressed": isPicked ? "true" : "false", onclick: () => tapCell(p, r, famId) }, label),
     host && host.person && host.person !== host.name ? h("span", { className: "g-sub" }, host.name) : null,
-    a && a.score === 0 ? h("span", { className: "g-sub warn-text" }, "no shared field") : null,
+    a && a.score === 0 ? h("span", { className: "g-sub warn-text" }, "nothing in common") : null,
     h("button", { className: "g-why", title: "Why this pairing?", "aria-label": `Why ${label} at ${famId}`, onclick: () => { why = why?.round === r && why.famId === famId ? null : { round: r, famId }; render(); } }, "?"));
     if (can) {
       td.addEventListener("dragstart", (e) => { picked = { round: r, famId }; (e as DragEvent).dataTransfer?.setData("text/plain", famId); });
@@ -559,9 +587,17 @@ function gridView(p: EventPlan, current: boolean): HTMLElement {
     }
     return td;
   };
+  const out = (r: number) => p.hosts.filter((x) => !p.assignments.some((a) => a.round === r && a.hostId === x.hostId)).map((x) => {
+    const who = x.person || x.name;
+    if ((p.hostAway[x.hostId] ?? []).includes(r)) return `${who} (cancelled)`;
+    if ((p.hostLimits[x.hostId] ?? []).includes(r)) return `${who} (not here this round)`;
+    return `${who} (break)`;
+  });
+  const anyOut = rounds.some((r) => out(r).length);
   return h("div", { className: "scroll" }, h("table", { className: "g-grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Table"), rounds.map((r) => h("th", {}, `Round ${r}` + (locked.has(r) || r <= s.finished ? " (done)" : ""))))),
-    h("tbody", {}, fams.map((f) => h("tr", {}, h("th", { scope: "row" }, h("span", { className: "tn" }, `${tables[f.groupId]}`), " ", f.name), rounds.map((r) => cell(r, f.groupId)))))));
+    h("tbody", {}, fams.map((f) => h("tr", {}, h("th", { scope: "row" }, h("span", { className: "tn" }, `${tables[f.groupId]}`), " ", f.name), rounds.map((r) => cell(r, f.groupId))))),
+    anyOut ? h("tfoot", {}, h("tr", {}, h("th", { scope: "row" }, "Not at a table"), rounds.map((r) => h("td", { className: "g-out" }, out(r).join(", ") || "Everyone hosts")))) : null));
 }
 
 async function tapCell(p: EventPlan, r: number, famId: string): Promise<void> {
@@ -577,7 +613,7 @@ async function tapCell(p: EventPlan, r: number, famId: string): Promise<void> {
   if (b) placeInGrid(s, nameOf(b.hostId), famA, r);
   picked = null;
   ctx.persist();
-  await update();
+  await update(true);
   if (!isCurrent(s)) {
     // The swap broke a setting: put everything back as it was.
     s.rules = rulesBefore;
@@ -590,8 +626,17 @@ async function tapCell(p: EventPlan, r: number, famId: string): Promise<void> {
 
 function whyBox(p: EventPlan): HTMLElement {
   const x = explainPairing(p, why!.round, why!.famId);
+  const s = ev();
+  const limited = (label: string) => s.rules.some((r) => (r.host_table ?? "").toLowerCase() === label.toLowerCase() && ["needs step-free", "stays with", "never meet"].includes(r.rule));
+  const lines = x.lines.filter((l) => {
+    if (l.startsWith("The schedule maximizes")) return false;
+    const m = l.match(/^The best match for .+ is (.+?) \(score/);
+    return !(m && limited(m[1]));
+  });
   return h("div", { className: "panel g-why-box" }, h("strong", {}, `Round ${why!.round}, ${p.fams.find((f) => f.groupId === why!.famId)!.name}`),
-    x.lines.map((l) => h("p", {}, plain(l.replace(/\(score \d+\)/, "").replace(/, so the pairing scores \d+\./, ".").replace("so the pairing scores 0.", "")))),
+    lines.map((l) => h("p", {}, plain(l.replace(/ \(score \d+\)/, "").replace(/, so the pairing scores \d+\./, ".").replace(/ shares none of (.+)'s fields, so the pairing scores 0\./, " has nothing in common with $1.")
+      .replace(/ shares none of (.+)'s interests, so the pairing scores 0\./, " has nothing in common with $1.")))),
+    lines.some((l) => l.startsWith("The best match")) ? h("p", { className: "help" }, "The schedule balances every fam at once, so a fam sometimes gets its second choice. To change it, tap names in the grid.") : null,
     h("button", { className: "button small", onclick: () => { why = null; render(); } }, "Close"));
 }
 
@@ -599,19 +644,15 @@ function thingsToLookAt(p: EventPlan): HTMLElement[] {
   const s = ev();
   const out: HTMLElement[] = [];
   for (const m of nearMisses(s.hosts, s.fams)) {
-    out.push(h("div", { className: "g-item" }, `${m.spellings.join(" and ")} look like the same field, but only exact words match.`,
+    out.push(h("div", { className: "g-item" }, `${m.spellings.join(" and ")} look like the same interest, but only exact words match.`,
       h("button", { className: "button small primary", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)));
   }
   for (const w of p.warnings.filter((x) => x.startsWith("Fairness check"))) {
-    const text = plain(w.replace(/^Fairness check: /, "")).replace(/ Consider a must meet rule for this fam\./, "")
-      .replace(/gets no host or a 0-score host in (\d) rounds/, "has no alum, or one with no shared field, in $1 rounds").replace(/ or turn on "No fam gets more than one weak round"/, "");
-    out.push(h("div", { className: "g-item" }, text, h("span", { className: "help" }, " To fix it, tap a name in the grid and swap in an alum who shares a field.")));
+    out.push(h("div", { className: "g-item" }, warningWords(w), h("span", { className: "help" }, " To fix it, tap a name in the grid and swap in an alum who shares an interest.")));
   }
   for (const w of p.warnings.filter((x) => x.startsWith("Host tags that no fam lists") || x.startsWith("Fam interests that no host lists"))) {
-    const list = w.slice(w.indexOf(": ") + 2).replace(/\.$/, "");
-    const text = w.startsWith("Host") ? `No fam is interested in these alumni fields: ${list}.` : `No alum lists these fam fields: ${list}.`;
-    out.push(h("div", { className: "g-item" }, text,
-      h("button", { className: "button small", onclick: () => go(w.startsWith("Host") ? 1 : 2) }, "Edit fields")));
+    out.push(h("div", { className: "g-item" }, warningWords(w),
+      h("button", { className: "button small", onclick: () => go(w.startsWith("Host") ? 1 : 2) }, "Edit interests")));
   }
   return out;
 }
@@ -642,7 +683,7 @@ function printPage(): HTMLElement {
     h("button", { className: `button ${isMain && !printedNow.has(label) ? "primary" : ""}`, onclick: () => {
       openPage(make());
       printedNow.add(label);
-      if (isMain && !s.printed) { ctx.markPrinted(); say("ok", "Marked as printed. If anything changes later, the tool lists exactly what to reprint."); }
+      if (isMain && !s.printed) { ctx.markPrinted(); say("ok", "Recorded what you printed. If anything changes later, the tool lists exactly what to reprint."); }
       render();
     } }, printedNow.has(label) ? "Opened ✓" : "Open and print"),
     h("span", {}, h("strong", {}, label), h("span", { className: "help" }, ` ${help}`)));
@@ -651,7 +692,7 @@ function printPage(): HTMLElement {
     h("p", { className: "lead" }, "Open each page and print it from your browser on US Letter."),
     h("ul", { className: "g-print" }, main.map((x) => item(x, true))),
     h("details", { className: "g-details" }, h("summary", {}, "More pages for your team"), h("ul", { className: "g-print" }, extra.map((x) => item(x, false)))),
-    s.printed ? h("p", { className: "help" }, `Printed version recorded${s.printedAt ? ` at ${s.printedAt}` : ""}. A backup copy of the event was downloaded too.`) : null,
+    s.printed ? h("p", { className: "help" }, `Printed version recorded${s.printedAt ? ` at ${s.printedAt}` : ""}. For a backup on another device, use More, Download a copy of this event.`) : null,
     nav(3, "Next: the night", () => go(5)));
 }
 
@@ -685,8 +726,8 @@ function nextYearPage(): HTMLElement {
       h("button", { className: "button", onclick: () => {
         if (!sure) { sure = true; render(); return; }
         sure = false; ctx.removeStudentNames(); say("ok", "Student names removed."); render();
-      } }, sure ? "Yes, remove every student name" : "Remove student names")),
-    h("p", { className: "help" }, "The hand-off keeps alumni, fams, fields, settings, and your notes. It leaves out student names and the night's changes."),
+      } }, sure ? "Yes, delete student names from this event" : "Delete student names from this event")),
+    h("p", { className: "help" }, "The hand-off folder already leaves out student names and the night's changes; it keeps alumni, fams, interests, settings, and your notes. Deleting names here is for after the event, if your office asks you not to keep them."),
     nav(5, null, () => undefined));
 }
 

@@ -429,9 +429,10 @@ sheet, and re-plans when someone cancels.
 
 How to open it
 1. Go to https://chrishoangle.github.io/rotation-optimizer/app/
-2. In the sidebar, under Save your work, click Open a saved event file.
-3. Choose "${base} handoff.rotation.json" from this folder.
-4. Read the Start here guide at the top of the page.
+2. Choose Open a saved event, and pick "${base} handoff.rotation.json"
+   from this folder.
+3. Check the alumni and fams for your year, then click Make the schedule.
+   The steps at the top of the page walk you through the rest.
 
 What was kept
 The host tables, alum names, and tags; the fams, table numbers, sizes, and
@@ -439,8 +440,7 @@ interests; the pairing rules; and the settings.
 
 What was removed from the event file
 Student names, the night's cancellations, check-in, finished rounds, and
-every schedule. Update the tables for your year, then click Find the best
-schedule.
+every schedule.
 ${ev.notes.trim() ? `\nNotes from this year's coordinator\n${ev.notes.trim()}\n` : ""}${ev.nightLog.length ? `\nWhat happened on the night\n${ev.nightLog.map((e) => `${e.at}  ${e.text}`).join("\n")}\n` : ""}`;
   const zip = zipFiles([
     { name: `${base} handoff/README.txt`, text: readme },
@@ -938,7 +938,7 @@ function renderSchedule(): void {
       h("button", { className: "button link", onclick: () => download(fileName("schedule", "csv"), scheduleCsv(p), "text/csv") }, "Download the schedule as a spreadsheet"),
       h("div", { id: "printed" }, noteEl("printed"),
         h("div", { className: "row" },
-          h("button", { className: "button", onclick: markPrinted }, "Mark as printed"),
+          h("button", { className: "button", onclick: () => markPrinted() }, "Mark as printed"),
           h("span", { className: "help" }, ev.printed && ev.printedAt ? `Printed at ${ev.printedAt}. Changes below are listed against that version.`
             : ev.printed ? "Printed version marked. Changes below are listed against it." : "Not marked as printed yet. Click Mark as printed after you print."))),
       h("h3", {}, "For your team"),
@@ -1050,11 +1050,11 @@ function metric(label: string, value: string, help: string): HTMLElement {
   return h("div", { className: "metric", title: help }, h("span", { className: "help" }, label), h("span", { className: "value" }, value));
 }
 
-function markPrinted(): void {
+function markPrinted(backup = true): void {
   ev.printed = ev.plan;
   ev.printedAt = now();
   // A backup of exactly what was printed, in case this computer has trouble on the night.
-  download(fileName("printed backup", "rotation.json"), saveEvent(ev), "application/json");
+  if (backup) download(fileName("printed backup", "rotation.json"), saveEvent(ev), "application/json");
   ui.savedHash = fileHash(ev);
   ui.savedAt = now();
   snapshot("marked as printed");
@@ -1291,7 +1291,7 @@ const guidedCtx: GuidedCtx = {
   practiceBanner: () => practiceBanner(),
   saveFile,
   handOff,
-  markPrinted,
+  markPrinted: () => markPrinted(false),
   fileName,
   removeStudentNames,
   offlineCopy: downloadOfflineCopy,
@@ -1321,7 +1321,7 @@ const CHANGES: [string, string][] = [
   ["fam", "A fam has to leave"],
 ];
 const TOOLS: [string, string][] = [
-  ["room", "Room setup"], ["checkin", "Check-in"], ["students", "Students"], ["where", "Where is…"], ["share", "QR code for volunteers"], ["log", "Tonight's log"],
+  ["room", "Room setup"], ["checkin", "Check-in"], ["students", "Students"], ["where", "Where is…"], ["share", "QR code for volunteers"], ["log", "What happened tonight"],
 ];
 let clockTimer = 0;
 
@@ -1390,10 +1390,11 @@ function nowBoard(p: EventPlan, current: boolean): HTMLElement {
   if (notTold) items.push(["warn", `${notTold} change${notTold !== 1 ? "s" : ""} not passed on yet`, ""]);
   const short = st.phase === "before" || (st.phase === "during" && r === 1) ? shortFams(p) : [];
   if (short.length) items.push(["warn", `Few students yet at ${short.slice(0, 3).join(", ")}${short.length > 3 ? "…" : ""}`, "students"]);
-  if (!current) items.push(["error", "Changes are waiting: re-plan now", ""]);
+  if (!current) items.push(["error", "Changes are waiting: tap to update", "update"]);
   if (!items.length) items.push(["ok", "All good.", ""]);
   return h("section", { className: "now-board", "aria-label": "Right now" }, items.map(([kind, text, key]) =>
     h("button", { className: `chip ${kind}`, onclick: () => {
+      if (key === "update") { document.getElementById("update-now")?.scrollIntoView({ block: "center" }); (document.querySelector("#update-now + button") as HTMLButtonElement | null)?.click(); return; }
       if (!key) return;
       nightOpen.set(key, true);
       nightRefresh();
@@ -1588,7 +1589,8 @@ function renderNightMode(): void {
   const here = expected.filter((r) => ev.arrived.includes(r.host_id)).length;
   const openRounds = Array.from({ length: p.rounds - ev.finished }, (_, i) => ev.finished + 1 + i);
   const lateRow = (id: string) => {
-    const from = h("select", { "aria-label": "Hosts from round" }, openRounds.map((r) => h("option", { value: r, selected: r === Math.min(p.rounds, ev.finished > 0 ? cur + 1 : cur) }, `hosts from round ${r}`))) as HTMLSelectElement;
+    const underWay = !!ev.night.roundTimes?.[String(cur)]?.start && !ev.night.roundTimes?.[String(cur)]?.end;
+    const from = h("select", { "aria-label": "Hosts from round" }, openRounds.map((r) => h("option", { value: r, selected: r === Math.min(p.rounds, underWay ? cur + 1 : cur) }, `hosts from round ${r}`))) as HTMLSelectElement;
     return h("div", { className: "row" }, from,
       h("button", { className: "button primary", onclick: () => {
         night.problem = joinLate(ev, id, Number(from.value), now());
@@ -1610,6 +1612,7 @@ function renderNightMode(): void {
         !isHere ? h("button", { className: "button small", onclick: () => {
           night.confirm = { kind: "host", id: r.host_id, label: hostLabelRow(r.host_id), first: cur, noShow: true };
           nightRefresh();
+          document.querySelector(".panel.confirm")?.scrollIntoView({ block: "center" });
         } }, "Didn't show") : null,
         !isHere && ev.finished > 0 ? h("button", { className: "button small", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "Arrived late") : null,
         night.lateJoin === r.host_id ? lateRow(r.host_id) : null);
@@ -1636,6 +1639,7 @@ function renderNightMode(): void {
         if (!who.value) return;
         night.confirm = { kind, id: who.value, label: who.selectedOptions[0].textContent ?? "", first: Number(from.value), noShow: false };
         nightRefresh();
+        document.querySelector(".panel.confirm")?.scrollIntoView({ block: "center" });
       } }, kind === "host" ? "Alum can't stay" : "Fam can't stay"));
   };
   const c = night.confirm;
@@ -1647,6 +1651,7 @@ function renderNightMode(): void {
         else cancelFam(ev, c.id, c.first, now());
         night.confirm = null;
         nightRefresh();
+        document.getElementById("update-now")?.scrollIntoView({ block: "center" });
       } }, "Yes, cancel"),
       h("button", { className: "button big", onclick: () => { night.confirm = null; nightRefresh(); } }, "No"))) : null;
 
@@ -1677,11 +1682,12 @@ function renderNightMode(): void {
       night.renumber === famId ? renumberRow(famId) : null);
   }
   const lateList = (_p: EventPlan) => {
-    const away = [...noShows, ...expected.filter((r) => !ev.arrived.includes(r.host_id) && ev.finished > 0)];
+    const comesLater = (id: string) => (p.hostLimits[id] ?? []).includes(cur);
+    const away = [...noShows, ...expected.filter((r) => !ev.arrived.includes(r.host_id) && ev.finished > 0 && !comesLater(r.host_id))];
     if (!away.length) return h("p", { className: "help" }, "Everyone expected is checked in. For someone who wasn't on the list, choose A new alum came.");
     return h("ul", { className: "checkin" }, away.map((r) => h("li", {},
       h("span", {}, hostLabelRow(r.host_id)),
-      h("button", { className: "button small primary", onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "They're here"),
+      h("button", { className: `button small ${night.lateJoin === r.host_id ? "primary" : ""}`, onclick: () => { night.lateJoin = r.host_id; nightRefresh(); } }, "They're here"),
       night.lateJoin === r.host_id ? lateRow(r.host_id) : null)));
   };
   const roomPanelBody = h("ul", { className: "setup" }, famsByTable.map((f) => roomRow(f.groupId, f.name)));
@@ -1720,14 +1726,14 @@ function renderNightMode(): void {
     nowBoard(p, current),
     roundSection(p),
     !current || err ? h("section", { className: "panel stale-panel" },
-      h("p", {}, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you re-plan."),
+      h("p", { id: "update-now" }, h("strong", {}, "Changes are waiting. "), "The schedule below is the old one until you update it."),
       h("button", { className: "button primary big wide", disabled: ui.solving, onclick: async () => {
         snapshot("before re-planning on the night");
         night.before = ev.plan;
         const ok = await solve(true, "night");
         if (ok) logChange(ev, now(), "Re-planned.");
         nightRefresh();
-      } }, "Re-plan now"),
+      } }, "Update the schedule"),
       h("p", { id: "replan-status", className: "help" }),
       err ? h("div", { className: "msg error", role: "alert" }, err) : null) : null,
     current && (ev.printed || night.before) ? (() => {
@@ -1754,7 +1760,7 @@ function renderNightMode(): void {
       night.action === "new" ? lateBox : null,
       night.action === "table" ? [h("p", { className: "help" }, "Find the fam in the list, tap Different table, and type the number they are sitting at. Don't move the students."), roomPanelBody] : null,
       night.action === "fam" ? leave("fam") : null,
-      night.action ? h("p", { className: "help" }, "Then tap Re-plan now at the top. Finished rounds never change.") : null),
+      night.action ? h("p", { className: "help" }, "Then tap Update the schedule at the top. Finished rounds never change.") : null),
     wrapUpPanel(),
     h("section", { className: "tools" }, h("span", { className: "help" }, "Tools: "), TOOLS.map(([key, label]) =>
       h("button", { className: `button small ${nightOpen.get(key) ? "primary" : ""}`, "aria-expanded": nightOpen.get(key) ? "true" : "false",
@@ -1764,7 +1770,7 @@ function renderNightMode(): void {
     nightOpen.get("students") ? studentsPanel(p) : null,
     nightOpen.get("where") ? h("section", { className: "panel" }, h("h2", {}, "Where is…"), search, results) : null,
     nightOpen.get("share") ? sharePanel(p, current) : null,
-    nightOpen.get("log") ? panel("log", true, `Tonight's log (${ev.nightLog.length})`,
+    nightOpen.get("log") ? panel("log", true, `What happened tonight (${ev.nightLog.length})`,
       ev.nightLog.length ? h("ul", {}, [...ev.nightLog].reverse().map((e) => h("li", {}, `${e.at}  ${e.text}`))) : h("p", { className: "help" }, "Nothing yet.")) : null,
     h("p", { className: "help" }, "Everything you do here is saved in this browser as you go."),
   ));

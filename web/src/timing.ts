@@ -57,7 +57,9 @@ export interface Status {
   catchUp: number | null;
 }
 
-export function status(s: EventState, now: number): Status {
+export const todayIso = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+export function status(s: EventState, now: number, today = todayIso()): Status {
   const rounds = s.plan?.rounds ?? s.rounds;
   const r = Math.min(s.finished + 1, rounds);
   const { start, end } = times(s, r);
@@ -65,7 +67,9 @@ export function status(s: EventState, now: number): Status {
   const planned = plannedStart(s, r);
   const plannedEnd = plannedStart(s, rounds) !== null ? plannedStart(s, rounds)! + s.roundMinutes : null;
   let lateBy = 0;
-  if (planned !== null) {
+  // Before round 1 starts, lateness only means something on the day itself.
+  const live = times(s, 1).start !== null || (!!s.night.date && s.night.date === today);
+  if (planned !== null && live) {
     if (start !== null) lateBy = Math.max(0, start - planned);
     else if (phase !== "over") lateBy = Math.max(0, now - planned);
   }
@@ -75,7 +79,7 @@ export function status(s: EventState, now: number): Status {
   else if (phase === "during" && start !== null) projectedEnd = start + s.roundMinutes + (rounds - r) * (s.roundMinutes + SWITCH);
   else projectedEnd = Math.max(now, planned ?? now) + s.roundMinutes + (rounds - r) * (s.roundMinutes + SWITCH);
   let catchUp: number | null = null;
-  if (plannedEnd !== null && projectedEnd !== null && projectedEnd - plannedEnd >= 5 && phase !== "over") {
+  if (live && plannedEnd !== null && projectedEnd !== null && projectedEnd - plannedEnd >= 5 && phase !== "over") {
     // Rounds still to start, plus the current one if it is under way and can be shortened.
     const left = rounds - r + 1;
     const from = phase === "during" && start !== null ? start : Math.max(now, planned ?? now);

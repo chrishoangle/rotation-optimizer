@@ -147,7 +147,7 @@ def test_run_sheet_has_a_timeline_and_check_in_lists():
                        ("7:10 PM", "Round 2"), ("7:30 PM", "Closing")]:
         assert re.search(rf"{when}\s+{what}", text), (when, what)
     assert "Cancelled: Therapy &amp; Rehab." in text
-    assert "Check-in: host tables" in text and "Alum A" in text and "Check-in: fams" in text
+    assert "Check-in: alumni" in text and "Alum A" in text and "Check-in: fams" in text
     assert not re.search(r"\bNone\b", text)
     blank = run_sheet_html(plan, "Example dinner")
     assert 'class="blank"' in blank and "PM" not in re.sub(r"<[^>]+>", " ", blank)
@@ -161,7 +161,7 @@ def test_reprints_are_stamped_and_counts_show_cancellations():
         assert "Updated 7:42 PM. Replaces the earlier copy." in page
     assert "Updated" not in seating_chart_html(plan)
     chart = seating_chart_html(plan)
-    assert "10 fams, 10 host tables (1 cancelled from round 2), 2 rounds." in chart
+    assert "10 fams, 10 alumni (1 cancelled from round 2), 2 rounds." in chart
     assert "match score" not in chart.lower()
 
 

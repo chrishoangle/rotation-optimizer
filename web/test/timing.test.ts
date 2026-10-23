@@ -42,4 +42,12 @@ describe("the clock for the night", () => {
     startRound(s, 1, at("6:00 PM"));
     expect(status(s, at("6:05 PM")).plannedEnd).toBe(at("6:45 PM"));
   });
+
+  it("before round 1, lateness only shows on the day of the event", () => {
+    const s = newEvent({ rounds: 2, roundMinutes: 20, startTime: "6:00 PM" });
+    expect(status(s, at("10:22 PM"), "2026-10-20").lateBy).toBe(0); // planning at night, days before
+    s.night = { date: "2026-10-30" };
+    expect(status(s, at("10:22 PM"), "2026-10-20").lateBy).toBe(0);
+    expect(status(s, at("6:30 PM"), "2026-10-30").lateBy).toBe(15);
+  });
 });

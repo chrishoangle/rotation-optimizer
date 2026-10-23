@@ -26,13 +26,13 @@ function stamp(updated: string): string {
 }
 
 function counts(p: EventPlan): string {
-  const part = (n: number, noun: string, gone: Record<string, number[]>) => {
-    let text = `${n} ${noun}${n !== 1 ? "s" : ""}`;
+  const part = (n: number, noun: string, gone: Record<string, number[]>, plural = "") => {
+    let text = `${n} ${n === 1 ? noun : plural || noun + "s"}`;
     const lists = Object.values(gone);
     if (lists.length) text += ` (${lists.length} cancelled from round ${Math.min(...lists.map((rs) => Math.min(...rs)))})`;
     return text;
   };
-  return part(p.fams.length, "fam", p.famAway) + ", " + part(p.hosts.length, "host table", p.hostAway) + `, ${p.rounds} round${p.rounds !== 1 ? "s" : ""}.`;
+  return part(p.fams.length, "fam", p.famAway) + ", " + part(p.hosts.length, "alum", p.hostAway, "alumni") + `, ${p.rounds} round${p.rounds !== 1 ? "s" : ""}.`;
 }
 
 export function tableNumbers(p: EventPlan): Record<string, number> {
@@ -81,6 +81,7 @@ export function seatingChartHtml(
 ): string {
   const rows = scheduleRows(p);
   const where = Object.fromEntries(p.fams.map((f) => [f.name, locations[f.groupId] ?? ""]));
+  const person: Record<string, string> = Object.fromEntries(p.hosts.filter((h) => h.person && h.person !== h.name).map((h) => [h.name, h.person]));
   const hosts = Object.fromEntries(p.hosts.map((h) => [h.hostId, h.name]));
   const sections: string[] = [];
   const st = stamp(updated);
@@ -89,7 +90,8 @@ export function seatingChartHtml(
       `<div class="card"><div class="num">Table ${row.table}</div><div class="fam">${e(row.fam)}</div>` +
       (where[row.fam] ? `<div class="loc">${e(where[row.fam])}</div>` : "") +
       `<div class="host${row.score || ![NO_HOST, FAM_ABSENT].includes(row.host_table) ? "" : " open"}">` +
-      `${e(String(row.host_table))}</div></div>`).join("");
+      `${e(String(row.host_table))}</div>` +
+      (person[String(row.host_table)] ? `<div class="who">${e(person[String(row.host_table)])}</div>` : "") + "</div>").join("");
     const breaks = Object.entries(p.hostBreaks).filter(([h, rs]) => rs.includes(r) && !has(p.hostAway, h, r) && !has(p.hostLimits, h, r)).map(([h]) => hosts[h]);
     const away = Object.entries(p.hostAway).filter(([, rs]) => rs.includes(r)).map(([h]) => hosts[h]);
     const limited = Object.entries(p.hostLimits).filter(([h, rs]) => rs.includes(r) && !has(p.hostAway, h, r)).map(([h]) => `${hosts[h]}: ${availabilityText(p, h)}`);
@@ -114,7 +116,7 @@ h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 20px; margin: 18px 0 10
 .card { border: 1px solid #c9c6bf; border-radius: 8px; padding: 8px 10px; break-inside: avoid; }
 .num { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5c5c63; }
 .fam { font-size: 13px; color: #3a3a3f; } .host { font-weight: 700; font-size: 15px; }
-.host.open { color: #b4530a; } .note { color: #5c5c63; font-size: 13px; } .loc { font-size: 12px; color: #5c5c63; }
+.host.open { color: #b4530a; } .note { color: #5c5c63; font-size: 13px; } .loc { font-size: 12px; color: #5c5c63; } .who { font-size: 13px; }
 section { break-before: page; } section:first-of-type { break-before: auto; }
 .finder { border-collapse: collapse; width: 100%; columns: 2; } .finder td { border-bottom: 1px solid #e3e0d9; padding: 4px 6px; font-size: 13px; }
 .finder td.tn { font-weight: 700; white-space: nowrap; }
@@ -314,7 +316,7 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 </style></head><body>
 <section>
 <h1>${e(title)}: run sheet</h1>
-<p class="meta">${p.rounds} rounds, ${p.hosts.length} host tables, ${p.fams.length} fams.</p>
+<p class="meta">${p.rounds} rounds, ${p.hosts.length} alumni, ${p.fams.length} fams.</p>
 <h2>MC timeline</h2>
 <table>${timeline}</table>
 <h2>If someone cancels during the night</h2>
@@ -322,7 +324,7 @@ section { break-before: page; } section:first-of-type { break-before: auto; }
 Reprint only the pages the app lists under Reprint. Rounds already finished never change.</p>
 </section>
 <section>
-<h2>Check-in: host tables</h2>
+<h2>Check-in: alumni</h2>
 <table><tr><th></th><th>Host table</th>${named ? "<th>Alum</th>" : ""}<th>Round 1</th></tr>${hostRows}</table>
 <h2>Check-in: fams</h2>
 <table><tr><th></th><th>Table</th><th>Fam</th><th>Students</th></tr>${famRows}</table>

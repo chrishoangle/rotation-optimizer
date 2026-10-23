@@ -289,3 +289,7 @@ main.guided { max-width: 980px; margin: 0 auto; padding: 0 1rem 4rem; }
   .g-grid tbody th { white-space: normal; min-width: 7.5rem; font-size: .85rem; }
   .g-cell { min-width: 8rem; }
 }
+.g-out { font-size: .8rem; color: var(--muted); padding: .3rem .5rem; }
+.g-grid tfoot th { font-size: .8rem; color: var(--muted); }
+.g-swipe { display: none; }
+@media (max-width: 700px) { .g-swipe { display: block; } }

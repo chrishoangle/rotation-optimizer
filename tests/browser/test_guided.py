@@ -76,7 +76,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page, tmp_path):
     p.get_by_label("Doors open at").fill("6:00 PM")
     button(p, "Next: alumni").click()
 
-    alumni = "Alum's name\tTable name\tFields\n" + "\n".join(
+    alumni = "Alum's name\tTopic\tCan talk about\n" + "\n".join(
         f"Alum {c}\t{t}\t{f}" for c, t, f in [
             ("A", "Medicine", "medicine; biology"), ("B", "Law", "law; policy"), ("C", "Tech", "software; data"),
             ("D", "Art", "art; design"), ("E", "Finance", "finance; economics"), ("F", "Teaching", "education; history")])
@@ -93,28 +93,37 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page, tmp_path):
     paste(p, p.locator('[data-kind="fams"] .g-row.new input').first, fams)
     assert "Added 6 fams" in words(p)
     button(p, "Make the schedule").click()
-    p.wait_for_selector("text=pairings share a field")
+    p.wait_for_selector("text=pairings share an interest")
     assert "No fam meets the same alum twice." in words(p)
     assert jargon(p) == []
     art = p.locator(".g-grid tbody tr", has_text="Fam Red").locator("td").nth(0)
     assert "Alum D" not in art.inner_text(), "Alum D only arrives for round 2"
 
     # Swap two alumni in round 3 by tapping their names.
+    rounds_1_2 = [p.locator(".g-grid tbody tr").locator(f"td:nth-of-type({c}) .g-name").all_inner_texts() for c in (1, 2)]
     cells = p.locator(".g-grid tbody tr").locator("td:nth-of-type(3) .g-name")
     first, second = cells.nth(0).inner_text(), cells.nth(1).inner_text()
     cells.nth(0).click()
     cells.nth(1).click()
-    p.wait_for_selector("text=You moved")
+    p.wait_for_selector("text=placed by hand")
     cells = p.locator(".g-grid tbody tr").locator("td:nth-of-type(3) .g-name")
     assert (cells.nth(0).inner_text(), cells.nth(1).inner_text()) == (second, first)
+    after = [p.locator(".g-grid tbody tr").locator(f"td:nth-of-type({c}) .g-name").all_inner_texts() for c in (1, 2)]
+    # Rounds 1 and 2 change only where the swap forces it (no fam may meet an alum twice), and every such change is listed.
+    p.locator(".msg.info details summary").click() if p.locator(".msg.info details").count() else None
+    report = p.inner_text(".msg.info")
+    for c, (old, new) in enumerate(zip(rounds_1_2, after), start=1):
+        for a, b in zip(old, new):
+            if a != b and b != "No alum":
+                assert f"{b} " in report or f"{b}:" in report, (c, a, b)
     button(p, "Undo my moves").click()
-    p.wait_for_function("() => !document.body.innerText.includes('You moved')")
+    p.wait_for_function("() => !document.body.innerText.includes('placed by hand')")
 
     button(p, "Next: print").click()
     with p.expect_popup() as pop:
         p.locator(".g-print li", has_text="Seating chart").get_by_role("button").click()
     pop.value.close()
-    assert "Marked as printed" in words(p)
+    assert "Recorded what you printed" in words(p)
     button(p, "Next: the night").click()
     p.get_by_text("Open night mode", exact=True).click()
     p.wait_for_selector("text=Round 1 of 3")
@@ -136,7 +145,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page, tmp_path):
 def test_the_example_is_a_sandbox(page):
     p = page
     p.get_by_text("Try it with an example").click()
-    p.wait_for_selector("text=pairings share a field")
+    p.wait_for_selector("text=pairings share an interest")
     assert "Practice: nothing is kept" in p.inner_text(".g-head")
     button(p, "End practice").click()
     p.wait_for_selector("text=Plan a rotation dinner")
@@ -146,7 +155,7 @@ def test_the_example_is_a_sandbox(page):
 def test_a_swap_that_breaks_a_setting_changes_nothing(page):
     p = page
     p.get_by_text("Try it with an example").click()
-    p.wait_for_selector("text=pairings share a field")
+    p.wait_for_selector("text=pairings share an interest")
     button(p, "Back").click()
     button(p, "Back").click()
     # Physician (MD), Alum A, must never meet Bio & Chem.
@@ -155,7 +164,7 @@ def test_a_swap_that_breaks_a_setting_changes_nothing(page):
     assert "never meets Bio & Chem" in words(p)
     button(p, "Next: fams").click()
     button(p, "Make the schedule").click()
-    p.wait_for_selector("text=pairings share a field")
+    p.wait_for_selector("text=pairings share an interest")
     grid = p.locator(".g-grid tbody tr")
     alum_a = [i for i in range(10) if grid.nth(i).locator("td:nth-of-type(1) .g-name").inner_text() == "Alum A"][0]
     before = p.inner_text(".g-grid")

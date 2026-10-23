@@ -3,6 +3,7 @@
 // where, a late alum, a no-show, and the log of each change.
 
 import { EventState, normalizeState } from "./event";
+import type { CleanRow } from "./sheets";
 import { tableNumbers } from "./export";
 import { EventPlan } from "./planning";
 
@@ -156,7 +157,17 @@ export function moveFamTable(s: EventState, famId: string, table: number, at: st
   for (const r of s.fams) if (r.fam_id && !String(r.table_number ?? "").trim()) r.table_number = String(tables[r.fam_id]);
   const other = s.fams.find((r) => r.fam_id !== famId && Number(r.table_number) === table);
   row.table_number = String(table);
-  if (other) other.table_number = String(old);
+  // Where a table is, and whether it has steps, belong to the table, not the fam sitting at it.
+  const place = (r: CleanRow) => [r.location ?? "", r.step_free ?? ""] as const;
+  const mine = place(row);
+  if (other) {
+    other.table_number = String(old);
+    [row.location, row.step_free] = place(other);
+    [other.location, other.step_free] = mine;
+  } else {
+    row.location = "";
+    row.step_free = "";
+  }
   s.night = { ...s.night, setup: (s.night.setup ?? []).filter((id) => id !== famId && id !== other?.fam_id) };
   logChange(s, at, `${row.fam_label} is at Table ${table}, not ${old}` + (other ? `; ${other.fam_label} moves to Table ${old}.` : "."));
   return "";

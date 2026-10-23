@@ -41,13 +41,13 @@ def _stamp(updated: str) -> str:
 
 
 def _counts(plan: EventPlan) -> str:
-    """How many fams, host tables, and rounds, counting cancellations."""
-    def part(n: int, noun: str, gone: dict) -> str:
-        text = f"{n} {noun}{'s' if n != 1 else ''}"
+    """How many fams, alumni, and rounds, counting cancellations."""
+    def part(n: int, noun: str, gone: dict, plural: str = "") -> str:
+        text = f"{n} {noun if n == 1 else plural or noun + 's'}"
         if gone:
             text += f" ({len(gone)} cancelled from round {min(min(rs) for rs in gone.values())})"
         return text
-    return (part(len(plan.fams), "fam", plan.fam_away) + ", " + part(len(plan.hosts), "host table", plan.host_away)
+    return (part(len(plan.fams), "fam", plan.fam_away) + ", " + part(len(plan.hosts), "alum", plan.host_away, "alumni")
             + f", {plan.rounds} round{'s' if plan.rounds != 1 else ''}.")
 
 
@@ -112,6 +112,7 @@ def seating_chart_html(
     rows = schedule_rows(plan)
     where = {f.name: (locations or {}).get(f.group_id, "") for f in plan.fams}
     hosts = {h.host_id: h.name for h in plan.hosts}
+    person = {h.name: h.person for h in plan.hosts if h.person and h.person != h.name}
     sections = []
     stamp = _stamp(updated)
     for r in (rounds or range(1, plan.rounds + 1)):
@@ -119,7 +120,9 @@ def seating_chart_html(
             f'<div class="card"><div class="num">Table {row["table"]}</div><div class="fam">{e(row["fam"])}</div>'
             + (f'<div class="loc">{e(where[row["fam"]])}</div>' if where.get(row["fam"]) else "")
             + f'<div class="host{"" if row["score"] or row["host_table"] not in (NO_HOST, FAM_ABSENT) else " open"}">'
-            f'{e(str(row["host_table"]))}</div></div>'
+            f'{e(str(row["host_table"]))}</div>'
+            + (f'<div class="who">{e(person[row["host_table"]])}</div>' if row["host_table"] in person else "")
+            + '</div>'
             for row in rows if row["round"] == r
         )
         breaks = [hosts[h] for h, rs in plan.host_breaks.items()
@@ -149,7 +152,7 @@ h1 {{ font-size: 22px; margin: 0 0 4px; }} h2 {{ font-size: 20px; margin: 18px 0
 .card {{ border: 1px solid #c9c6bf; border-radius: 8px; padding: 8px 10px; break-inside: avoid; }}
 .num {{ font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5c5c63; }}
 .fam {{ font-size: 13px; color: #3a3a3f; }} .host {{ font-weight: 700; font-size: 15px; }}
-.host.open {{ color: #b4530a; }} .note {{ color: #5c5c63; font-size: 13px; }} .loc {{ font-size: 12px; color: #5c5c63; }}
+.host.open {{ color: #b4530a; }} .note {{ color: #5c5c63; font-size: 13px; }} .loc {{ font-size: 12px; color: #5c5c63; }} .who {{ font-size: 13px; }}
 section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }}
 .finder {{ border-collapse: collapse; width: 100%; columns: 2; }} .finder td {{ border-bottom: 1px solid #e3e0d9; padding: 4px 6px; font-size: 13px; }}
 .finder td.tn {{ font-weight: 700; white-space: nowrap; }}
@@ -399,7 +402,7 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 </style></head><body>
 <section>
 <h1>{e(title)}: run sheet</h1>
-<p class="meta">{plan.rounds} rounds, {len(plan.hosts)} host tables, {len(plan.fams)} fams.</p>
+<p class="meta">{plan.rounds} rounds, {len(plan.hosts)} alumni, {len(plan.fams)} fams.</p>
 <h2>MC timeline</h2>
 <table>{timeline}</table>
 <h2>If someone cancels during the night</h2>
@@ -407,7 +410,7 @@ section {{ break-before: page; }} section:first-of-type {{ break-before: auto; }
 Reprint only the pages the app lists under Reprint. Rounds already finished never change.</p>
 </section>
 <section>
-<h2>Check-in: host tables</h2>
+<h2>Check-in: alumni</h2>
 <table><tr><th></th><th>Host table</th>{"<th>Alum</th>" if named else ""}<th>Round 1</th></tr>{host_rows}</table>
 <h2>Check-in: fams</h2>
 <table><tr><th></th><th>Table</th><th>Fam</th><th>Students</th></tr>{fam_rows}</table>

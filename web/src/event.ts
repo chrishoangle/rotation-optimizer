@@ -48,6 +48,7 @@ export interface NightState {
   moved?: string[]; // "round|host id" for alumni who reached their table
   famArrived?: Record<string, number>; // students arrived per fam id
   wrapUp?: boolean; // the wrap-up question was answered or dismissed
+  date?: string; // the event's date, "2026-11-14", so lateness is only shown on the day
 }
 
 export function newEvent(p: Partial<EventState> = {}): EventState {
