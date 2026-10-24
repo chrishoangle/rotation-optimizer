@@ -120,10 +120,9 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     button(p, "Done").click()
     assert "arrives for round 2" in words(p)
     add_people(p, "fams", FAMS)
-    # With both lists in, the room draws itself: no button to find. What the paste did comes along.
-    p.wait_for_selector(".c-plan")
-    assert "first row looked like column titles" in p.inner_text('[data-k="landed"]'), "a title row is skipped, and said so"
-    p.locator(".c-tab", has_text="Set up").click()
+    # With both lists in, the room draws itself right beside the guest list: no button, no other page.
+    p.wait_for_selector(".c-dinner-room .c-room")
+    assert "A title row was left out" in p.inner_text('[data-card="fams"]'), "a title row is skipped, and said so"
     assert p.locator('[data-kind="fams"] li').count() == 6
     assert jargon(p) == []
     p.locator(".c-tab", has_text="Schedule").click()
@@ -423,10 +422,9 @@ def test_a_coordinator_pastes_the_seating_chart_and_alumni_list_they_already_hav
     assert "Your seating chart: 3 fams and 4 alumni at 3 tables" in p.inner_text(".c-sheet-read")
     assert p.inner_text('[data-k="add-commit"]') == "Add this seating chart"
     p.locator('[data-k="add-commit"]').click()
-    # A chart holds both lists, so the room draws itself and says what it read.
+    # A chart holds both lists, so the room draws itself and the guest list says what it read.
     p.wait_for_selector(".c-room")
-    assert "Read your seating chart: 3 fams, 4 alumni at 3 tables (1 pair), 2 rounds." in p.inner_text('[data-k="landed"]')
-    p.locator(".c-tab", has_text="Set up").click()
+    assert "Read your seating chart: 3 fams, 4 alumni at 3 tables (1 pair), 2 rounds." in p.inner_text('[data-card="hosts"]')
     assert "The seating from your chart is kept." in words(p)
     add_people(p, "hosts", ALUMNI_LIST)
     text = words(p)
@@ -482,7 +480,7 @@ def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
     # The logo and name always lead home, where the next step waits.
     p.locator('[data-k="home-link"]').click()
     p.wait_for_selector(".c-hero")
-    assert p.locator('[data-k="next-step"]').inner_text().startswith("Next: see who sits where")
+    assert p.locator('[data-k="next-step"]').inner_text().startswith("Next: check who sits where")
 
     # Starting over asks first, and can be undone.
     p.get_by_role("button", name="Event menu").click()
@@ -571,9 +569,13 @@ def test_a_first_dinner_explains_itself(page):
     p.locator('[data-k="change-times"]').click()
     p.get_by_label("Doors open").fill("6:30 PM")
     p.get_by_label("Doors open").press("Tab")
-    p.get_by_label("Open floor at the end").select_option("30")
+    # Minutes are typed, not picked from a list.
+    p.get_by_label("Each round").fill("12")
+    p.get_by_label("Each round").press("Tab")
+    p.get_by_label("Open floor at the end").fill("30")
+    p.get_by_label("Open floor at the end").press("Tab")
     line = p.inner_text(".c-timing")
-    assert "30 min open floor" in line and "6:30 PM to 8:" in line
+    assert "12 min" in line and "30 min open floor" in line and "6:30 PM to 8:01 PM" in line
     p.locator(".c-tab", has_text="Print").click()
     assert p.locator('[data-k="no-doors"]').count() == 0
 

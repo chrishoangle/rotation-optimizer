@@ -119,7 +119,6 @@ let playing: number | null = null; // "Watch the night" is stepping through the 
 let sampleTables = 10, sampleAlumni = 10, sampleTimer: number | null = null; // the night before any names
 let moved = new Set<string>(); // "round:famId" whose alum changed in the last update, outlined on the room
 let autoFor = ""; // the lists the room last updated itself for, so a failed update is not retried forever
-let landed: { text: string; header: { kind: "hosts" | "fams"; skipped: string[] | null; columns: string } | null } | null = null; // what the paste did, carried onto the room it drew
 // Run
 let change: "left" | "arrived" | "table" | "wrong" | "famLeft" | null = null;
 let changeOpen = false;
@@ -154,7 +153,7 @@ function go(next: Place): void {
   place = next;
   confirmNew = false; leaveRun = false; cardNote = null; swapSaved = false; phone = null;
   undoSnap = null; clearTimeout(undoTimer); // an Undo only makes sense on the screen where the change was made
-  changed = []; moved = new Set(); landed = null; problems = []; picked = null; why = false; adjust = false; menu = false; runMenu = false;
+  changed = []; moved = new Set(); problems = []; picked = null; why = false; adjust = false; menu = false; runMenu = false;
   change = null; changeOpen = false; runProblem = ""; runNote = ""; editing = null; adding = null; noteFor = null; famFor = null; sheetPlain = ""; sheetGrid = null; moreWays = false; imported = null; paired = []; showMatches = false;
   remember();
   render(true);
@@ -518,7 +517,9 @@ function nextBar(): HTMLElement | null {
   if (place === "setup") {
     // The room draws itself: the bar only says where it is, never "make" or "update".
     note = !hostsOf(s).length ? "Add your alumni and fams to see who sits where." : !famsOf(s).length ? "Add your fams to see who sits where." : "";
-    action = primary("See who sits where", () => (s.plan ? go("schedule") : void makeSchedule()), undefined, !lists || busy);
+    action = s.plan && isCurrent(s) && !s.printed
+      ? primary("Looks good: print", () => { s.night = { ...s.night, reviewed: planSig(s.plan!) }; ctx.persist(); go("print"); }, "printer")
+      : primary("See who sits where", () => (s.plan ? go("schedule") : void makeSchedule()), undefined, !lists || busy);
   } else if (place === "schedule") {
     if (!s.plan) action = lists ? primary("Make the schedule", () => update()) : primary("Go to Set up", () => go("setup"));
     else if (!isCurrent(s)) action = primary("Update the schedule", () => update(), undefined, busy);
@@ -896,7 +897,7 @@ function noted(card: "hosts" | "fams", text: string): void {
   announce(text);
   
   const next = firstUndone(s);
-  focusAfter = next ? `add-${next}` : `see-room`;
+  focusAfter = next ? `add-${next}` : `room-details`;
 }
 
 /** The first Set up card still to do, in order. */
@@ -1028,11 +1029,11 @@ function pasted(): void {
   const s = ev();
   if (!s.plan && hostsOf(s).length && famsOf(s).length && !busy) {
     let note = cardNote?.text ?? "";
-    const header = imported?.skipped ? imported : null;
     // More rounds than the lists allow would only stop at an error; use the most they allow, and say so.
     if (s.rounds > maxRounds(s) && maxRounds(s) >= 1) { s.rounds = maxRounds(s); note += ` ${s.rounds} round${s.rounds !== 1 ? "s" : ""}: the most these lists allow without anyone meeting twice.`; }
-    void makeSchedule();
-    if (place === "schedule") { landed = note || header ? { text: note, header } : null; render(); }
+    // The room draws right here, beside the guest list; nobody is sent anywhere.
+    if (cardNote && note !== cardNote.text) cardNote = { ...cardNote, text: note };
+    void makeSchedule(false);
     return;
   }
   render();
@@ -1466,16 +1467,14 @@ function setupPage(): HTMLElement {
             h("button", { className: "c-link small", "aria-expanded": showTiming ? "true" : "false", "data-k": "change-times", onclick: () => { showTiming = !showTiming; render(); } }, showTiming ? "Done" : "Change")),
           showTiming ? timingFields() : null)),
       h("div", { className: "c-dinner-side" },
-        !s.plan && !both ? sampleNight(s) : both ? h("div", { className: "c-card c-ready" },
-          h("p", { className: "c-ready-say" }, s.plan ? "Everyone is seated." : "Seating everyone…"),
-          h("button", { className: "c-button primary", "data-k": "see-room", onclick: () => go("schedule") }, "See who sits where", icon("chevron"))) : null)),
+        both ? dinnerRoom(s) : sampleNight(s))),
     adding ? addSheet(adding) : null,
     noteFor && s.hosts.find((r) => r.host_id === noteFor) ? personSheet(s.hosts.find((r) => r.host_id === noteFor)!) : null,
     famFor && s.fams.find((r) => r.fam_id === famFor) ? famSheet(s.fams.find((r) => r.fam_id === famFor)!) : null);
 }
 
 /** Check the lists, then make (or update) the schedule. */
-async function makeSchedule(): Promise<void> {
+async function makeSchedule(goThere = true): Promise<void> {
   const s = ev();
   const nHosts = hostsOf(s).length, nFams = famsOf(s).length;
   tidy(s);
@@ -1485,7 +1484,7 @@ async function makeSchedule(): Promise<void> {
   if (s.rounds > maxRounds(s)) problems.push(`With ${nHosts} alumni tables and ${famsN(nFams)}, at most ${maxRounds(s)} rounds can run without a fam meeting the same alum twice. Choose fewer rounds.`);
   if (problems.length) { render(); (document.querySelector("#main .c-msg.error") as HTMLElement | null)?.scrollIntoView({ block: "center" }); return; }
   ctx.persist();
-  go("schedule");
+  if (goThere) go("schedule");
   await update();
 }
 
@@ -1581,12 +1580,9 @@ function schedulePage(): HTMLElement {
   if (busy) return h("section", { className: "c-page" }, h("h1", { tabindex: -1 }, "Schedule"),
     h("ol", { className: "c-build", role: "status", "aria-label": "Seating everyone" },
       ["Matching interests", "Avoiding repeat visits", "Checking who is here when", "Getting the printouts ready"].map((t, i) => h("li", { style: `--i: ${i}` }, h("span", { className: "c-build-tick", "aria-hidden": "true" }), t))));
-  // Both lists in and no room yet: draw it, rather than wait for a button.
-  if (!p && hostsOf(s).length && famsOf(s).length && autoFor !== fingerprint(s) && s.rounds <= maxRounds(s)) { autoFor = fingerprint(s); queueMicrotask(() => void update()); }
+  keepCurrent(s);
   if (!p) return emptyPage("schedule");
   const current = isCurrent(s);
-  // The room stays current by itself until it has been printed or the night has started; after that, a change waits for the coordinator.
-  if (!current && !s.printed && !hasStarted(s) && autoFor !== fingerprint(s)) { autoFor = fingerprint(s); queueMicrotask(() => void update()); }
   const attention = needsYou(p);
   const mine = gridChanges(s);
   const tips = nearMisses(s.hosts, s.fams);
@@ -1594,8 +1590,6 @@ function schedulePage(): HTMLElement {
     h("div", { className: "c-head-row" }, h("h1", { tabindex: -1 }, "Schedule"),
       current ? h("button", { className: `c-button ${adjust ? "primary" : ""}`, "aria-pressed": adjust ? "true" : "false", "data-k": "adjust", onclick: () => { adjust = !adjust; picked = null; why = false; render(); } }, adjust ? "Done adjusting" : [icon("swap"), "Adjust"]) : null),
     current || (!s.printed && !hasStarted(s)) ? null : h("div", { className: "c-msg warn" }, "Your lists changed since this schedule was made. Update it with the button below."),
-    landed ? h("p", { className: "c-landed", role: "status", "data-k": "landed" }, icon("check"), landed.text,
-      landed.header ? [" Your first row looked like column titles, so it was skipped. ", h("button", { className: "c-link", onclick: () => { imported = landed!.header; landed = null; undoHeader(); } }, "It's a real row: add it back")] : null) : null,
     summary(p),
     changed.length ? h("div", { className: "c-msg info", "data-k": "what-moved" }, h("strong", {}, "What moved:"), h("ul", {}, changed.map((c) => h("li", {}, c))),
       moved.size ? h("p", { className: "c-help" }, `${moved.size} table${moved.size !== 1 ? "s are" : " is"} marked Changed in the room below.`) : null) : null,
@@ -1692,12 +1686,39 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
 }
 
 /** Round 1, Round 2, … or the whole night as a grid. */
+/**
+ * The room keeps itself drawn and current: made once both lists exist, and redrawn after any change
+ * until it has been printed or the night has started; after that, a change waits for the coordinator.
+ */
+function keepCurrent(s: EventState): void {
+  if (busy || autoFor === fingerprint(s) || !hostsOf(s).length || !famsOf(s).length) return;
+  if (!s.plan ? s.rounds <= maxRounds(s) : !isCurrent(s) && !s.printed && !hasStarted(s)) { autoFor = fingerprint(s); queueMicrotask(() => void update()); }
+}
+
+/** The room beside the guest list: how it stands, one round at a time, and the way to every detail. */
+function dinnerRoom(s: EventState): HTMLElement {
+  keepCurrent(s);
+  const p = s.plan;
+  if (busy || !p) return h("div", { className: "c-card c-ready", role: "status" }, h("p", { className: "c-ready-say" }, "Seating everyone\u2026"));
+  if (!isCurrent(s)) return h("div", { className: "c-card c-ready" }, h("p", { className: "c-ready-say" }, "Your lists changed since the room was printed."),
+    h("button", { className: "c-button primary", onclick: () => go("schedule") }, "Update who sits where"));
+  const r = Math.min(Math.max(showRound || 1, 1), p.rounds);
+  return h("section", { className: "c-dinner-room", "aria-label": "Who sits where" },
+    summary(p),
+    h("div", { className: "c-switch-row" },
+      h("div", { className: "c-round-switch", role: "group", "aria-label": "Show" }, Array.from({ length: p.rounds }, (_, k) => k + 1).map((n) =>
+        h("button", { className: `c-seg ${r === n ? "on" : ""}`, "aria-pressed": r === n ? "true" : "false", "data-k": `show-${n}`, onclick: () => { showRound = n; render(); } }, `Round ${n}`))),
+      p.rounds > 1 ? h("button", { className: "c-link c-watch", "data-k": "watch", "aria-pressed": playing ? "true" : "false", onclick: () => watchNight(p) }, playing ? "Stop" : [icon("play"), "Watch the night"]) : null),
+    room(p, r, true),
+    h("button", { className: "c-link", "data-k": "room-details", onclick: () => go("schedule") }, "Swap seats or see the whole night \u203a"));
+}
+
 /** Play the night: each round in turn, so the rotation can be seen working. */
 function watchNight(p: EventPlan): void {
   if (playing) { clearInterval(playing); playing = null; render(); return; }
   showRound = 1;
   playing = window.setInterval(() => {
-    if (place !== "schedule" || !ev().plan) { clearInterval(playing!); playing = null; return; }
+    if ((place !== "schedule" && place !== "setup") || !ev().plan) { clearInterval(playing!); playing = null; return; }
     showRound += 1;
     if (showRound > p.rounds) { clearInterval(playing!); playing = null; showRound = 1; }
     render();
@@ -1959,10 +1980,15 @@ function nightLine(s: EventState): string {
 /** When doors open, how long each round and changeover lasts, and an open floor at the end: one timeline for the run sheet and the night. */
 function timingFields(): HTMLElement {
   const s = ev();
-  const pick = (id: string, label: string, options: number[], value: number, word: (n: number) => string, set: (n: number) => void) => {
-    const el = h("select", { id }, options.map((n) => h("option", { value: n, selected: n === value }, word(n)))) as HTMLSelectElement;
-    el.addEventListener("change", () => { set(Number(el.value)); ctx.persist(); render(); });
-    return h("div", { className: "c-field" }, h("label", { for: id, className: "c-label" }, label), el);
+  // Minutes are typed, any whole number: 12-minute rounds and a 3-minute changeover, not a list of presets.
+  const pick = (id: string, label: string, min: number, max: number, value: number, set: (n: number) => void) => {
+    const el = h("input", { id, type: "number", inputmode: "numeric", min, max, step: 1, value, className: "c-minutes" }) as HTMLInputElement;
+    el.addEventListener("change", () => {
+      const n = Math.round(Number(el.value));
+      if (!Number.isFinite(n) || el.value.trim() === "") { el.value = String(value); return; }
+      set(Math.min(max, Math.max(min, n))); ctx.persist(); render();
+    });
+    return h("div", { className: "c-field" }, h("label", { for: id, className: "c-label" }, label), h("span", { className: "c-minutes-wrap" }, el, h("span", { className: "c-unit", "aria-hidden": "true" }, "min")));
   };
   const doors = h("input", { id: "c-doors", type: "text", value: s.startTime, placeholder: "e.g. 6:30 PM" }) as HTMLInputElement;
   doors.addEventListener("change", () => { s.startTime = doors.value.trim(); ctx.persist(); render(); });
@@ -1983,9 +2009,9 @@ function timingFields(): HTMLElement {
       h("div", { className: "c-field" }, h("label", { for: "c-doors", className: "c-label" }, "Doors open"), doors,
         bad ? h("span", { className: "c-help warn" }, "Write it like 6:30 PM or 18:30.") : null),
       h("div", { className: "c-field" }, h("label", { for: "c-first", className: "c-label" }, "Round 1 starts"), first),
-      pick("c-minutes", "Each round", [10, 12, 15, 20, 25, 30, 40, 45, 60], s.roundMinutes, (n) => `${n} minutes`, (n) => { s.roundMinutes = n; }),
-      pick("c-switch", "Changeover", [0, 2, 3, 5, 10, 15], s.switchMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { if (toMinutes(s.startTime) !== null) s.welcomeMinutes = Math.max(0, s.welcomeMinutes + s.switchMinutes - n); s.switchMinutes = n; }),
-      pick("c-open", "Open floor at the end", [0, 10, 15, 20, 30, 45, 60], s.openMinutes, (n) => (n ? `${n} minutes` : "None"), (n) => { s.openMinutes = n; })),
+      pick("c-minutes", "Each round", 1, 180, s.roundMinutes, (n) => { s.roundMinutes = n; }),
+      pick("c-switch", "Changeover", 0, 60, s.switchMinutes, (n) => { if (toMinutes(s.startTime) !== null) s.welcomeMinutes = Math.max(0, s.welcomeMinutes + s.switchMinutes - n); s.switchMinutes = n; }),
+      pick("c-open", "Open floor at the end (0 for none)", 0, 180, s.openMinutes, (n) => { s.openMinutes = n; })),
     h("p", { className: "c-help", "aria-live": "polite" }, nightLine(s)));
 }
 

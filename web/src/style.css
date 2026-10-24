@@ -1045,3 +1045,10 @@ main.coord:has(.c-dinner-page) { max-width: 1120px; }
 .c-sheet-list .what { color: var(--ink-soft); font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-sheet-list li.more { color: var(--ink-soft); font-style: italic; }
 .c-sheet-foot { justify-content: space-between; border-top: 1px solid var(--hairline); padding-top: 12px; }
+.c-minutes-wrap { display: inline-flex; align-items: center; gap: 8px; }
+.c-minutes-wrap input.c-minutes { width: 96px; font-variant-numeric: tabular-nums; }
+.c-unit { color: var(--ink-soft); font-size: var(--t-sm); }
+.c-dinner-room { display: flex; flex-direction: column; gap: 12px; }
+.c-dinner-room .c-answer { margin: 0; }
+.c-dinner-room .c-room { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.c-dinner-room > .c-link { align-self: flex-start; }

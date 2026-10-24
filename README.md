@@ -83,7 +83,9 @@ dropped), and shows the people it read before adding them, with a file and
 examples under More ways to add; alumni and fams then show as people and tables
 to tap, where a name, field, interests, a pair, late arrivals, stairs, or must
 or never meet are changed; alumni who share a field host one table together as
-a pair; the name, rounds, date, and times are lines of The night), **Schedule** (the room drawn one round at a time,
+a pair; the name, rounds, date, and times are lines of The night, with minutes
+typed as numbers; once both lists are in, the room draws itself on the same
+page, beside the guest list, one round at a time), **Schedule** (the room drawn one round at a time,
 drawn as soon as both lists are in, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, Watch the night to play the rounds in turn, and after any change the tables that changed marked on the room; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
