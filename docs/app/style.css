@@ -949,3 +949,26 @@ main.coord.stage .c-button.primary { background: #2563eb; color: #fff; }
   .c-nextbar .c-button.big[disabled] .c-bar-label, .c-nextbar .c-button.big[disabled] .c-icon { display: none; }
   .c-nextbar .c-button.big[disabled] .c-bar-why { display: inline; font-weight: 500; }
 }
+.c-answer-sub { margin: 4px 0 0; color: var(--ink-soft); font-size: var(--t-sm); }
+.c-switch-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.c-watch { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.c-watch .c-icon svg { width: 16px; height: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+  .c-room .c-tile { animation: c-in .3s ease-out both; }
+}
+
+/* The night before any names: two numbers and the rotation playing out. */
+.c-sample-night { padding: 18px 20px; margin: 8px 0 16px; border: 2px solid var(--accent); background: var(--accent-wash); box-shadow: none; }
+.c-sample-head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.c-stepper { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-md); }
+.c-stepper strong { font-size: 22px; font-variant-numeric: tabular-nums; min-width: 1.4em; text-align: center; }
+.c-step-btn { font: inherit; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--hairline-strong); background: var(--surface); color: var(--ink); cursor: pointer; font-size: 18px; line-height: 1; }
+.c-sample-head .c-watch { margin-left: auto; }
+.c-sample-svg { width: 100%; height: auto; margin: 12px 0 4px; display: block; }
+.c-sample-table { fill: var(--surface); stroke: var(--hairline-strong); stroke-width: 1.5; }
+.c-sample-num { font-size: 13px; font-weight: 600; fill: var(--ink-soft); }
+.c-sample-alum { fill: var(--accent); transition: transform .8s cubic-bezier(.4, 0, .2, 1); }
+.c-sample-say { margin: 0; color: var(--ink); font-size: var(--t-sm); }
+.c-sample-round { font-weight: 700; margin-right: 4px; }
+@media (prefers-reduced-motion: reduce) { .c-sample-alum { transition: none; } }
+@media (max-width: 700px) { .c-sample-head .c-watch { margin-left: 0; } }

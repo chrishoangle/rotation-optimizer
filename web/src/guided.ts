@@ -15,7 +15,7 @@ import { avatars, famHue, peopleIn } from "./faces";
 import { IconName, icon } from "./icons";
 import { TOUR_STEPS, openTour, tourSeen, tourStep } from "./tour";
 import {
-  saveEvent, EventState, FAM_COLUMNS, HOST_COLUMNS, applySpelling, checkInputs, famLocations, hasStarted, isCurrent, loadEvent,
+  saveEvent, EventState, FAM_COLUMNS, HOST_COLUMNS, applySpelling, checkInputs, famLocations, fingerprint, hasStarted, isCurrent, loadEvent,
   maxRounds, nearMisses, newEvent, normalizeState, normalizeTable, stepFreeFams,
 } from "./event";
 import { explainPairing } from "./explain";
@@ -118,6 +118,10 @@ let moreSchedule = false;
 // Print
 let morePrint = false;
 let showTiming = false; // the timing fields under "Your dinner"
+let playing: number | null = null; // "Watch the night" is stepping through the rounds
+let sampleTables = 10, sampleAlumni = 10, sampleTimer: number | null = null; // the night before any names
+let autoFor = ""; // the lists the room last updated itself for, so a failed update is not retried forever
+let landed: { text: string; header: { kind: "hosts" | "fams"; skipped: string[] | null; columns: string } | null } | null = null; // what the paste did, carried onto the room it drew
 // Run
 let change: "left" | "arrived" | "table" | "wrong" | "famLeft" | null = null;
 let changeOpen = false;
@@ -152,7 +156,7 @@ function go(next: Place): void {
   place = next;
   confirmNew = false; leaveRun = false; cardNote = null; swapSaved = false; phone = null;
   undoSnap = null; clearTimeout(undoTimer); // an Undo only makes sense on the screen where the change was made
-  changed = []; problems = []; picked = null; why = false; adjust = false; menu = false; runMenu = false;
+  changed = []; landed = null; problems = []; picked = null; why = false; adjust = false; menu = false; runMenu = false;
   change = null; changeOpen = false; runProblem = ""; runNote = ""; editing = null; adding = null; noteFor = null; imported = null; paired = []; showMatches = false;
   remember();
   render(true);
@@ -531,7 +535,7 @@ function nextBar(): HTMLElement | null {
   }
   return h("div", { className: "c-nextbar", role: "region", "aria-label": "Next step" },
     h("button", { className: "c-link", "data-k": "bar-back", onclick: () => go(backTo) }, `\u2039 ${backLabel}`),
-    h("span", { className: "c-nextbar-where" }, at[0] <= 4 ? `Step ${at[0]} of 4 \u00b7 ${at[1]}` : at[1]),
+    // The tabs already say where you are; the bar only says what comes next.
     note ? h("span", { className: "c-nextbar-note" }, note) : h("span", { className: "c-nextbar-note" }),
     action);
 }
@@ -598,7 +602,7 @@ function startTour(): void {
     solveOn: (s, keep) => ctx.solveOn(s, keep),
     now: () => ctx.now(),
     finish: (next) => {
-      if (next === "start" && !hasPeople(ev())) { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); return; }
+      if (next === "start" && !hasPeople(ev())) { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = null; go("setup"); return; }
       render();
     },
   });
@@ -645,7 +649,7 @@ function homePage(): HTMLElement {
   const open = keyOpens(h("label", { className: "c-choice", for: "c-open-home", tabindex: 0 }, openInput("c-open-home"), icon("folder", "c-choice-icon"),
     h("span", { className: "c-choice-text" }, h("strong", {}, "Open a saved event"), h("span", {}, "A file you saved from this app, like last year's.")), icon("chevron", "c-choice-go")));
   const example = choice("See the STEW 2026 dinner", "Our real STEW 2026 dinner, ready to explore. Nothing you do is kept.", async () => { practiceReturn = "home"; ctx.tryExample(); go("schedule"); await update(); }, false, "sparkle");
-  const fresh = () => { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = "dinner"; go("setup"); };
+  const fresh = () => { ctx.set(newEvent({ title: "", rounds: 3 })); openCard = null; go("setup"); };
   const arriving = ctx.incoming();
   const incomingCard = arriving ? h("div", { className: "c-card c-confirm", role: "alertdialog", "aria-label": "Open the dinner you sent" },
     h("h2", {}, `Open "${arriving.title || "your dinner"}" on this device?`),
@@ -837,6 +841,8 @@ function addRows(kind: "hosts" | "fams", grid: string[][], close = true): void {
     fresh.push(row);
   }
   const added = kind === "hosts" && close ? addCloseWords(fresh) : [];
+  // Majors as students write them ("Mech E", "Biz Econ") become the plain words alumni match on, as from a seating chart.
+  if (kind === "fams") for (const r of fresh) if ((r.interests ?? "").trim()) r.interests = majorWords(r.interests).join("; ");
   tidy(s);
   if (kind === "hosts") paired = pairByField(s);
   ctx.persist();
@@ -866,8 +872,8 @@ function closeNote(added: [string, string][]): string {
   if (!added.length) return "";
   const by = new Map<string, string[]>();
   for (const [w, from] of added) by.set(from, [...(by.get(from) ?? []), w]);
-  const parts = [...by].slice(0, 3).map(([from, ws]) => `${from} also matches ${ws.length > 1 ? ws.slice(0, -1).join(", ") + " and " + ws.at(-1) : ws[0]}`);
-  return ` Close words count too: ${parts.join("; ")}${by.size > 3 ? "; and more" : ""}. You can remove any in Edit alumni.`;
+  const [from, ws] = [...by][0];
+  return ` Close interests count too, so ${from} also matches ${ws.length > 1 ? ws.slice(0, -1).join(", ") + " and " + ws.at(-1) : ws[0]}.`;
 }
 
 /** Say what a paste did inside the card it changed, with the first few names, and move on to the next card. */
@@ -887,7 +893,7 @@ function noted(card: "hosts" | "fams", text: string): void {
 
 /** The first Set up card still to do, in order. */
 function firstUndone(s: EventState): "dinner" | "hosts" | "fams" | null {
-  if (!s.title.trim() && !hasPeople(s) && !dinnerSeen) return "dinner";
+  // The lists come first: the name, rounds, and times can wait, with good defaults.
   if (!hostsOf(s).length) return "hosts";
   if (!famsOf(s).length) return "fams";
   return null;
@@ -998,7 +1004,7 @@ function formatPicker(kind: "hosts" | "fams"): HTMLElement {
   const rows = SAMPLES[shown][kind];
   return h("div", { className: "c-format" },
     h("div", { className: "c-round-switch", role: "group", "aria-label": "What will you paste?" }, options.map(([k, label]) =>
-      h("button", { className: `c-seg ${shown === k ? "on" : ""}`, "aria-pressed": shown === k ? "true" : "false", "data-k": `format-${kind}-${k}`, onclick: () => { format = k; render(); } }, label))),
+      h("button", { className: `c-seg ${shown === k ? "on" : ""}`, "aria-pressed": shown === k ? "true" : "false", "data-k": `format-${kind}-${k}`, onclick: () => { format = k; formatPicked = true; render(); } }, label))),
     h("div", { className: "c-sample", role: "figure", tabindex: 0, "aria-label": `Example of ${options.find(([k]) => k === shown)![1].toLowerCase()}` },
       h("table", {}, rows.map((r, i) => h("tr", { className: shown === "chart" && i === 0 ? "head" : shown === "list" && i % 2 ? "sub" : "" }, r.map((c) => h("td", {}, c)))))),
     h("p", { className: "c-help" }, shown === "chart" ? "Last year's (or this year's) chart: one row per fam table, a column per round, pairs written \"A + B\". The app keeps that seating."
@@ -1006,6 +1012,22 @@ function formatPicker(kind: "hosts" | "fams"): HTMLElement {
       : kind === "hosts" ? "One alum per line: their name, then what they can talk about." : "One fam per line: an optional table number, its name, then its majors. Shorthand like PoliSci or Bio/Chem is understood.",
       " ", h("button", { className: "c-link small", "data-k": `example-${kind}`, onclick: () => { useExample(kind); adding = null; render(); } }, "Use the STEW 2026 example to see how it works"),
       shown === "chart" ? [" \u00b7 ", h("button", { className: "c-link small", onclick: () => download("Seating chart template.csv", "Fam table,Round 1 (alums),Round 2 (alums)\nTable 1 Fam name (majors),Name or Name + Name,Name\n") }, "Download a blank seating chart")] : null));
+}
+
+/** After a paste: once both lists are in and there is no schedule yet, go straight to the room. The payoff comes first. */
+function pasted(): void {
+  adding = null;
+  const s = ev();
+  if (!s.plan && hostsOf(s).length && famsOf(s).length && !busy) {
+    let note = cardNote?.text ?? "";
+    const header = imported?.skipped ? imported : null;
+    // More rounds than the lists allow would only stop at an error; use the most they allow, and say so.
+    if (s.rounds > maxRounds(s) && maxRounds(s) >= 1) { s.rounds = maxRounds(s); note += ` ${s.rounds} round${s.rounds !== 1 ? "s" : ""}: the most these lists allow without anyone meeting twice.`; }
+    void makeSchedule();
+    if (place === "schedule") { landed = note || header ? { text: note, header } : null; render(); }
+    return;
+  }
+  render();
 }
 
 function pasteBox(kind: "hosts" | "fams"): HTMLElement {
@@ -1016,44 +1038,27 @@ function pasteBox(kind: "hosts" | "fams"): HTMLElement {
     const grid = typedGrid(box.value);
     if (!grid.length) return;
     if (!importWhatTheyHave(box.value, grid)) undoable(kind === "hosts" ? "Added alumni." : "Added fams.", () => addRows(kind, grid));
-    adding = null;
-    render();
+    pasted();
   } }, "Add these");
   box.addEventListener("input", () => { add.hidden = !box.value.trim(); });
   box.addEventListener("paste", (e) => {
     const data = (e as ClipboardEvent).clipboardData;
     const plain = data?.getData("text/plain") ?? "";
     const grid = gridFromHtml(data?.getData("text/html") ?? "") ?? parsePasted(plain);
-    if (importWhatTheyHave(plain, grid)) { e.preventDefault(); adding = null; render(); return; }
+    if (importWhatTheyHave(plain, grid)) { e.preventDefault(); pasted(); return; }
     if (!grid) return;
     e.preventDefault();
     undoable(kind === "hosts" ? "Added alumni." : "Added fams.", () => addRows(kind, grid));
-    adding = null;
-    render();
+    pasted();
   });
   return h("div", { className: "c-paste-zone" },
     h("label", { for: id, className: "c-label" }, kind === "hosts" ? "Paste or type your alumni" : "Paste or type your fams",
       h("span", { className: "c-label-hint" }, kind === "hosts" ? "A seating chart, an alumni list, or one alum per line, from Docs, Sheets, or Excel" : "A seating chart, or one fam per line with its majors")),
-    h("div", { className: "c-paste-wrap" }, box, pasteDemo(box)),
+    h("div", { className: "c-paste-wrap" }, box),
     h("div", { className: "c-row" }, add, uploadButton(kind),
       h("button", { className: "c-link", "aria-expanded": showExamples ? "true" : "false", "data-k": `examples-${kind}`, onclick: () => { showExamples = !showExamples; render(); } }, showExamples ? "Hide examples" : "See examples"),
       ev()[kind].length ? h("button", { className: "c-link", onclick: () => { adding = null; render(); } }, "Cancel") : null),
     showExamples ? formatPicker(kind) : null);
-}
-
-/** Once, the first time an empty paste box is shown: a sheet slides in and becomes a list. Any key or click stops it. */
-function pasteDemo(box: HTMLTextAreaElement): HTMLElement | null {
-  try { if (localStorage.getItem("rotation-optimizer:paste-demo")) return null; localStorage.setItem("rotation-optimizer:paste-demo", "1"); } catch { return null; }
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return null;
-  const demo = h("div", { className: "c-paste-demo", "aria-hidden": "true" },
-    h("div", { className: "c-demo-sheet" }, ["Fam table", "Round 1", "Round 2"].map((c) => h("span", {}, c)), ["Table 1", "K. Tran", "S. Lew"].map((c) => h("span", {}, c)), ["Table 2", "D. Tran + A. Lim", "U. Tran"].map((c) => h("span", {}, c))),
-    h("div", { className: "c-demo-list" }, h("span", {}, "\u2713 10 fams"), h("span", {}, "\u2713 13 alumni, 3 pairs")));
-  box.classList.add("demoing");
-  const stop = () => { demo.remove(); box.classList.remove("demoing"); removeEventListener("keydown", stop, true); removeEventListener("pointerdown", stop, true); };
-  addEventListener("keydown", stop, true);
-  addEventListener("pointerdown", stop, true);
-  demo.addEventListener("animationend", (e) => { if ((e as AnimationEvent).animationName === "c-demo-out") stop(); });
-  return demo;
 }
 
 function uploadButton(kind: "hosts" | "fams"): HTMLElement {
@@ -1165,12 +1170,7 @@ const CARD_STEP = { dinner: 1, hosts: 2, fams: 3 } as const;
 function setupCard(key: "dinner" | "hosts" | "fams", title: string, summary: string, done: boolean, body: () => (HTMLElement | null)[]): HTMLElement {
   const isOpen = openCard === key || (openCard === null && firstUndone(ev()) === key);
   const note = cardNote && cardNote.card === key ? h("div", { className: "c-msg ok c-card-note", role: "status" },
-    h("p", {}, cardNote.text),
-    cardNote.preview.length > 1 ? h("div", { className: "c-sample c-preview", role: "figure", tabindex: 0, "aria-label": "What was read, first rows" },
-      h("table", {}, cardNote.preview.map((r, i) => h("tr", { className: i === 0 ? "head" : r.length === 1 ? "more" : "" }, r.map((c) => h("td", { colspan: r.length === 1 ? 3 : null }, c)))))) : null,
-    h("div", { className: "c-row" },
-      h("button", { className: "c-button", "data-k": `looks-right-${key}`, onclick: () => { cardNote = null; render(); } }, "Looks right"),
-      undoSnap ? h("button", { className: "c-link", onclick: undoLast }, "Undo") : null)) : null;
+    h("p", {}, cardNote.text, undoSnap ? [" ", h("button", { className: "c-link", onclick: undoLast }, "Undo")] : null)) : null;
   return h("section", { className: `c-card c-setup ${done ? "done" : ""} ${isOpen ? "open" : ""}`, "data-card": key },
     h("h2", { className: "c-card-h" }, h("button", { className: "c-card-head", "aria-expanded": isOpen ? "true" : "false", "data-k": `card-${key}`, onclick: () => { openCard = isOpen ? (done ? null : key) : key; render(); } },
       h("span", { className: `c-check ${done ? "on" : ""}`, "aria-hidden": "true" }, done ? icon("check") : String(CARD_STEP[key])),
@@ -1237,8 +1237,57 @@ function matchHint(s: EventState): HTMLElement | null {
   const lonely = fams.filter((f) => !words(f.interests).some((w) => alumWords.has(w)));
   const ok = fams.length - lonely.length;
   return h("p", { className: `c-match-hint ${lonely.length ? "some" : "all"}` },
-    `${ok} of ${famsN(fams.length)} share an interest word with at least one alum.`,
-    lonely.length ? ` ${lonely.slice(0, 3).map((f) => f.fam_label).join(", ")}${lonely.length > 3 ? ` and ${lonely.length - 3} more` : ""} ${lonely.length === 1 ? "shares" : "share"} none yet, so ${lonely.length === 1 ? "it gets" : "they get"} the closest match. Matching counts identical words, like "biology" on both sides.` : "");
+    `${ok} of ${famsN(fams.length)} share an interest with at least one alum.`,
+    lonely.length ? ` The ${lonely.length === 1 ? "other still meets" : `other ${lonely.length} still meet`} alumni, just without one in common.` : "");
+}
+
+/**
+ * The night before any names: tables and alumni as two numbers, and the rotation playing out.
+ * Each round every alum moves one table on, the rule the STEW 2026 MC called out, so nobody visits a table twice.
+ * Nothing here is saved; it shows what the app will do before the coordinator has given it anything.
+ */
+function sampleNight(s: EventState): HTMLElement {
+  const T = sampleTables, A = sampleAlumni, R = Math.min(s.rounds, T);
+  const perRow = Math.min(T, window.innerWidth < 700 ? 5 : 8), gapX = 600 / perRow, rows = Math.ceil(T / perRow);
+  const at = (t: number) => ({ x: gapX / 2 + (t % perRow) * gapX, y: 44 + Math.floor(t / perRow) * 74 });
+  const dotAt = (i: number, r: number) => { const c = at((i + r - 1) % T); return { x: c.x + (i < T ? 15 : -15), y: c.y - 15 }; };
+  const H = 44 + (rows - 1) * 74 + 40;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 600 ${H}`);
+  svg.setAttribute("class", "c-sample-svg");
+  svg.setAttribute("aria-hidden", "true");
+  let inner = "";
+  for (let t = 0; t < T; t++) { const c = at(t); inner += `<circle cx="${c.x}" cy="${c.y}" r="22" class="c-sample-table"/><text x="${c.x}" y="${c.y + 5}" text-anchor="middle" class="c-sample-num">${t + 1}</text>`; }
+  for (let i = 0; i < A; i++) { const d = dotAt(i, 1); inner += `<circle r="7" class="c-sample-alum" style="transform: translate(${d.x}px, ${d.y}px)"/>`; }
+  svg.innerHTML = inner;
+  const label = h("span", { className: "c-sample-round", "aria-live": "polite" }, `Round 1 of ${R}`);
+  const play = () => {
+    if (sampleTimer) clearInterval(sampleTimer);
+    let r = 1;
+    const dots = [...svg.querySelectorAll<SVGCircleElement>(".c-sample-alum")];
+    const show = () => { dots.forEach((d, i) => { const p = dotAt(i, r); d.style.transform = `translate(${p.x}px, ${p.y}px)`; }); label.textContent = `Round ${r} of ${R}`; };
+    show();
+    sampleTimer = window.setInterval(() => {
+      if (!document.contains(svg) || r >= R) { clearInterval(sampleTimer!); sampleTimer = null; return; }
+      r += 1; show();
+    }, 1500);
+  };
+  const step = (what: "tables" | "alumni", by: number) => () => {
+    if (what === "tables") { sampleTables = Math.max(2, Math.min(20, T + by)); sampleAlumni = Math.min(sampleAlumni, sampleTables * 2); }
+    else sampleAlumni = Math.max(1, Math.min(T * 2, A + by));
+    render();
+  };
+  const counter = (what: "tables" | "alumni", n: number) => h("span", { className: "c-stepper", role: "group", "aria-label": what === "tables" ? "Tables" : "Alumni" },
+    h("button", { className: "c-step-btn", "aria-label": `Fewer ${what}`, "data-k": `fewer-${what}`, onclick: step(what, -1) }, "\u2212"),
+    h("strong", { "data-k": `n-${what}` }, String(n)), h("button", { className: "c-step-btn", "aria-label": `More ${what}`, "data-k": `more-${what}`, onclick: step(what, 1) }, "+"),
+    h("span", {}, what));
+  if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setTimeout(play, 600);
+  const extra = A > T ? " Some alumni share a table in pairs." : A < T ? " Some tables wait a round for an alum." : "";
+  return h("section", { className: "c-card c-sample-night", "aria-label": "Your night, before your lists" },
+    h("div", { className: "c-sample-head" }, counter("tables", T), counter("alumni", A),
+      h("button", { className: "c-link c-watch", "data-k": "watch-sample", onclick: play }, icon("play"), "Watch the night")),
+    svg,
+    h("p", { className: "c-sample-say" }, label, ` Every alum moves one table on each round, so nobody visits a table twice.${extra}`));
 }
 
 function setupPage(): HTMLElement {
@@ -1248,7 +1297,6 @@ function setupPage(): HTMLElement {
   name.addEventListener("input", () => { s.title = name.value; ctx.persist(); const t = document.querySelector(".c-title"); if (t) t.textContent = s.title || "Untitled dinner"; });
   const rounds = h("select", { id: "c-rounds" }, [1, 2, 3, 4, 5, 6].map((n) => h("option", { value: n, selected: n === s.rounds }, `${n} round${n !== 1 ? "s" : ""}`))) as HTMLSelectElement;
   rounds.addEventListener("change", () => { s.rounds = Number(rounds.value); s.finished = Math.min(s.finished, s.rounds - 1); ctx.persist(); render(); });
-  const have = (k: "chart" | "list" | "lines", label: string) => h("button", { className: `c-chip ${formatPicked && format === k ? "on" : ""}`, "aria-pressed": formatPicked && format === k ? "true" : "false", onclick: () => { format = k; formatPicked = true; showExamples = k !== "lines"; render(); } }, label);
   const date = h("input", { id: "c-date", type: "date", value: s.night.date ?? "" }) as HTMLInputElement;
   date.addEventListener("change", () => { s.night = { ...s.night, date: date.value || undefined }; ctx.persist(); });
   const nPeople = peopleCount(s), nPairs = pairCount(s);
@@ -1292,12 +1340,11 @@ function setupPage(): HTMLElement {
   const fresh = !nHosts || !nFams;
   return h("section", { className: "c-page" },
     h("h1", { tabindex: -1 }, fresh && !hasPeople(s) ? "Let's set up your dinner" : "Set up"),
-    fresh ? h("p", { className: "c-lead" }, "Three short steps. Most coordinators paste a seating chart or an alumni list they already have. ",
-      ctx.inPractice() ? null : h("button", { className: "c-link", onclick: async () => { practiceReturn = "setup"; ctx.tryExample(); go("schedule"); await update(); } }, "See the STEW 2026 dinner first")) : null,
+    !hasPeople(s) ? sampleNight(s) : null,
+    fresh && !hasPeople(s) ? h("p", { className: "c-help" }, "Then paste your lists below, from Docs, Sheets, or Excel. ",
+      ctx.inPractice() ? null : h("button", { className: "c-link", onclick: async () => { practiceReturn = "setup"; ctx.tryExample(); go("schedule"); await update(); } }, "Or see the STEW 2026 dinner")) : null,
     problems.length ? h("div", { className: "c-msg error", role: "alert" }, h("strong", {}, "Before making the schedule:"), h("ul", {}, problems.map((p) => h("li", {}, plain(p))))) : null,
     setupCard("dinner", "Your dinner", `${s.title || "Untitled dinner"} · ${s.rounds} round${s.rounds !== 1 ? "s" : ""}`, dinnerDone, () => [
-      hasPeople(s) ? null : h("div", { className: "c-have" }, h("p", { className: "c-label" }, "First: what do you have for the lists?"),
-        h("div", { className: "c-row" }, have("chart", "Last year's seating chart"), have("list", "A list of alumni"), have("lines", "Nothing yet"))),
       h("div", { className: "c-fields" },
         h("div", { className: "c-field" }, h("label", { for: "c-name", className: "c-label" }, "Name"), name),
         h("div", { className: "c-field" }, h("label", { for: "c-rounds", className: "c-label" }, "Rounds"), rounds,
@@ -1381,14 +1428,19 @@ function summary(p: EventPlan): HTMLElement {
   const pairs = p.hosts.some((x) => peopleIn(x.person || x.name).length > 1);
   const meets = (n: number) => (pairs ? `${n} alumni table${n !== 1 ? "s" : ""}` : alumni(n));
   const shares = p.assignments.filter((a) => a.score > 0).length;
+  // A promise first, then how good the matches are, framed against what these lists allow: never a grade.
+  const best = provenOptimal(p) && p.keptSlots === null;
+  const promise = (seated ? "Everyone has a seat. " : "") + (lo === hi ? `Each fam meets ${meets(lo)}, a different one each round.` : `Each fam meets ${lo} to ${meets(hi)}, a different one each round.`);
+  const quality = !anyInterests ? "" : shares === 0 ? "No fam and alum share an interest yet; add fields or majors for better conversations."
+    : `${best ? "The best match for these lists: " : ""}${shares} conversation${shares !== 1 ? "s" : ""} share${shares === 1 ? "s" : ""} an interest.`;
   const lines = [
-    (seated ? "Everyone has a seat" : "") + (anyInterests && p.assignments.length ? `${seated ? ", and" : ""} ${shares} of ${p.assignments.length} conversations share an interest. ` : seated ? ". " : "") + (lo === hi ? `Each fam meets ${meets(lo)}, a different one each round.` : `Each fam meets ${lo} to ${meets(hi)}, a different one each round.`),
-    anyInterests && weak ? `${weak === 1 ? "One pairing is" : `${weak} of ${p.assignments.length} pairings are`} a weaker match: the alum and fam share no interest word.` +
-      (weak * 2 > p.assignments.length ? " Matches only count identical words, so using the same words in both lists (for example \"computer science\" in both, not \"CS\" in one) gives better matches." : "") : "",
-    provenOptimal(p) ? (p.keptSlots !== null ? "This is the best update, changing as little as possible." : "With these words, no other schedule shares more interests.") : "",
+    promise,
+    anyInterests && weak ? `The other ${weak} conversation${weak !== 1 ? "s" : ""} start fresh, with no interest in common.` : "",
+    p.keptSlots !== null && provenOptimal(p) ? "This is the best update, changing as little as possible." : "",
   ].filter(Boolean);
   return h("div", { className: "c-answer" }, h("span", { className: "c-answer-mark", "aria-hidden": "true" }, icon("check")),
-    h("div", {}, h("p", { className: "c-answer-main" }, lines[0].trim()),
+    h("div", {}, h("p", { className: "c-answer-main" }, lines[0]),
+      quality ? h("p", { className: "c-answer-sub", "data-k": "quality" }, quality) : null,
       showMatches ? weakList(p) : null,
       lines.length > 1 ? h("button", { className: "c-link small", "aria-expanded": showMatches ? "true" : "false", "data-k": "matches", onclick: () => { showMatches = !showMatches; render(); } }, showMatches ? "Hide" : "How good are the matches?") : null,
       showMatches ? lines.slice(1).map((l) => h("p", { className: "c-help" }, l)) : null));
@@ -1404,7 +1456,7 @@ function weakList(p: EventPlan): HTMLElement | null {
   return h("div", { className: "c-weak-list" },
     weak.length ? h("ul", {}, weak.map((a) => {
       const f = p.fams.find((x) => x.groupId === a.groupId)!, x = p.hosts.find((y) => y.hostId === a.hostId)!;
-      return h("li", {}, h("strong", {}, `Round ${a.round}, table ${tables[f.groupId]}: ${f.name} and ${x.person || x.name}`), " share no word. ",
+      return h("li", {}, h("strong", {}, `Round ${a.round}, table ${tables[f.groupId]}: ${f.name} and ${x.person || x.name}`), " have no interest in common. ",
         h("span", { className: "c-help" }, `${f.name}: ${f.interests.slice(0, 4).join(", ") || "none"}. ${x.person || x.name}: ${x.tags.slice(0, 4).join(", ") || "none"}.`));
     })) : null,
     tips.length ? h("div", {}, h("p", { className: "c-help" }, "These look like the same interest written two ways. Make them one word for better matches:"),
@@ -1437,18 +1489,23 @@ function schedulePage(): HTMLElement {
       ["Matching interests", "Avoiding repeat visits", "Checking who is here when", "Getting the printouts ready"].map((t, i) => h("li", { style: `--i: ${i}` }, h("span", { className: "c-build-tick", "aria-hidden": "true" }), t))));
   if (!p) return emptyPage("schedule");
   const current = isCurrent(s);
+  // The room stays current by itself until it has been printed or the night has started; after that, a change waits for the coordinator.
+  if (!current && !s.printed && !hasStarted(s) && autoFor !== fingerprint(s)) { autoFor = fingerprint(s); queueMicrotask(() => void update()); }
   const attention = needsYou(p);
   const mine = gridChanges(s);
   const tips = nearMisses(s.hosts, s.fams);
   return h("section", { className: "c-page" },
     h("div", { className: "c-head-row" }, h("h1", { tabindex: -1 }, "Schedule"),
       current ? h("button", { className: `c-button ${adjust ? "primary" : ""}`, "aria-pressed": adjust ? "true" : "false", "data-k": "adjust", onclick: () => { adjust = !adjust; picked = null; why = false; render(); } }, adjust ? "Done adjusting" : [icon("swap"), "Adjust"]) : null),
-    current ? null : h("div", { className: "c-msg warn" }, "Your lists changed since this schedule was made. Update it with the button below."),
+    current || (!s.printed && !hasStarted(s)) ? null : h("div", { className: "c-msg warn" }, "Your lists changed since this schedule was made. Update it with the button below."),
+    landed ? h("div", { className: "c-msg ok", role: "status", "data-k": "landed" }, landed.text,
+      landed.header ? [" Your first row looked like column titles, so it was skipped. ", h("button", { className: "c-link", onclick: () => { imported = landed!.header; landed = null; undoHeader(); } }, "It's a real row: add it back")] : null) : null,
     summary(p),
     changed.length ? h("div", { className: "c-msg info" }, h("strong", {}, "What moved:"), h("ul", {}, changed.map((c) => h("li", {}, c)))) : null,
     attention.length ? h("div", { className: "c-msg warn" }, h("strong", {}, "Needs you"), h("ul", {}, attention)) : null,
     adjust ? adjustBar(p) : null,
-    roundSwitch(p),
+    h("div", { className: "c-switch-row" }, roundSwitch(p),
+      p.rounds > 1 && !adjust ? h("button", { className: "c-link c-watch", "data-k": "watch", "aria-pressed": playing ? "true" : "false", onclick: () => watchNight(p) }, playing ? "Stop" : [icon("play"), "Watch the night"]) : null),
     !showRound || showRound > p.rounds ? roomPlan(p, current) : room(p, showRound, current),
     whoSitsOut(p),
     adjust && mine.length ? h("p", { className: "c-help" }, fromChartSeating(s) ? "Your chart's seating is kept. " : `${mine.length} seat${mine.length !== 1 ? "s" : ""} set by hand. `,
@@ -1538,6 +1595,19 @@ function roomPlan(p: EventPlan, current: boolean): HTMLElement {
 }
 
 /** Round 1, Round 2, … or the whole night as a grid. */
+/** Play the night: each round in turn, so the rotation can be seen working. */
+function watchNight(p: EventPlan): void {
+  if (playing) { clearInterval(playing); playing = null; render(); return; }
+  showRound = 1;
+  playing = window.setInterval(() => {
+    if (place !== "schedule" || !ev().plan) { clearInterval(playing!); playing = null; return; }
+    showRound += 1;
+    if (showRound > p.rounds) { clearInterval(playing!); playing = null; showRound = 1; }
+    render();
+  }, 1600);
+  render();
+}
+
 function roundSwitch(p: EventPlan): HTMLElement {
   const show = showRound > p.rounds ? 0 : showRound;
   const rounds = Array.from({ length: p.rounds }, (_, k) => k + 1);
@@ -1565,7 +1635,7 @@ function room(p: EventPlan, r: number, current = true): HTMLElement {
       const shared = host ? host.tags.filter((t) => f.interests.includes(t)) : [];
       const why = !host || !anyWords ? null : shared.length
         ? h("span", { className: "c-tile-why good" }, h("span", { className: "visually-hidden" }, "Shared interest: "), shared.slice(0, 2).join(", ") + (shared.length > 2 ? ` +${shared.length - 2}` : ""))
-        : h("span", { className: "c-tile-why" }, "No shared interest");
+        : null;
       const inner = [
         h("span", { className: "c-disc", "aria-hidden": "true" }, String(n)),
         h("span", { className: "c-tile-text" },
@@ -1760,7 +1830,7 @@ function printPage(): HTMLElement {
     })),
     toMinutes(s.startTime) === null ? h("p", { className: "c-note", "data-k": "no-doors" }, "The run sheet leaves its times blank until you say when doors open. ",
       h("button", { className: "c-link", onclick: () => { morePrint = true; render(); (document.getElementById("c-doors") as HTMLInputElement | null)?.focus(); } }, "Add the time")) : null,
-    h("p", { className: "c-help" }, `Tap a printout to open it on its own; the print window opens with it, where Save as PDF makes the file. Print everything does all of them at once, about ${total} pages in all (US Letter, 100% scale).`,
+    h("p", { className: "c-help" }, `Tap a printout to save it as a PDF, or print everything: about ${total} pages.`,
       printedOk ? [" ", h("button", { className: "c-link small", onclick: printEverything }, "Print everything again")] : null,
       !s.printed ? [" ", h("button", { className: "c-link small", onclick: () => go("run") }, "Skip printing for now")] : null),
     more(morePrint, () => { morePrint = !morePrint; render(); }, "More options",

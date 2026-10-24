@@ -72,27 +72,29 @@ walk through a whole dinner, from the two lists to next year's file. With an
 event open, the tour uses a copy of your own alumni and fams (it never changes
 your event); otherwise it uses the STEW 2026 dinner.
 It is organised around what a coordinator does, in four places: **Set up**
-(paste what you already have from Google Docs, Sheets, or Excel: last year's
+(before any names, two numbers, tables and alumni, show the rotation playing
+out, every alum one table on each round so nobody visits a table twice; then
+paste what you already have from Google Docs, Sheets, or Excel: last year's
 seating chart, with a column per round, gives the fams, the alumni and pairs,
 and the seating itself, and an alumni list of names, emails, and what each
 alum does adds their interests, with the emails dropped; or paste your alumni
 and fams as plain lists; a title row is skipped and said so; alumni who
 share a field host one table together as a pair, and any pair can be split or
 two alumni paired by hand), **Schedule** (the room drawn one round at a time,
-with each alum or pair at their table and the interest they share, or "No shared interest", on every table, and one line saying how many conversations share an interest; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
+drawn as soon as both lists are in, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, and Watch the night to play the rounds in turn; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
 "Something came up", which turns any change into a list of people to tell,
 with who is where always beside it; on a laptop the two sit side by side;
 if one of a pair leaves, their partner keeps the table and nobody moves).
 After the last round, **Wrap up** saves the event for next year. Wherever you
-are, the logo goes home (the dinner, its progress, and one Next button), a bar
-at the bottom says which step you are on with Back and the next action, and
+are, the logo goes home (the dinner, its progress, and one Next button), the
+tabs say where you are, a bar at the bottom holds Back and the next action, and
 anything removed or replaced can be undone for a few seconds; on a phone the
-next action floats above the tabs and Back sits in the header. Set up first
-asks what you have; each paste box can show real example rows for the three
-things coordinators paste (a seating chart, an alumni list, one per line),
-what was read is shown as a small table to confirm or undo; alumni typed one per line also get close interests (medicine also matches biology and pre-med), said in the note and editable; one timeline (doors, when round 1 starts, round length, changeover, an open floor at the end) sets the run sheet and the night, and the STEW 2026 example carries the night as it ran (round 1 at 6:16 PM, 12-minute rounds, 3-minute changeovers, open networking until 6:58 PM); and **Send to your phone** carries the
+next action floats above the tabs and Back sits in the header. The paste box
+reads whatever is pasted, and can show real example rows for the three things
+coordinators paste (a seating chart, an alumni list, one per line); fams typed
+one per line have their majors cleaned up the same way as from a chart; alumni typed one per line also get close interests (medicine also matches biology and pre-med), said in the note and editable; one timeline (doors, when round 1 starts, round length, changeover, an open floor at the end) sets the run sheet and the night, and the STEW 2026 example carries the night as it ran (round 1 at 6:16 PM, 12-minute rounds, 3-minute changeovers, open networking until 6:58 PM); and **Send to your phone** carries the
 dinner to your phone in a link, without student names. Special
 arrangements (late arrivals, stairs, must or never meet) sit under More
 options; file actions and the extra night tools (check-in, room setup, QR
