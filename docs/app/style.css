@@ -997,3 +997,51 @@ main.coord .c-card-title { font-size: 18px; }
 .c-clock, .c-timer-num, .c-pages, .c-hero-meta { font-variant-numeric: tabular-nums; }
 .c-landed { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 10px; font-size: var(--t-sm); color: var(--ink-soft); }
 .c-landed .c-icon svg { width: 16px; height: 16px; color: var(--success); margin-top: 2px; }
+
+/* Your dinner: the guest list on the left, the room on the right; two actions; tap anyone to change them. */
+main.coord:has(.c-dinner-page) { max-width: 1120px; }
+.c-dinner { display: grid; gap: 24px; }
+@media (min-width: 900px) {
+  .c-dinner { grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); align-items: start; }
+  .c-dinner-side { position: sticky; top: 140px; }
+}
+.c-guests { display: flex; flex-direction: column; gap: 14px; }
+.c-guest-group { background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; padding: 18px 20px; }
+.c-guest-group h2 { display: flex; align-items: baseline; gap: 10px; font-size: 18px; margin: 0 0 12px; }
+.c-count { font-size: var(--t-sm); font-weight: 500; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.c-guest-group .c-row { margin-top: 10px; }
+.c-add.big { min-width: 220px; }
+.c-people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; max-height: 360px; overflow: auto; }
+.c-person { font: inherit; width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); cursor: pointer; min-height: 48px; }
+.c-person:hover { background: var(--sunken); }
+.c-person-text { display: flex; flex-direction: column; min-width: 0; }
+.c-person .who { font-weight: 600; font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-person .what { font-size: var(--t-xs); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-person .c-num { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--hairline-strong); font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+.c-person .c-tag { margin-left: auto; flex: none; }
+.c-night-lines .c-line { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--hairline); min-height: 44px; flex-wrap: wrap; }
+.c-night-lines .c-line:first-of-type { border-top: none; }
+.c-line-label { width: 72px; flex: none; font-size: var(--t-sm); color: var(--ink-soft); }
+.c-line-value { flex: 1; font-size: var(--t-sm); min-width: 0; }
+.c-line-value.empty { color: var(--ink-soft); }
+.c-line input, .c-line select { flex: 1; max-width: 320px; }
+.c-ready { padding: 20px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.c-ready-say { margin: 0; font-size: var(--t-md); font-weight: 600; }
+.c-link.danger { color: var(--danger, #b42318); }
+/* The Add, person and fam sheets. */
+.c-sheet-back { position: fixed; inset: 0; z-index: 60; background: rgb(15 23 42 / 40%); display: grid; place-items: center; padding: 24px; }
+.c-sheet { width: min(860px, 100%); max-height: calc(100vh - 48px); overflow: auto; background: var(--surface); color: var(--ink); border-radius: 20px; box-shadow: 0 24px 64px rgb(15 23 42 / 30%); padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+.c-sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.c-sheet-head h2 { margin: 0; font-size: 22px; }
+.c-sheet-x { font: inherit; font-size: 24px; width: 40px; height: 40px; border: none; border-radius: 10px; background: none; color: var(--ink-soft); cursor: pointer; }
+.c-sheet-x:hover { background: var(--sunken); }
+.c-sheet-cols { display: grid; gap: 16px; }
+@media (min-width: 760px) { .c-sheet-cols { grid-template-columns: 1fr 1fr; } }
+.c-sheet-cols textarea { width: 100%; min-height: 220px; }
+.c-sheet-read { background: var(--sunken); border-radius: 12px; padding: 12px 14px; min-height: 120px; }
+.c-sheet-count { margin: 0 0 8px; font-weight: 600; font-size: var(--t-sm); }
+.c-sheet-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.c-sheet-list li { display: flex; align-items: center; gap: 8px; font-size: var(--t-sm); }
+.c-sheet-list .what { color: var(--ink-soft); font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-sheet-list li.more { color: var(--ink-soft); font-style: italic; }
+.c-sheet-foot { justify-content: space-between; border-top: 1px solid var(--hairline); padding-top: 12px; }

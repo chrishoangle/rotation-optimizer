@@ -71,17 +71,19 @@ contact details. New to it? **Take the 2-minute tour** on the first screen: seve
 walk through a whole dinner, from the two lists to next year's file. With an
 event open, the tour uses a copy of your own alumni and fams (it never changes
 your event); otherwise it uses the STEW 2026 dinner.
-It is organised around what a coordinator does, in four places: **Set up**
-(before any names, two numbers, tables and alumni, show the rotation playing
-out, every alum one table on each round so nobody visits a table twice, and a
-pasted list replaces its number, so one list already previews the night; then
-paste what you already have from Google Docs, Sheets, or Excel: last year's
-seating chart, with a column per round, gives the fams, the alumni and pairs,
-and the seating itself, and an alumni list of names, emails, and what each
-alum does adds their interests, with the emails dropped; or paste your alumni
-and fams as plain lists; a title row is skipped and said so; alumni who
-share a field host one table together as a pair, and any pair can be split or
-two alumni paired by hand), **Schedule** (the room drawn one round at a time,
+It is organised around what a coordinator does, in four places: **Set up**,
+shown as Your dinner (the guest list on the left and the room on the right;
+before any names, two numbers, tables and alumni, show the rotation playing
+out, every alum one table on each round so nobody visits a table twice, and an
+added list replaces its number; two actions, **+ Add alumni** and **+ Add
+fams**, each open one box that reads whatever arrives, typed names, last year's
+seating chart with a column per round (which fills both lists and keeps the
+seating), or an alumni list of names, emails, and what each alum does (emails
+dropped), and shows the people it read before adding them, with a file and
+examples under More ways to add; alumni and fams then show as people and tables
+to tap, where a name, field, interests, a pair, late arrivals, stairs, or must
+or never meet are changed; alumni who share a field host one table together as
+a pair; the name, rounds, date, and times are lines of The night), **Schedule** (the room drawn one round at a time,
 drawn as soon as both lists are in, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, Watch the night to play the rounds in turn, and after any change the tables that changed marked on the room; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and

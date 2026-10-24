@@ -57,12 +57,37 @@ def jargon(p) -> list[str]:
     return [j for j in COORD_JARGON if re.search(j, words(p), re.IGNORECASE)]
 
 
-def paste(p, label: str, text: str) -> None:
-    p.locator("h1").click()
-    p.evaluate("t => navigator.clipboard.writeText(t)", text)
-    p.get_by_label(label).click()
-    p.keyboard.press("ControlOrMeta+V")
+def add_people(p, kind: str, text: str = "", html: str = "") -> None:
+    """Add alumni or fams the way a coordinator does: + Add, paste (or type), then Add."""
+    p.locator(f'[data-k="add-{kind}"]').click()
+    box = p.locator('[data-k="sheet-box"]')
+    if html:
+        box.evaluate(
+            "(el, [html, text]) => { const d = new DataTransfer(); d.setData('text/html', html); d.setData('text/plain', text); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }",
+            [html, text])
+    else:
+        p.evaluate("t => navigator.clipboard.writeText(t)", text)
+        box.click()
+        p.keyboard.press("ControlOrMeta+V")
     p.wait_for_timeout(150)
+    p.locator('[data-k="add-commit"]').click()
+    p.wait_for_timeout(150)
+
+
+def type_people(p, kind: str, text: str) -> None:
+    p.locator(f'[data-k="add-{kind}"]').click()
+    p.locator('[data-k="sheet-box"]').fill(text)
+    p.locator('[data-k="add-commit"]').click()
+
+
+def name_dinner(p, name: str) -> None:
+    p.locator('[data-k="line-name"]').click()
+    p.get_by_label("Name", exact=True).fill(name)
+    p.locator('[data-k="line-name"]').click()
+
+
+def open_person(p, who: str) -> None:
+    p.locator(".c-person", has_text=who).first.click()
 
 
 def visible_controls(p) -> int:
@@ -79,27 +104,26 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
 
     p.get_by_text("Start a dinner").click()
     assert [t.split(",")[0] for t in p.locator(".c-tab").evaluate_all("els => els.map(e => e.getAttribute('aria-label'))")] == ["Set up", "Schedule", "Print", "Run"]
-    p.locator('[data-card="dinner"] .c-card-head').click()
-    p.get_by_label("Name").fill("Transfer Admit Dinner")
-    button(p, "Next: your alumni").click()
-    paste(p, "Paste or type your alumni", ALUMNI)
+    # Two actions, in the coordinator's words: no paste, file, or format in sight.
+    assert p.locator('[data-k="add-hosts"]').inner_text() == "+ Add alumni" and p.locator('[data-k="add-fams"]').inner_text() == "+ Add fams"
+    assert not re.search(r"\bpaste\b|\bcsv\b|\bcolumns?\b|\bimport", words(p), re.IGNORECASE)
+    name_dinner(p, "Transfer Admit Dinner")
+    add_people(p, "hosts", ALUMNI)
     assert "Added 6 alumni." in words(p)
     # Two alumni share the field "Law", so they host one table together and move as a pair.
     assert "host one table together: Alum B & Alum F (Law)" in words(p)
     assert "6 alumni at 5 tables" in p.inner_text('[data-card="hosts"]')
-    p.locator('[data-card="hosts"] .c-card-head').click()
     assert p.locator('[data-kind="hosts"] li.pair').count() == 1
-    p.get_by_role("button", name="More options").first.click()
-    p.get_by_label("Choose an alum").select_option(label="Alum D")
+    # Special arrangements live on the person.
+    open_person(p, "Alum D")
     p.get_by_label("Alum D is here from round").select_option("2")
+    button(p, "Done").click()
     assert "arrives for round 2" in words(p)
-    p.locator('[data-card="fams"] .c-card-head').click()
-    paste(p, "Paste or type your fams", FAMS)
+    add_people(p, "fams", FAMS)
     # With both lists in, the room draws itself: no button to find. What the paste did comes along.
     p.wait_for_selector(".c-plan")
     assert "first row looked like column titles" in p.inner_text('[data-k="landed"]'), "a title row is skipped, and said so"
     p.locator(".c-tab", has_text="Set up").click()
-    p.locator('[data-card="fams"] .c-card-head').click()
     assert p.locator('[data-kind="fams"] li').count() == 6
     assert jargon(p) == []
     p.locator(".c-tab", has_text="Schedule").click()
@@ -192,13 +216,13 @@ def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p.get_by_text("See the STEW 2026 dinner").click()
     p.wait_for_selector(".c-plan")
     p.locator(".c-tab", has_text="Set up").click()
-    p.locator('[data-card="hosts"] .c-card-head').click()
-    p.get_by_role("button", name="More options").first.click()
     # The example is the real STEW 2026 dinner: Kenneth Tran hosts Fam 6 in round 1.
-    p.get_by_label("Choose an alum").select_option(label="Kenneth Tran")
+    open_person(p, "Kenneth Tran")
     p.get_by_label("Never meets, for Kenneth Tran").select_option("Fam 3")
+    button(p, "Done").click()
     assert "never meets Fam 3" in words(p)
-    button(p, "Update the schedule").click()
+    # The room brings itself up to date.
+    p.locator(".c-tab", has_text="Schedule").click()
     p.wait_for_selector(".c-plan")
     button(p, "Adjust").click()
     kenneth = p.locator('.c-seat-button[data-round="1"]', has_text="Kenneth Tran")
@@ -278,19 +302,17 @@ def test_an_old_full_planner_choice_still_opens_the_coordinator_app(url):
 def test_a_pair_can_split_and_two_alumni_can_pair(page):
     p = page
     p.get_by_text("Start a dinner").click()
-    p.locator('[data-card="dinner"] .c-card-head').click()
-    p.get_by_label("Name").fill("Spring Dinner")
-    button(p, "Next: your alumni").click()
-    paste(p, "Paste or type your alumni", ALUMNI)
-    p.locator('[data-card="hosts"] .c-card-head').click()
+    name_dinner(p, "Spring Dinner")
+    add_people(p, "hosts", ALUMNI)
     assert p.locator('[data-kind="hosts"] li').count() == 5
-    p.get_by_role("button", name="Split Alum B & Alum F so each hosts alone").click()
+    # A pair splits from the pair itself, and two alumni pair from either one.
+    open_person(p, "Alum B & Alum F")
+    button(p, "Host alone").click()
     assert p.locator('[data-kind="hosts"] li').count() == 6
     assert p.locator('[data-kind="hosts"] li.pair').count() == 0
-    p.get_by_role("button", name="More options").first.click()
-    p.get_by_label("First alum of the pair").select_option(label="Alum A")
-    p.get_by_label("Second alum of the pair").select_option(label="Alum C")
-    button(p, "Pair them").click()
+    open_person(p, "Alum A")
+    p.get_by_label("Pair Alum A with").select_option(label="Alum C")
+    button(p, "Pair").click()
     assert "Alum A & Alum C now host one table together." in words(p)
     assert p.locator('[data-kind="hosts"] li.pair').count() == 1
 
@@ -356,11 +378,9 @@ def test_the_tour_walks_an_example_dinner_and_remembers_where_it_was(page):
 def test_the_tour_uses_the_coordinators_own_event(page):
     p = page
     p.get_by_text("Start a dinner").click()
-    p.locator('[data-card="dinner"] .c-card-head').click()
-    p.get_by_label("Name").fill("Transfer Admit Dinner")
-    button(p, "Next: your alumni").click()
-    paste(p, "Paste or type your alumni", ALUMNI)
-    paste(p, "Paste or type your fams", FAMS)
+    name_dinner(p, "Transfer Admit Dinner")
+    add_people(p, "hosts", ALUMNI)
+    add_people(p, "fams", FAMS)
     p.wait_for_selector(".c-room")
     assert "Added 6 fams." in words(p)
     before = saved_plan(p)
@@ -392,25 +412,23 @@ CHART_HTML = """<table><tr><td><p>Fam Table</p></td><td><p>Round 1 (alums)</p></
 ALUMNI_LIST = "Ann Park: ann@example.com\nNonprofit consulting and education reform\nBo Lin: bo@example.com\nPracticing internist\nCy Ruiz: cy@example.com\nSemiconductor engineer\nGus Hale: gus@example.com\nDatabase analyst"
 
 
-def paste_html(p, label: str, html: str, text: str = "") -> None:
-    p.get_by_label(label).evaluate(
-        "(el, [html, text]) => { const d = new DataTransfer(); d.setData('text/html', html); d.setData('text/plain', text); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }",
-        [html, text])
-    p.wait_for_timeout(150)
-
-
 def test_a_coordinator_pastes_the_seating_chart_and_alumni_list_they_already_have(page):
     p = page
     p.get_by_text("Start a dinner").click()
-    paste_html(p, "Paste or type your alumni", CHART_HTML, "Fam Table\nRound 1")
+    # The Add alumni box reads a seating chart too, shows what it read before adding, and fills both lists.
+    p.locator('[data-k="add-hosts"]').click()
+    p.locator('[data-k="sheet-box"]').evaluate(
+        "(el, [html, text]) => { const d = new DataTransfer(); d.setData('text/html', html); d.setData('text/plain', text); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }",
+        [CHART_HTML, "Fam Table\nRound 1"])
+    assert "Your seating chart: 3 fams and 4 alumni at 3 tables" in p.inner_text(".c-sheet-read")
+    assert p.inner_text('[data-k="add-commit"]') == "Add this seating chart"
+    p.locator('[data-k="add-commit"]').click()
     # A chart holds both lists, so the room draws itself and says what it read.
     p.wait_for_selector(".c-room")
     assert "Read your seating chart: 3 fams, 4 alumni at 3 tables (1 pair), 2 rounds." in p.inner_text('[data-k="landed"]')
     p.locator(".c-tab", has_text="Set up").click()
-    p.locator('[data-card="hosts"] .c-card-head').click()
-    assert "The seating from your chart is kept as you made it." in words(p)
-    button(p, "Paste more alumni").click()
-    paste(p, "Paste or type your alumni", ALUMNI_LIST)
+    assert "The seating from your chart is kept." in words(p)
+    add_people(p, "hosts", ALUMNI_LIST)
     text = words(p)
     assert "Added what 3 of 4 alumni do" in text and "Not in your seating, so left out: Gus Hale." in text
     assert "@" not in p.evaluate("() => localStorage.getItem('rotation-optimizer:event')")
@@ -428,7 +446,7 @@ def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
     p = page
     # Steps that aren't ready still open, and say what they will hold and why they're empty.
     p.get_by_text("Start a dinner").click()
-    assert p.locator("h1").inner_text() == "Let's set up your dinner"
+    assert p.locator("h1").inner_text() == "Let's plan your dinner"
     p.locator(".c-tab", has_text="Schedule").click()
     assert "Your room plan will appear here" in words(p)
     assert "Add your alumni and fams first" in p.locator(".c-tab", has_text="Schedule").get_attribute("aria-label")
@@ -436,25 +454,25 @@ def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
     button(p, "Go to Set up").click()
     assert p.locator(".c-tab.now", has_text="Set up").count() == 1
 
-    # The example rows beside the box show what a seating chart looks like, and can be tried.
+    # Other ways to add sit behind "More ways to add", with real examples that can be tried.
+    p.locator('[data-k="add-hosts"]').click()
     assert p.locator(".c-sample").count() == 0, "examples stay folded until asked for"
-    p.locator('[data-k="examples-hosts"]').click()
+    p.get_by_role("button", name="More ways to add").click()
     assert "Kenneth Tran" in p.inner_text(".c-sample")
     p.locator('[data-k="example-hosts"]').click()
     assert "Read your seating chart: 10 fams, 13 alumni at 10 tables (3 pairs), 2 rounds." in p.inner_text('[data-card="hosts"]')
     assert "Your alumni have no interests yet" in words(p), "a chart alone has no interests to match on"
     # The alumni list adds what each alum does, as interests.
-    p.locator('[data-card="hosts"] .c-card-head').click()
-    button(p, "Paste more alumni").click()
+    p.locator('[data-k="add-hosts"]').click()
+    p.get_by_role("button", name="More ways to add").click()
     p.locator('[data-k="format-hosts-list"]').click()
-    assert "Practicing internist" in p.inner_text(".c-sample:not(.c-preview)")
+    assert "Practicing internist" in p.inner_text(".c-sample")
     p.locator('[data-k="example-hosts"]').click()
     assert "Added what 13 of 13 alumni do" in words(p)
     assert "share an interest with at least one alum" in words(p)
 
     # Anything taken away can be put back for a few seconds.
-    p.locator('[data-card="hosts"] .c-card-head').click()
-    button(p, "Edit alumni").click()
+    p.locator('[data-k="edit-hosts"]').click()
     rows = p.locator('[data-kind="hosts"] .c-grid-row:not(.head):not(.new)').count()
     p.get_by_role("button", name="Remove row 1", exact=True).click()
     assert "Removed" in p.inner_text(".c-toast")
@@ -464,7 +482,7 @@ def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
     # The logo and name always lead home, where the next step waits.
     p.locator('[data-k="home-link"]').click()
     p.wait_for_selector(".c-hero")
-    assert p.locator('[data-k="next-step"]').inner_text().startswith("Next: make the schedule")
+    assert p.locator('[data-k="next-step"]').inner_text().startswith("Next: see who sits where")
 
     # Starting over asks first, and can be undone.
     p.get_by_role("button", name="Event menu").click()
@@ -491,11 +509,9 @@ def test_the_dinner_travels_to_a_phone_in_a_link(url):
         p.goto(url)
         p.wait_for_selector("text=Plan your rotation dinner")
         p.get_by_text("Start a dinner").click()
-        p.locator('[data-card="dinner"] .c-card-head').click()
-        p.get_by_label("Name").fill("Phone Dinner")
-        button(p, "Next: your alumni").click()
-        paste(p, "Paste or type your alumni", ALUMNI)
-        paste(p, "Paste or type your fams", FAMS)
+        name_dinner(p, "Phone Dinner")
+        add_people(p, "hosts", ALUMNI)
+        add_people(p, "fams", FAMS)
         p.wait_for_selector(".c-room")
         p.get_by_role("button", name="Event menu").click()
         button(p, "Send to your phone").click()
@@ -538,11 +554,9 @@ def test_a_first_dinner_explains_itself(page):
     p = page
     p.get_by_text("Start a dinner").click()
     assert p.locator(".c-have").count() == 0, "no question before the paste: the box reads whatever they have"
-    p.get_by_label("Paste or type your alumni").fill("Ann Lee, medicine\nBo Kim, engineering\nCy Park, law")
-    button(p, "Add these").click()
+    type_people(p, "hosts", "Ann Lee, medicine\nBo Kim, engineering\nCy Park, law")
     assert "Close interests count too, so medicine also matches biology and pre-med." in words(p)
-    p.get_by_label("Paste or type your fams").fill("Fam 1, biology\nFam 2, math\nFam 3, political science")
-    button(p, "Add these").click()
+    type_people(p, "fams", "Fam 1, biology\nFam 2, math\nFam 3, political science")
     p.wait_for_selector(".c-room")
     # Three rounds of three tables: each alum meets every fam once, and one round in three is their match.
     assert "The best match for these lists: 3 conversations share an interest." in words(p)
@@ -554,7 +568,6 @@ def test_a_first_dinner_explains_itself(page):
     assert p.locator('[data-k="no-doors"]').count() == 1, "the run sheet's blank times are pointed out"
 
     p.locator(".c-tab", has_text="Set up").click()
-    p.locator('[data-card="dinner"] .c-card-head').click()
     p.locator('[data-k="change-times"]').click()
     p.get_by_label("Doors open").fill("6:30 PM")
     p.get_by_label("Doors open").press("Tab")
@@ -578,12 +591,10 @@ def test_the_night_shows_itself_before_any_names(page):
     p.wait_for_function("() => document.querySelector('.c-sample-round').textContent.startsWith('Round 2')", timeout=4000)
     assert "nobody visits a table twice" in words(p)
     # Once the lists are in, the room is real and the sample goes.
-    p.get_by_label("Paste or type your alumni").fill("Ann Lee, medicine\nBo Kim, law")
-    button(p, "Add these").click()
+    type_people(p, "hosts", "Ann Lee, medicine\nBo Kim, law")
     # One list already previews the real night: the sample now uses their alumni.
     assert p.inner_text('[data-k="n-alumni"]') == "2" and "from your list" in p.inner_text(".c-sample-night")
-    p.get_by_label("Paste or type your fams").fill("Fam 1, biology\nFam 2, political science")
-    button(p, "Add these").click()
+    type_people(p, "fams", "Fam 1, biology\nFam 2, political science")
     p.wait_for_selector(".c-room")
     assert p.locator(".c-sample-night").count() == 0
     p.locator('[data-k="watch"]').click()
