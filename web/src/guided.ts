@@ -1248,17 +1248,20 @@ function matchHint(s: EventState): HTMLElement | null {
  */
 function sampleNight(s: EventState): HTMLElement {
   const T = sampleTables, A = sampleAlumni, R = Math.min(s.rounds, T);
-  const perRow = Math.min(T, window.innerWidth < 700 ? 5 : 8), gapX = 600 / perRow, rows = Math.ceil(T / perRow);
-  const at = (t: number) => ({ x: gapX / 2 + (t % perRow) * gapX, y: 44 + Math.floor(t / perRow) * 74 });
-  const dotAt = (i: number, r: number) => { const c = at((i + r - 1) % T); return { x: c.x + (i < T ? 15 : -15), y: c.y - 15 }; };
-  const H = 44 + (rows - 1) * 74 + 40;
+  const narrow = window.innerWidth < 700, VB = narrow ? 340 : 600;
+  const perRow = Math.min(T, narrow ? 5 : 8), gapX = VB / perRow, rows = Math.ceil(T / perRow);
+  // Tables stay a finger's width on a phone: fewer per row, drawn larger.
+  const tr = Math.min(30, Math.max(18, gapX * 0.3)), rowH = tr * 3.3;
+  const at = (t: number) => ({ x: gapX / 2 + (t % perRow) * gapX, y: tr * 2 + Math.floor(t / perRow) * rowH });
+  const dotAt = (i: number, r: number) => { const c = at((i + r - 1) % T); return { x: c.x + (i < T ? 1 : -1) * tr * 0.7, y: c.y - tr * 0.7 }; };
+  const H = tr * 2 + (rows - 1) * rowH + tr * 1.8;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", `0 0 600 ${H}`);
+  svg.setAttribute("viewBox", `0 0 ${VB} ${H}`);
   svg.setAttribute("class", "c-sample-svg");
   svg.setAttribute("aria-hidden", "true");
   let inner = "";
-  for (let t = 0; t < T; t++) { const c = at(t); inner += `<circle cx="${c.x}" cy="${c.y}" r="22" class="c-sample-table"/><text x="${c.x}" y="${c.y + 5}" text-anchor="middle" class="c-sample-num">${t + 1}</text>`; }
-  for (let i = 0; i < A; i++) { const d = dotAt(i, 1); inner += `<circle r="7" class="c-sample-alum" style="transform: translate(${d.x}px, ${d.y}px)"/>`; }
+  for (let t = 0; t < T; t++) { const c = at(t); inner += `<circle cx="${c.x}" cy="${c.y}" r="${tr}" class="c-sample-table"/><text x="${c.x}" y="${c.y + tr * 0.25}" text-anchor="middle" class="c-sample-num" style="font-size: ${Math.round(tr * 0.6)}px">${t + 1}</text>`; }
+  for (let i = 0; i < A; i++) { const d = dotAt(i, 1); inner += `<circle r="${Math.round(tr * 0.32)}" class="c-sample-alum" style="transform: translate(${d.x}px, ${d.y}px)"/>`; }
   svg.innerHTML = inner;
   const label = h("span", { className: "c-sample-round", "aria-live": "polite" }, `Round 1 of ${R}`);
   const play = () => {
