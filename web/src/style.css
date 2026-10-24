@@ -1071,3 +1071,16 @@ main.coord:has(.c-dinner-page) { max-width: 1240px; }
 .c-dinner-room .c-room .c-tile { padding: 10px 12px; gap: 10px; }
 .c-dinner-room .c-room .c-disc { width: 38px; height: 38px; font-size: 15px; }
 .c-dinner-room .c-tile-who .c-avatars { display: none; }
+
+/* Print as one quiet list: each printout a row with a small page, what it's for, and its page count. */
+.c-docs { grid-template-columns: 1fr; gap: 0; border: 1px solid var(--hairline); border-radius: 16px; background: var(--surface); overflow: hidden; }
+.c-docs li { flex-direction: row; align-items: center; gap: 16px; padding: 14px 18px; border: none; border-radius: 0; box-shadow: none; border-top: 1px solid var(--hairline); }
+.c-docs li:first-child { border-top: none; }
+.c-docs li:hover { box-shadow: none; background: var(--sunken); }
+.c-docs .c-thumb { width: 64px; flex: none; }
+.c-docs .c-doc-text { display: grid; grid-template-columns: 1fr auto; column-gap: 16px; align-items: baseline; flex: 1; }
+.c-docs .c-doc-text strong { grid-column: 1; }
+.c-docs .c-doc-text .c-help { grid-column: 1; }
+.c-docs .c-doc-text .c-pages { grid-column: 2; grid-row: 1; color: var(--ink-soft); font-size: var(--t-xs); }
+.c-docs .c-doc-text .c-doc-open { grid-column: 2; grid-row: 2; }
+.c-docs li.changed { transform: none; box-shadow: inset 3px 0 0 var(--amber); }
