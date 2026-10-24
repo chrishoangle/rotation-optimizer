@@ -71,8 +71,8 @@ contact details. New to it? **Take the 2-minute tour** on the first screen: seve
 walk through a whole dinner, from the two lists to next year's file. With an
 event open, the tour uses a copy of your own alumni and fams (it never changes
 your event); otherwise it uses the STEW 2026 dinner.
-It is organised around what a coordinator does, in four places: **Set up**,
-shown as Your dinner (the guest list on the left and the room on the right;
+It is organised around what a coordinator does, in three places: **Your
+dinner** (the guest list on the left and the room on the right;
 before any names, two numbers, tables and alumni, show the rotation playing
 out, every alum one table on each round so nobody visits a table twice, and an
 added list replaces its number; two actions, **+ Add alumni** and **+ Add
@@ -85,8 +85,8 @@ to tap, where a name, field, interests, a pair, late arrivals, stairs, or must
 or never meet are changed; alumni who share a field host one table together as
 a pair; the name, rounds, date, and times are lines of The night, with minutes
 typed as numbers; once both lists are in, the room draws itself on the same
-page, beside the guest list, one round at a time), **Schedule** (the room drawn one round at a time,
-drawn as soon as both lists are in, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, Watch the night to play the rounds in turn, and after any change the tables that changed marked on the room; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
+page, beside the guest list, as Who sits where: one round at a time or the
+whole night, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, Watch the night to play the rounds in turn, and after any change the tables that changed marked on the room; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
 "Something came up", which turns any change into a list of people to tell,

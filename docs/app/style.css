@@ -1052,3 +1052,22 @@ main.coord:has(.c-dinner-page) { max-width: 1120px; }
 .c-dinner-room .c-answer { margin: 0; }
 .c-dinner-room .c-room { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .c-dinner-room > .c-link { align-self: flex-start; }
+
+/* Visual levels: the room is the hero (raised, borderless), the guest list is standard (a hairline), the rest is quiet. */
+.c-dinner-room { background: var(--surface); border-radius: 20px; padding: 20px 22px; box-shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 12px 32px rgb(16 24 40 / 8%); }
+.c-dinner-room .c-head-row h2 { font-size: 18px; margin: 0; }
+.c-dinner-room .c-answer { background: none; padding: 0; gap: 10px; }
+.c-dinner-room .c-answer-mark { width: 22px; height: 22px; }
+.c-dinner-room .c-answer-mark .c-icon svg { width: 14px; height: 14px; }
+.c-dinner-room .c-answer-main { font-size: var(--t-sm); }
+.c-dinner-room .c-room .c-tile { box-shadow: none; }
+.c-dinner-room .c-plan-grid, .c-dinner-room .c-roomplan { overflow-x: auto; }
+.c-guest-group { box-shadow: none; }
+main.coord .c-page > h1 { font-size: 30px; letter-spacing: -.01em; }
+@media (prefers-color-scheme: dark) { .c-dinner-room { box-shadow: 0 0 0 1px var(--hairline); } }
+main.coord:has(.c-dinner-page) { max-width: 1240px; }
+@media (min-width: 900px) { .c-dinner { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); } }
+.c-dinner-room .c-room { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.c-dinner-room .c-room .c-tile { padding: 10px 12px; gap: 10px; }
+.c-dinner-room .c-room .c-disc { width: 38px; height: 38px; font-size: 15px; }
+.c-dinner-room .c-tile-who .c-avatars { display: none; }

@@ -103,7 +103,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     p.keyboard.press("Escape")
 
     p.get_by_text("Start a dinner").click()
-    assert [t.split(",")[0] for t in p.locator(".c-tab").evaluate_all("els => els.map(e => e.getAttribute('aria-label'))")] == ["Set up", "Schedule", "Print", "Run"]
+    assert [t.split(",")[0] for t in p.locator(".c-tab").evaluate_all("els => els.map(e => e.getAttribute('aria-label'))")] == ["Your dinner", "Print", "Run"]
     # Two actions, in the coordinator's words: no paste, file, or format in sight.
     assert p.locator('[data-k="add-hosts"]').inner_text() == "+ Add alumni" and p.locator('[data-k="add-fams"]').inner_text() == "+ Add fams"
     assert not re.search(r"\bpaste\b|\bcsv\b|\bcolumns?\b|\bimport", words(p), re.IGNORECASE)
@@ -125,7 +125,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     assert "A title row was left out" in p.inner_text('[data-card="fams"]'), "a title row is skipped, and said so"
     assert p.locator('[data-kind="fams"] li').count() == 6
     assert jargon(p) == []
-    p.locator(".c-tab", has_text="Schedule").click()
+    p.locator(".c-tab", has_text="Your dinner").click()
     p.wait_for_selector(".c-plan")
     assert "fam meets" in words(p) and "a different one each round" in words(p)
     assert jargon(p) == []
@@ -214,14 +214,14 @@ def test_a_swap_that_breaks_a_setting_is_refused_up_front(page):
     p = page
     p.get_by_text("See the STEW 2026 dinner").click()
     p.wait_for_selector(".c-plan")
-    p.locator(".c-tab", has_text="Set up").click()
+    p.locator(".c-tab", has_text="Your dinner").click()
     # The example is the real STEW 2026 dinner: Kenneth Tran hosts Fam 6 in round 1.
     open_person(p, "Kenneth Tran")
     p.get_by_label("Never meets, for Kenneth Tran").select_option("Fam 3")
     button(p, "Done").click()
     assert "never meets Fam 3" in words(p)
     # The room brings itself up to date.
-    p.locator(".c-tab", has_text="Schedule").click()
+    p.locator(".c-tab", has_text="Your dinner").click()
     p.wait_for_selector(".c-plan")
     button(p, "Adjust").click()
     kenneth = p.locator('.c-seat-button[data-round="1"]', has_text="Kenneth Tran")
@@ -320,8 +320,8 @@ def test_a_pair_can_split_and_two_alumni_can_pair(page):
     button(p, "Home").click()
     assert p.locator("h1").inner_text() == "Spring Dinner"
     assert p.locator(".c-steps").count() == 0, "one progress system: the tabs, not a second one on Home"
-    button(p, "Next: add your alumni and fams").click()
-    p.wait_for_selector("text=Set up")
+    button(p, "Next: add your fams").click()
+    p.wait_for_selector("text=Your dinner")
 
 
 def tour_text(p) -> str:
@@ -431,7 +431,7 @@ def test_a_coordinator_pastes_the_seating_chart_and_alumni_list_they_already_hav
     assert "Added what 3 of 4 alumni do" in text and "Not in your seating, so left out: Gus Hale." in text
     assert "@" not in p.evaluate("() => localStorage.getItem('rotation-optimizer:event')")
     # The room brings itself up to date with the new interests.
-    p.locator(".c-tab", has_text="Schedule").click()
+    p.locator(".c-tab", has_text="Your dinner").click()
     p.wait_for_selector(".c-room")
     r1 = " ".join(p.locator('.c-tile[data-round="1"]').all_inner_texts())
     assert "Fam 6" in r1 and r1.index("Ann Park") < r1.index("Cy Ruiz & Di Wu") < r1.index("Bo Lin")
@@ -445,12 +445,12 @@ def test_a_coordinator_always_knows_where_they_are_and_can_go_back(page):
     # Steps that aren't ready still open, and say what they will hold and why they're empty.
     p.get_by_text("Start a dinner").click()
     assert p.locator("h1").inner_text() == "Let's plan your dinner"
-    p.locator(".c-tab", has_text="Schedule").click()
-    assert "Your room plan will appear here" in words(p)
-    assert "Add your alumni and fams first" in p.locator(".c-tab", has_text="Schedule").get_attribute("aria-label")
+    p.locator(".c-tab", has_text="Print").click()
+    assert "Your printouts will appear here" in words(p)
+    assert "Add your alumni and fams first" in p.locator(".c-tab", has_text="Print").get_attribute("aria-label")
     assert "Step" not in p.inner_text(".c-nextbar"), "one progress system: the tabs"
-    button(p, "Go to Set up").click()
-    assert p.locator(".c-tab.now", has_text="Set up").count() == 1
+    button(p, "Go to Your dinner").click()
+    assert p.locator(".c-tab.now", has_text="Your dinner").count() == 1
 
     # Other ways to add sit behind "More ways to add", with real examples that can be tried.
     p.locator('[data-k="add-hosts"]').click()
@@ -559,13 +559,13 @@ def test_a_first_dinner_explains_itself(page):
     # Three rounds of three tables: each alum meets every fam once, and one round in three is their match.
     assert "The best match for these lists: 3 conversations share an interest." in words(p)
     assert p.locator(".c-tile-why.good").count() >= 1 and "No shared interest" not in words(p)
-    schedule = p.locator(".c-tab", has_text="Schedule")
+    schedule = p.locator(".c-tab", has_text="Your dinner")
     assert "ready" in schedule.get_attribute("aria-label"), "made is not the same as checked"
     button(p, "Looks good: print").click()
     assert "done" in schedule.get_attribute("aria-label")
     assert p.locator('[data-k="no-doors"]').count() == 1, "the run sheet's blank times are pointed out"
 
-    p.locator(".c-tab", has_text="Set up").click()
+    p.locator(".c-tab", has_text="Your dinner").click()
     p.locator('[data-k="change-times"]').click()
     p.get_by_label("Doors open").fill("6:30 PM")
     p.get_by_label("Doors open").press("Tab")

@@ -72,7 +72,8 @@ export interface GuidedCtx {
 }
 
 type Place = "home" | "setup" | "schedule" | "print" | "run" | "wrap";
-const TABS: [Place, string][] = [["setup", "Set up"], ["schedule", "Schedule"], ["print", "Print"], ["run", "Run"]];
+// Three places, not four: the guest list and the room are one page, Your dinner.
+const TABS: [Place, string][] = [["setup", "Your dinner"], ["print", "Print"], ["run", "Run"]];
 const STEP_KEY = "rotation-optimizer:place";
 
 let ctx: GuidedCtx;
@@ -149,6 +150,7 @@ function remember(): void {
 }
 
 function go(next: Place): void {
+  if (next === "schedule") next = "setup"; // who sits where lives beside the guest list
   if (adjust && picked) say("info", "You left in the middle of a swap, so nothing moved.");
   place = next;
   confirmNew = false; leaveRun = false; cardNote = null; swapSaved = false; phone = null;
@@ -236,10 +238,9 @@ function stateOf(t: Place): State {
   const s = ev();
   const lists = hostsOf(s).length > 0 && famsOf(s).length > 0;
   switch (t) {
-    case "setup": return lists ? "done" : "ready";
+    case "setup":
     case "schedule":
-      if (!lists) return "locked";
-      if (!s.plan) return "ready";
+      if (!lists || !s.plan) return "ready";
       if (!isCurrent(s) || emptyFams(s.plan).length) return "attention";
       // Done once the coordinator has looked and said so, not the moment the app made it.
       return s.printed || s.night.reviewed === planSig(s.plan) ? "done" : "ready";
@@ -258,14 +259,14 @@ function stateOf(t: Place): State {
 function reasonFor(t: Place): string {
   const s = ev();
   const st = stateOf(t);
-  if (st === "locked") return t === "schedule" ? "Add your alumni and fams first" : "Make the schedule first";
+  if (st === "locked") return "Add your alumni and fams first";
   if (st !== "attention") return "";
-  if (t === "schedule") {
-    if (!isCurrent(s)) return "Your lists changed: update the schedule";
+  if (t === "setup" || t === "schedule") {
+    if (!isCurrent(s)) return "Your lists changed: update who sits where";
     const n = s.plan ? emptyFams(s.plan).length : 0;
     return `${famsN(n)} ${n === 1 ? "has" : "have"} no alum`;
   }
-  if (t === "print") return !isCurrent(s) ? "Update the schedule, then reprint" : `Reprint ${reprintNeeded(s).length} page${reprintNeeded(s).length !== 1 ? "s" : ""}`;
+  if (t === "print") return !isCurrent(s) ? "Update who sits where, then reprint" : `Reprint ${reprintNeeded(s).length} page${reprintNeeded(s).length !== 1 ? "s" : ""}`;
   return "";
 }
 
@@ -424,7 +425,7 @@ function render(newPlace = false): void {
   clearInterval(clockTimer);
   const s = ev();
   const running = place === "run" && !!s.plan;
-  const body = place === "home" ? homePage() : place === "setup" ? setupPage() : place === "schedule" ? schedulePage()
+  const body = place === "home" ? homePage() : place === "setup" ? setupPage() : place === "schedule" ? setupPage()
     : place === "print" ? (s.plan ? printPage() : emptyPage("print")) : place === "run" ? (s.plan ? runPage() : emptyPage("run"))
     : place === "wrap" ? wrapPage() : setupPage();
   replace(app, h("main", { className: `coord ${running ? "running stage" : ""} ${place !== "home" && !running ? "with-bar" : ""}`, id: "main" },
@@ -499,9 +500,9 @@ function elapsedShare(roundMinutes: number, minutesLeft: number): number {
 // ----------------------------------------------------------------------
 
 /** Where Back goes from each step. */
-const BACK: Partial<Record<Place, [string, Place]>> = { setup: ["Home", "home"], schedule: ["Set up", "setup"], print: ["Schedule", "schedule"], run: ["Print", "print"], wrap: ["Home", "home"] };
+const BACK: Partial<Record<Place, [string, Place]>> = { setup: ["Home", "home"], print: ["Your dinner", "setup"], run: ["Print", "print"], wrap: ["Home", "home"] };
 
-const STEP_OF: Partial<Record<Place, [number, string]>> = { setup: [1, "Set up"], schedule: [2, "Schedule"], print: [3, "Print"], run: [4, "Run"], wrap: [5, "Wrap up"] };
+const STEP_OF: Partial<Record<Place, [number, string]>> = { setup: [1, "Your dinner"], print: [2, "Print"], run: [3, "Run"], wrap: [4, "Wrap up"] };
 
 function nextBar(): HTMLElement | null {
   const s = ev();
@@ -517,19 +518,15 @@ function nextBar(): HTMLElement | null {
   if (place === "setup") {
     // The room draws itself: the bar only says where it is, never "make" or "update".
     note = !hostsOf(s).length ? "Add your alumni and fams to see who sits where." : !famsOf(s).length ? "Add your fams to see who sits where." : "";
-    action = s.plan && isCurrent(s) && !s.printed
-      ? primary("Looks good: print", () => { s.night = { ...s.night, reviewed: planSig(s.plan!) }; ctx.persist(); go("print"); }, "printer")
-      : primary("See who sits where", () => (s.plan ? go("schedule") : void makeSchedule()), undefined, !lists || busy);
-  } else if (place === "schedule") {
-    if (!s.plan) action = lists ? primary("Make the schedule", () => update()) : primary("Go to Set up", () => go("setup"));
-    else if (!isCurrent(s)) action = primary("Update the schedule", () => update(), undefined, busy);
-    else action = primary("Looks good: print", () => { s.night = { ...s.night, reviewed: planSig(s.plan!) }; ctx.persist(); go("print"); }, "printer");
+    action = s.plan && isCurrent(s)
+      ? primary(s.printed ? "Go to Print" : "Looks good: print", () => { s.night = { ...s.night, reviewed: planSig(s.plan!) }; ctx.persist(); go("print"); }, "printer", busy)
+      : primary("See who sits where", () => void makeSchedule(false), undefined, !lists || busy);
   } else if (place === "print") {
-    if (!s.plan) action = primary(lists ? "Make the schedule" : "Go to Set up", () => (lists ? (go("schedule"), update()) : go("setup")));
+    if (!s.plan) action = primary("Go to Your dinner", () => go("setup"));
     else if (s.printed && isCurrent(s) && !reprintNeeded(s).length) action = primary("Next: run the event", () => go("run"));
     else { note = `About ${docs(s, s.plan).reduce((n, d) => n + d.pages, 0)} pages, US Letter.`; action = primary("Print everything", printEverything, "printer", !isCurrent(s)); }
   } else if (place === "run") {
-    action = primary(lists ? "Make the schedule" : "Go to Set up", () => (lists ? (go("schedule"), update()) : go("setup")));
+    action = primary("Go to Your dinner", () => go("setup"));
   } else if (place === "wrap") {
     action = primary("Save for next year", () => { ctx.handOff(); say("ok", "Saved next year's dinner as one download. Give it to next year's coordinator; they open it and choose Open a saved event on Home."); render(); }, "folder");
   }
@@ -629,7 +626,7 @@ function dateLine(date: string | undefined): string {
 
 /** The one thing to do next, in the coordinator's words. */
 function nextStep(s: EventState): [string, () => void] {
-  if (stateOf("setup") !== "done") return ["Next: add your alumni and fams", () => go("setup")];
+  if (!hostsOf(s).length || !famsOf(s).length) return [!hostsOf(s).length ? "Next: add your alumni" : "Next: add your fams", () => go("setup")];
   if (!s.plan) return ["Next: see who sits where", async () => { go("schedule"); await update(); }];
   if (!isCurrent(s)) return ["Next: update the schedule", () => go("schedule")];
   // The same rule as the Schedule tab: checked once the coordinator says it looks good.
@@ -1574,42 +1571,6 @@ function needsYou(p: EventPlan): HTMLElement[] {
   return out;
 }
 
-function schedulePage(): HTMLElement {
-  const s = ev();
-  const p = s.plan;
-  if (busy) return h("section", { className: "c-page" }, h("h1", { tabindex: -1 }, "Schedule"),
-    h("ol", { className: "c-build", role: "status", "aria-label": "Seating everyone" },
-      ["Matching interests", "Avoiding repeat visits", "Checking who is here when", "Getting the printouts ready"].map((t, i) => h("li", { style: `--i: ${i}` }, h("span", { className: "c-build-tick", "aria-hidden": "true" }), t))));
-  keepCurrent(s);
-  if (!p) return emptyPage("schedule");
-  const current = isCurrent(s);
-  const attention = needsYou(p);
-  const mine = gridChanges(s);
-  const tips = nearMisses(s.hosts, s.fams);
-  return h("section", { className: "c-page" },
-    h("div", { className: "c-head-row" }, h("h1", { tabindex: -1 }, "Schedule"),
-      current ? h("button", { className: `c-button ${adjust ? "primary" : ""}`, "aria-pressed": adjust ? "true" : "false", "data-k": "adjust", onclick: () => { adjust = !adjust; picked = null; why = false; render(); } }, adjust ? "Done adjusting" : [icon("swap"), "Adjust"]) : null),
-    current || (!s.printed && !hasStarted(s)) ? null : h("div", { className: "c-msg warn" }, "Your lists changed since this schedule was made. Update it with the button below."),
-    summary(p),
-    changed.length ? h("div", { className: "c-msg info", "data-k": "what-moved" }, h("strong", {}, "What moved:"), h("ul", {}, changed.map((c) => h("li", {}, c))),
-      moved.size ? h("p", { className: "c-help" }, `${moved.size} table${moved.size !== 1 ? "s are" : " is"} marked Changed in the room below.`) : null) : null,
-    attention.length ? h("div", { className: "c-msg warn" }, h("strong", {}, "Needs you"), h("ul", {}, attention)) : null,
-    adjust ? adjustBar(p) : null,
-    h("div", { className: "c-switch-row" }, roundSwitch(p),
-      p.rounds > 1 && !adjust ? h("button", { className: "c-link c-watch", "data-k": "watch", "aria-pressed": playing ? "true" : "false", onclick: () => watchNight(p) }, playing ? "Stop" : [icon("play"), "Watch the night"]) : null),
-    !showRound || showRound > p.rounds ? roomPlan(p, current) : room(p, showRound, current),
-    whoSitsOut(p),
-    adjust && mine.length ? h("p", { className: "c-help" }, fromChartSeating(s) ? "Your chart's seating is kept. " : `${mine.length} seat${mine.length !== 1 ? "s" : ""} set by hand. `,
-      h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, fromChartSeating(s) ? "Let the app re-seat everyone" : "Undo my changes")) : null,
-    more(moreSchedule, () => { moreSchedule = !moreSchedule; render(); }, "More options",
-      h("p", { className: "c-help" }, "To change who sits where, tap Adjust above."),
-      tips.length ? h("div", {}, h("p", {}, "These look like the same interest written two ways:"),
-        tips.map((m) => h("div", { className: "c-row" }, h("span", {}, m.spellings.join(" and ")),
-          h("button", { className: "c-button", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)))) : null,
-      p.warnings.length ? h("details", {}, h("summary", {}, "Notes about this schedule"), h("ul", {}, p.warnings.map((w) => h("li", {}, warningWords(w))))) : null,
-      !adjust && mine.length ? h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, `Undo the ${mine.length} change${mine.length !== 1 ? "s" : ""} you made by hand`) : null));
-}
-
 function warningWords(w: string): string {
   if (w.startsWith("Host tags that no fam lists") || w.startsWith("Fam interests that no host lists")) {
     const list = w.slice(w.indexOf(": ") + 2).replace(/\.$/, "");
@@ -1695,22 +1656,39 @@ function keepCurrent(s: EventState): void {
   if (!s.plan ? s.rounds <= maxRounds(s) : !isCurrent(s) && !s.printed && !hasStarted(s)) { autoFor = fingerprint(s); queueMicrotask(() => void update()); }
 }
 
-/** The room beside the guest list: how it stands, one round at a time, and the way to every detail. */
+/** The room beside the guest list: how it stands, one round at a time or the whole night, and swapping seats in place. */
 function dinnerRoom(s: EventState): HTMLElement {
   keepCurrent(s);
   const p = s.plan;
-  if (busy || !p) return h("div", { className: "c-card c-ready", role: "status" }, h("p", { className: "c-ready-say" }, "Seating everyone\u2026"));
-  if (!isCurrent(s)) return h("div", { className: "c-card c-ready" }, h("p", { className: "c-ready-say" }, "Your lists changed since the room was printed."),
-    h("button", { className: "c-button primary", onclick: () => go("schedule") }, "Update who sits where"));
-  const r = Math.min(Math.max(showRound || 1, 1), p.rounds);
-  return h("section", { className: "c-dinner-room", "aria-label": "Who sits where" },
+  if (busy || !p) return h("section", { className: "c-dinner-room" },
+    h("ol", { className: "c-build", role: "status", "aria-label": "Seating everyone" },
+      ["Matching interests", "Avoiding repeat visits", "Checking who is here when", "Getting the printouts ready"].map((t, i) => h("li", { style: `--i: ${i}` }, h("span", { className: "c-build-tick", "aria-hidden": "true" }), t))));
+  const current = isCurrent(s);
+  if (!current) return h("section", { className: "c-dinner-room" }, h("div", { className: "c-msg warn" }, "Your lists changed since the room was printed. Update it when you're ready: only the seats that must move will change, and the pages to reprint are listed on Print."),
+    h("button", { className: "c-button primary", "data-k": "update-room", onclick: () => void update() }, "Update who sits where"));
+  const attention = needsYou(p);
+  const mine = gridChanges(s);
+  const tips = nearMisses(s.hosts, s.fams);
+  return h("section", { className: "c-dinner-room", "aria-labelledby": "c-room-h" },
+    h("div", { className: "c-head-row" }, h("h2", { id: "c-room-h" }, "Who sits where"),
+      h("button", { className: `c-button ${adjust ? "primary" : ""}`, "aria-pressed": adjust ? "true" : "false", "data-k": "adjust", onclick: () => { adjust = !adjust; picked = null; why = false; render(); } }, adjust ? "Done adjusting" : [icon("swap"), "Adjust"])),
     summary(p),
-    h("div", { className: "c-switch-row" },
-      h("div", { className: "c-round-switch", role: "group", "aria-label": "Show" }, Array.from({ length: p.rounds }, (_, k) => k + 1).map((n) =>
-        h("button", { className: `c-seg ${r === n ? "on" : ""}`, "aria-pressed": r === n ? "true" : "false", "data-k": `show-${n}`, onclick: () => { showRound = n; render(); } }, `Round ${n}`))),
-      p.rounds > 1 ? h("button", { className: "c-link c-watch", "data-k": "watch", "aria-pressed": playing ? "true" : "false", onclick: () => watchNight(p) }, playing ? "Stop" : [icon("play"), "Watch the night"]) : null),
-    room(p, r, true),
-    h("button", { className: "c-link", "data-k": "room-details", onclick: () => go("schedule") }, "Swap seats or see the whole night \u203a"));
+    changed.length ? h("div", { className: "c-msg info", "data-k": "what-moved" }, h("strong", {}, "What moved:"), h("ul", {}, changed.map((c) => h("li", {}, c))),
+      moved.size ? h("p", { className: "c-help" }, `${moved.size} table${moved.size !== 1 ? "s are" : " is"} marked Changed below.`) : null) : null,
+    attention.length ? h("div", { className: "c-msg warn" }, h("strong", {}, "Needs you"), h("ul", {}, attention)) : null,
+    adjust ? adjustBar(p) : null,
+    h("div", { className: "c-switch-row" }, roundSwitch(p),
+      p.rounds > 1 && !adjust ? h("button", { className: "c-link c-watch", "data-k": "watch", "aria-pressed": playing ? "true" : "false", onclick: () => watchNight(p) }, playing ? "Stop" : [icon("play"), "Watch the night"]) : null),
+    !showRound || showRound > p.rounds ? roomPlan(p, current) : room(p, showRound, current),
+    whoSitsOut(p),
+    adjust && mine.length ? h("p", { className: "c-help" }, fromChartSeating(s) ? "Your chart's seating is kept. " : `${mine.length} seat${mine.length !== 1 ? "s" : ""} set by hand. `,
+      h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, fromChartSeating(s) ? "Let the app re-seat everyone" : "Undo my changes")) : null,
+    tips.length || p.warnings.length || (!adjust && mine.length) ? more(moreSchedule, () => { moreSchedule = !moreSchedule; render(); }, "More options",
+      tips.length ? h("div", {}, h("p", {}, "These look like the same interest written two ways:"),
+        tips.map((m) => h("div", { className: "c-row" }, h("span", {}, m.spellings.join(" and ")),
+          h("button", { className: "c-button", onclick: async () => { applySpelling(s, m); ctx.persist(); await update(); } }, `Use "${m.suggestion}" for all`)))) : null,
+      p.warnings.length ? h("details", {}, h("summary", {}, "Notes about this seating"), h("ul", {}, p.warnings.map((w) => h("li", {}, warningWords(w))))) : null,
+      !adjust && mine.length ? h("button", { className: "c-link", onclick: async () => { clearGrid(s); ctx.persist(); await update(); } }, `Undo the ${mine.length} change${mine.length !== 1 ? "s" : ""} you made by hand`) : null) : null);
 }
 
 /** Play the night: each round in turn, so the rotation can be seen working. */
