@@ -118,6 +118,7 @@ def test_first_time_coordinator_plans_and_runs_a_dinner(page):
     assert "Now tap where they should go in round 3" in words(p)
     seats.nth(1).click()
     p.wait_for_selector("text=set by hand")
+    assert p.locator(".c-tile.moved").count() >= 1, "the swapped tables are marked on the room"
     seats = p.locator('.c-seat-button[data-round="3"]')
     assert (seats.nth(0).locator(".c-seat-name").inner_text(), seats.nth(1).locator(".c-seat-name").inner_text()) == (b, a)
     button(p, "Undo my changes").click()
@@ -297,7 +298,7 @@ def test_a_pair_can_split_and_two_alumni_can_pair(page):
     p.get_by_role("button", name="Event menu").click()
     button(p, "Home").click()
     assert p.locator("h1").inner_text() == "Spring Dinner"
-    assert p.locator(".c-steps li").count() == 5
+    assert p.locator(".c-steps").count() == 0, "one progress system: the tabs, not a second one on Home"
     button(p, "Next: add your alumni and fams").click()
     p.wait_for_selector("text=Set up")
 
@@ -579,9 +580,11 @@ def test_the_night_shows_itself_before_any_names(page):
     # Once the lists are in, the room is real and the sample goes.
     p.get_by_label("Paste or type your alumni").fill("Ann Lee, medicine\nBo Kim, law")
     button(p, "Add these").click()
-    assert p.locator(".c-sample-night").count() == 0
+    # One list already previews the real night: the sample now uses their alumni.
+    assert p.inner_text('[data-k="n-alumni"]') == "2" and "from your list" in p.inner_text(".c-sample-night")
     p.get_by_label("Paste or type your fams").fill("Fam 1, biology\nFam 2, political science")
     button(p, "Add these").click()
     p.wait_for_selector(".c-room")
+    assert p.locator(".c-sample-night").count() == 0
     p.locator('[data-k="watch"]').click()
     p.wait_for_function("() => document.querySelector('[data-k=\"show-2\"]')?.getAttribute('aria-pressed') === 'true'", timeout=4000)

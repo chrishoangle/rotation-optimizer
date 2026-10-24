@@ -972,3 +972,28 @@ main.coord.stage .c-button.primary { background: #2563eb; color: #fff; }
 .c-sample-round { font-weight: 700; margin-right: 4px; }
 @media (prefers-reduced-motion: reduce) { .c-sample-alum { transition: none; } }
 @media (max-width: 700px) { .c-sample-head .c-watch { margin-left: 0; } }
+
+/* Home: the dinner, its night, and one next step. */
+.c-hero h1.untitled { color: var(--ink-soft); }
+.c-name-it { margin-left: 12px; font-size: var(--t-sm); vertical-align: middle; }
+.c-timeline { margin: 14px 0 18px; display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.c-timeline ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 0; }
+.c-timeline li { display: flex; flex-direction: column; padding: 0 14px 0 0; margin-right: 14px; border-right: 1px solid var(--hairline); }
+.c-timeline li:last-child { border-right: none; }
+.c-tl-time { font-variant-numeric: tabular-nums; font-weight: 600; font-size: var(--t-sm); color: var(--ink); }
+.c-tl-what { font-size: var(--t-xs); color: var(--ink-soft); }
+.c-timeline.none { display: block; color: var(--ink-soft); font-size: var(--t-sm); }
+.c-home-more { margin: 18px 0 8px; color: var(--ink-soft); font-size: var(--t-sm); }
+.c-home-more .c-link { font-size: var(--t-sm); }
+.c-room .c-tile.moved { box-shadow: 0 0 0 2px var(--amber), var(--shadow); }
+.c-moved-tag { margin-left: auto; align-self: flex-start; font-size: 11px; font-weight: 700; color: var(--warning); background: var(--warning-wash); border-radius: 999px; padding: 2px 8px; }
+
+/* One accent per screen: grey does the structure, blue marks only the next action and links. */
+main.coord .c-button:not(.primary) { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hairline-strong); }
+main.coord .c-button:not(.primary):hover { background: var(--sunken); filter: none; }
+main.coord .c-disc { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 2px var(--hairline-strong); font-variant-numeric: tabular-nums; }
+main.coord .c-avatar { background: var(--sunken); color: var(--ink-soft); }
+main.coord .c-card-title { font-size: 18px; }
+.c-clock, .c-timer-num, .c-pages, .c-hero-meta { font-variant-numeric: tabular-nums; }
+.c-landed { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 10px; font-size: var(--t-sm); color: var(--ink-soft); }
+.c-landed .c-icon svg { width: 16px; height: 16px; color: var(--success); margin-top: 2px; }

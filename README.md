@@ -73,7 +73,8 @@ event open, the tour uses a copy of your own alumni and fams (it never changes
 your event); otherwise it uses the STEW 2026 dinner.
 It is organised around what a coordinator does, in four places: **Set up**
 (before any names, two numbers, tables and alumni, show the rotation playing
-out, every alum one table on each round so nobody visits a table twice; then
+out, every alum one table on each round so nobody visits a table twice, and a
+pasted list replaces its number, so one list already previews the night; then
 paste what you already have from Google Docs, Sheets, or Excel: last year's
 seating chart, with a column per round, gives the fams, the alumni and pairs,
 and the seating itself, and an alumni list of names, emails, and what each
@@ -81,14 +82,15 @@ alum does adds their interests, with the emails dropped; or paste your alumni
 and fams as plain lists; a title row is skipped and said so; alumni who
 share a field host one table together as a pair, and any pair can be split or
 two alumni paired by hand), **Schedule** (the room drawn one round at a time,
-drawn as soon as both lists are in, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, and Watch the night to play the rounds in turn; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
+drawn as soon as both lists are in, with each alum or pair at their table and the interest they share on the tables that have one, a line saying how many conversations share an interest when that is the best these lists allow, Watch the night to play the rounds in turn, and after any change the tables that changed marked on the room; in Adjust you tap two tables on the room itself to swap them), **Print** (what to print, how many pages, and why, then Print
 everything; after a change, only the pages that changed), and **Run** (a
 separate full-screen mode for a phone: the round, the clock, one button, and
 "Something came up", which turns any change into a list of people to tell,
 with who is where always beside it; on a laptop the two sit side by side;
 if one of a pair leaves, their partner keeps the table and nobody moves).
 After the last round, **Wrap up** saves the event for next year. Wherever you
-are, the logo goes home (the dinner, its progress, and one Next button), the
+are, the logo goes home (the dinner, its night as a line of times, and one Next
+button that agrees with the tabs), the
 tabs say where you are, a bar at the bottom holds Back and the next action, and
 anything removed or replaced can be undone for a few seconds; on a phone the
 next action floats above the tabs and Back sits in the header. The paste box
